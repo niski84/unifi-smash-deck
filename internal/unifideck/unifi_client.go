@@ -55,6 +55,19 @@ type SiteHealth struct {
 	NumIoT    int    `json:"num_iot,omitempty"`
 }
 
+// ProtectCamera is a UniFi Protect camera from the bootstrap endpoint.
+type ProtectCamera struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	State        string `json:"state"`
+	MAC          string `json:"mac"`
+	Host         string `json:"host,omitempty"`
+	IsConnected  bool   `json:"isConnected"`
+	IsRecording  bool   `json:"isRecording"`
+	IsMotionDetected bool `json:"isMotionDetected"`
+}
+
 // UnifiClient calls the UDM Pro API using an API key (X-API-KEY header).
 // This matches the official local Network API described at:
 //   UniFi Network > Settings > Control Plane > Integrations
@@ -278,6 +291,88 @@ func (c *UnifiClient) TestConnection(ctx context.Context) (string, error) {
 		return fmt.Sprintf("Connected — %d client(s) across %d subsystem(s)", total, len(health)), nil
 	}
 	return "Connected OK", nil
+}
+
+// protectIntURL builds a URL under /proxy/protect/integration/v1/ (API-key compatible).
+func (c *UnifiClient) protectIntURL(path string) string {
+	return fmt.Sprintf("%s/proxy/protect/integration/v1/%s", c.host, strings.TrimPrefix(path, "/"))
+}
+
+// protectURL builds the URL under the legacy /proxy/protect/api/ path (session auth).
+func (c *UnifiClient) protectURL(path string) string {
+	return fmt.Sprintf("%s/proxy/protect/api/%s", c.host, strings.TrimPrefix(path, "/"))
+}
+
+// doRaw performs a request and returns the raw response body and content-type.
+// Used for binary responses like camera snapshots.
+func (c *UnifiClient) doRaw(ctx context.Context, method, url string) ([]byte, string, error) {
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	req.Header.Set("X-API-KEY", c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, "", fmt.Errorf("auth failed (HTTP %d) — check API key", resp.StatusCode)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, "", fmt.Errorf("not found (HTTP 404) — UniFi Protect may not be installed or camera ID is invalid")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		snippet := strings.TrimSpace(string(body))
+		if len(snippet) > 120 {
+			snippet = snippet[:120]
+		}
+		return nil, "", fmt.Errorf("HTTP %d: %s", resp.StatusCode, snippet)
+	}
+	return body, resp.Header.Get("Content-Type"), nil
+}
+
+// ListCameras returns all cameras from UniFi Protect via the integration API.
+func (c *UnifiClient) ListCameras(ctx context.Context) ([]ProtectCamera, error) {
+	var list []ProtectCamera
+	if err := c.doJSON(ctx, http.MethodGet, c.protectIntURL("cameras"), nil, &list); err != nil {
+		return nil, fmt.Errorf("list cameras: %w", err)
+	}
+	return list, nil
+}
+
+// CameraSnapshot fetches a live JPEG snapshot for the given camera ID.
+// Pass highQuality=true to request 1080p or higher resolution from Protect.
+// If the camera does not support high quality, falls back to standard quality automatically.
+func (c *UnifiClient) CameraSnapshot(ctx context.Context, cameraID string, highQuality bool) ([]byte, string, error) {
+	base := c.protectIntURL("cameras/" + cameraID + "/snapshot")
+	ts := timeNowMS()
+
+	if highQuality {
+		url := fmt.Sprintf("%s?ts=%d&force=true&highQuality=true", base, ts)
+		if data, ct, err := c.doRaw(ctx, http.MethodGet, url); err == nil {
+			return data, ct, nil
+		}
+		// Fall through to standard quality if HQ is unsupported.
+	}
+
+	url := fmt.Sprintf("%s?ts=%d&force=true", base, ts)
+	data, ct, err := c.doRaw(ctx, http.MethodGet, url)
+	if err != nil {
+		return nil, "", fmt.Errorf("camera snapshot: %w", err)
+	}
+	return data, ct, nil
+}
+
+func timeNowMS() int64 {
+	return time.Now().UnixNano() / int64(time.Millisecond)
 }
 
 func min(a, b int) int {

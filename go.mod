@@ -1,3 +1,3 @@
-module github.com/nicholasgasior/unifi-smash-deck
+module github.com/niski84/unifi-smash-deck
 
 go 1.22

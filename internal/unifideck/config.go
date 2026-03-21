@@ -18,8 +18,19 @@ type AppConfig struct {
 	UnifiPass string `json:"unifi_pass,omitempty"`
 }
 
+// DataDir returns the directory used for all persistent data files.
+// It reads DATA_DIR from the environment; defaults to "./data" if unset.
+// In the Docker image DATA_DIR is set to /app/data via ENV so the path is
+// always explicit and independent of the process working directory.
+func DataDir() string {
+	if d := strings.TrimSpace(os.Getenv("DATA_DIR")); d != "" {
+		return d
+	}
+	return "data"
+}
+
 func DefaultSettingsPath() string {
-	return filepath.Clean("data/unifideck-settings.json")
+	return filepath.Join(DataDir(), "unifideck-settings.json")
 }
 
 func LoadAppConfig(path string) AppConfig {

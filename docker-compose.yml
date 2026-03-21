@@ -1,0 +1,66 @@
+# ── UniFi Smash Deck – NAS deployment ─────────────────────────────────────────
+#
+# Quick start on your NAS:
+#   docker compose up -d
+#
+# Update to the latest image (automations/settings are PRESERVED):
+#   docker compose pull && docker compose up -d
+#
+# ── Data persistence ──────────────────────────────────────────────────────────
+# All persistent data (settings, automations, activity log) is stored in the
+# Docker named volume "unifideck-data".  Named volumes survive:
+#   • image upgrades   (docker compose pull && up -d)
+#   • container removal (docker compose down  -- NOT down -v)
+#
+# To back up your data:
+#   docker run --rm -v unifideck-data:/data -v $(pwd):/backup \
+#     alpine tar czf /backup/unifideck-data-backup.tar.gz -C /data .
+#
+# To restore:
+#   docker run --rm -v unifideck-data:/data -v $(pwd):/backup \
+#     alpine tar xzf /backup/unifideck-data-backup.tar.gz -C /data
+#
+# WARNING: `docker compose down -v` WILL delete the named volume and all data.
+# Use plain `docker compose down` (no -v) when redeploying.
+
+services:
+  unifi-smash-deck:
+    image: ghcr.io/niski84/unifi-smash-deck:latest
+    container_name: unifi-smash-deck
+    restart: unless-stopped
+    ports:
+      - "8099:8099"
+    volumes:
+      - unifideck-data:/app/data
+    environment:
+      - PORT=8099
+      - DATA_DIR=/app/data
+      # Settings are normally saved through the web UI and stored in the volume.
+      # Uncomment the lines below ONLY if you want environment variables
+      # to override whatever is saved in the volume.
+      #- UNIFI_HOST=https://192.168.0.1
+      #- UNIFI_API_KEY=your-api-key-here
+      #- UNIFI_SITE=default
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8099/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── Optional: Watchtower – auto-pulls new image versions every 5 minutes ────
+  # Uncomment this block to enable automatic updates whenever a new image
+  # is pushed to the registry (e.g. after a GitHub Actions build).
+  #
+  # watchtower:
+  #   image: containrrr/watchtower
+  #   container_name: watchtower-unifideck
+  #   restart: unless-stopped
+  #   volumes:
+  #     - /var/run/docker.sock:/var/run/docker.sock
+  #   command: --interval 300 --cleanup unifi-smash-deck
+
+volumes:
+  unifideck-data:
+    # Remove the "external: true" line below unless you created this volume
+    # manually beforehand.  Docker Compose creates it automatically on first run.

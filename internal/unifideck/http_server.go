@@ -4,14 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/fs"
+	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 )
 
-// HTTPServer wires HTTP routes to UniFi + automations.
+// HTTPServer wires HTTP routes to UniFi + automations + snapshots.
 type HTTPServer struct {
 	mu sync.RWMutex
 	cfg AppConfig
@@ -20,24 +23,34 @@ type HTTPServer struct {
 	automationPath string
 	logPath        string
 
-	store     *AutomationStore
-	logger    *AutomationLogger
-	scheduler *AutomationScheduler
+	store            *AutomationStore
+	logger           *AutomationLogger
+	scheduler        *AutomationScheduler
+	snapStore        *SnapshotStore
+	snapScheduler    *SnapshotScheduler
 }
 
 func NewHTTPServer(cfg AppConfig) *HTTPServer {
 	settingsPath := DefaultSettingsPath()
-	autoPath := filepath.Clean("data/unifideck-automations.json")
-	logPath := filepath.Clean("data/unifideck.log")
+	autoPath := filepath.Join(DataDir(), "unifideck-automations.json")
+	logPath := filepath.Join(DataDir(), "unifideck.log")
+	store := NewAutomationStore(autoPath)
+	snapStore := NewSnapshotStore(DataDir())
+	logger := NewAutomationLogger(logPath)
 	s := &HTTPServer{
 		cfg:            cfg,
 		settingsPath:   settingsPath,
 		automationPath: autoPath,
 		logPath:        logPath,
-		store:          NewAutomationStore(autoPath),
-		logger:         NewAutomationLogger(logPath),
+		store:          store,
+		logger:         logger,
+		snapStore:      snapStore,
 	}
 	s.scheduler = NewAutomationScheduler(s.store, s.logger, s.unifiClient)
+	s.snapScheduler = NewSnapshotScheduler(snapStore, logger, s.unifiClient)
+	log.Printf("[unifideck] automations file: %s (%d loaded)", autoPath, store.LoadedCount())
+	log.Printf("[unifideck] snapshots dir   : %s (%d stored)", filepath.Join(DataDir(), "snapshots"), snapStore.Count())
+	log.Printf("[unifideck] activity log    : %s", logPath)
 	return s
 }
 
@@ -73,7 +86,8 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 // Routes returns the HTTP mux for the API + static UI.
-func (s *HTTPServer) Routes(webDir string) http.Handler {
+// webFS should be rooted at the directory containing index.html.
+func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", s.handleHealth)
 	mux.HandleFunc("/api/settings", s.handleSettings)
@@ -81,12 +95,15 @@ func (s *HTTPServer) Routes(webDir string) http.Handler {
 	mux.HandleFunc("/api/networks/", s.handleNetworkSubroutes)
 	mux.HandleFunc("/api/clients", s.handleClients)
 	mux.HandleFunc("/api/devices", s.handleDevices)
+	mux.HandleFunc("/api/cameras", s.handleCameras)
+	mux.HandleFunc("/api/cameras/", s.handleCameraSubroutes)
+	mux.HandleFunc("/api/snapshots", s.handleSnapshots)
+	mux.HandleFunc("/api/snapshots/", s.handleSnapshotSubroutes)
 	mux.HandleFunc("/api/automations", s.handleAutomations)
 	mux.HandleFunc("/api/automations/", s.handleAutomationSubroutes)
 	mux.HandleFunc("/api/logs", s.handleLogs)
 
-	fs := http.FileServer(http.Dir(filepath.Clean(webDir)))
-	mux.Handle("/", fs)
+	mux.Handle("/", http.FileServer(http.FS(webFS)))
 	return mux
 }
 
@@ -95,7 +112,11 @@ func (s *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
 		return
 	}
-	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]string{"service": "unifi-smash-deck"}})
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
+		"service":    "unifi-smash-deck",
+		"data_dir":   DataDir(),
+		"automations": s.store.LoadedCount(),
+	}})
 }
 
 func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -279,6 +300,174 @@ func (s *HTTPServer) handleDevices(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"devices": devices}})
 }
 
+func (s *HTTPServer) handleCameras(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	c := s.unifiClient()
+	if !c.IsConfigured() {
+		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"cameras": []any{}, "configured": false}})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	cameras, err := c.ListCameras(ctx)
+	if err != nil {
+		s.logger.Warn("list cameras err=%v", err)
+		writeJSON(w, http.StatusBadGateway, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"cameras": cameras, "configured": true}})
+}
+
+// handleCameraSubroutes proxies snapshot images: GET /api/cameras/{id}/snapshot
+func (s *HTTPServer) handleCameraSubroutes(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/api/cameras/")
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) < 2 || parts[1] != "snapshot" {
+		writeJSON(w, http.StatusNotFound, apiResp{Success: false, Error: "not found"})
+		return
+	}
+	cameraID := parts[0]
+	if cameraID == "" {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "camera id required"})
+		return
+	}
+	c := s.unifiClient()
+	if !c.IsConfigured() {
+		http.Error(w, "UniFi not configured", http.StatusServiceUnavailable)
+		return
+	}
+	highQuality := r.URL.Query().Get("highQuality") == "true"
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	data, contentType, err := c.CameraSnapshot(ctx, cameraID, highQuality)
+	if err != nil {
+		// Log to stderr only — don't pollute the user-visible activity log for routine snapshot failures.
+		log.Printf("[unifideck] camera snapshot failed id=%s err=%v", cameraID, err)
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	if contentType == "" {
+		contentType = "image/jpeg"
+	}
+	w.Header().Set("Content-Type", contentType)
+	// Prevent browser caching so every poll gets a fresh image.
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+// ── Snapshot handlers ──────────────────────────────────────────────────────────
+
+// GET /api/snapshots — returns schedule + all snapshots grouped by camera.
+func (s *HTTPServer) handleSnapshots(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	groups := s.snapStore.GroupedByCamera()
+	if groups == nil {
+		groups = []CameraSnapshotGroup{}
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
+		"schedule": s.snapStore.GetSchedule(),
+		"cameras":  groups,
+		"total":    s.snapStore.Count(),
+	}})
+}
+
+// handleSnapshotSubroutes routes:
+//
+//	GET    /api/snapshots/schedule          → return schedule
+//	POST   /api/snapshots/schedule          → save schedule
+//	POST   /api/snapshots/capture           → trigger immediate capture
+//	GET    /api/snapshots/{id}/image        → serve JPEG
+//	DELETE /api/snapshots/{id}              → delete snapshot
+func (s *HTTPServer) handleSnapshotSubroutes(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/snapshots/")
+	path = strings.Trim(path, "/")
+	parts := strings.SplitN(path, "/", 2)
+	seg := parts[0]
+
+	switch seg {
+	case "schedule":
+		switch r.Method {
+		case http.MethodGet:
+			writeJSON(w, http.StatusOK, apiResp{Success: true, Data: s.snapStore.GetSchedule()})
+		case http.MethodPost:
+			var sc SnapshotSchedule
+			if err := json.NewDecoder(r.Body).Decode(&sc); err != nil {
+				writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "invalid JSON"})
+				return
+			}
+			if err := s.snapStore.SaveSchedule(sc); err != nil {
+				writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: err.Error()})
+				return
+			}
+			s.logger.Info("snapshot schedule updated times=%v tz=%s retain=%dd", sc.Times, sc.Timezone, sc.RetainDays)
+			writeJSON(w, http.StatusOK, apiResp{Success: true, Data: sc})
+		default:
+			writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		}
+
+	case "capture":
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+			return
+		}
+		s.snapScheduler.CaptureNow()
+		s.logger.Info("snapshot capture triggered manually")
+		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]string{"status": "capturing"}})
+
+	default:
+		// Remaining routes: /{id}/image  or  DELETE /{id}
+		id := seg
+		if id == "" {
+			writeJSON(w, http.StatusNotFound, apiResp{Success: false, Error: "not found"})
+			return
+		}
+		if len(parts) == 2 && parts[1] == "image" {
+			// GET /api/snapshots/{id}/image — serve the JPEG
+			if r.Method != http.MethodGet {
+				writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+				return
+			}
+			rec, ok := s.snapStore.Get(id)
+			if !ok {
+				http.Error(w, "snapshot not found", http.StatusNotFound)
+				return
+			}
+			imgPath := s.snapStore.ImagePath(rec.ID)
+			data, err := os.ReadFile(imgPath)
+			if err != nil {
+				http.Error(w, "image not found on disk", http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "image/jpeg")
+			w.Header().Set("Cache-Control", "public, max-age=86400") // archived snapshots don't change
+			_, _ = w.Write(data)
+			return
+		}
+		// DELETE /api/snapshots/{id}
+		if r.Method != http.MethodDelete {
+			writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+			return
+		}
+		if err := s.snapStore.Delete(id); err != nil {
+			writeJSON(w, http.StatusNotFound, apiResp{Success: false, Error: err.Error()})
+			return
+		}
+		s.logger.Info("snapshot deleted id=%s", id)
+		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]bool{"deleted": true}})
+	}
+}
+
 func (s *HTTPServer) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -387,11 +576,17 @@ func (s *HTTPServer) handleLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"lines": lines}})
 }
 
-// StartScheduler starts the background ticker.
-func (s *HTTPServer) StartScheduler() { s.scheduler.Start() }
+// StartScheduler starts both the automation and snapshot background schedulers.
+func (s *HTTPServer) StartScheduler() {
+	s.scheduler.Start()
+	s.snapScheduler.Start()
+}
 
-// StopScheduler stops the scheduler.
-func (s *HTTPServer) StopScheduler() { s.scheduler.Stop() }
+// StopScheduler stops both schedulers.
+func (s *HTTPServer) StopScheduler() {
+	s.scheduler.Stop()
+	s.snapScheduler.Stop()
+}
 
 func maskKey(k string) string {
 	if len(k) < 8 {

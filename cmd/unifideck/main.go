@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -11,18 +12,37 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nicholasgasior/unifi-smash-deck/internal/unifideck"
+	"github.com/niski84/unifi-smash-deck/internal/unifideck"
+	unifiweb "github.com/niski84/unifi-smash-deck/web"
 )
 
 func main() {
-	cfg := unifideck.LoadAppConfig(unifideck.DefaultSettingsPath())
+	dataDir := unifideck.DataDir()
+	settingsPath := unifideck.DefaultSettingsPath()
+
+	cfg := unifideck.LoadAppConfig(settingsPath)
 	port := cfg.Port
 	if port == "" {
 		port = "8099"
 	}
 
+	log.Printf("[unifideck] data directory : %s", dataDir)
+	log.Printf("[unifideck] settings file  : %s", settingsPath)
+	if cfg.UnifiHost != "" {
+		log.Printf("[unifideck] unifi host     : %s (site=%s)", cfg.UnifiHost, cfg.UnifiSite)
+	} else {
+		log.Printf("[unifideck] unifi host     : (not configured — use the Settings tab)")
+	}
+
+	// Strip the "unifideck/" prefix so index.html is served at /.
+	webFS, err := fs.Sub(unifiweb.FS, "unifideck")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "embed FS error: %v\n", err)
+		os.Exit(1)
+	}
+
 	srv := unifideck.NewHTTPServer(cfg)
-	handler := srv.Routes("web/unifideck")
+	handler := srv.Routes(webFS)
 	srv.StartScheduler()
 
 	httpSrv := &http.Server{

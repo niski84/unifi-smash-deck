@@ -80,15 +80,28 @@ func NewAutomationStore(path string) *AutomationStore {
 	return s
 }
 
+// LoadedCount returns the number of automations loaded from disk at startup.
+func (s *AutomationStore) LoadedCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.list)
+}
+
 func (s *AutomationStore) load() {
 	raw, err := os.ReadFile(s.path)
 	if err != nil {
+		// File not found is normal on first run; any other error is worth noting.
+		if !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "[unifideck] WARNING: could not read automations from %s: %v\n", s.path, err)
+		}
 		return
 	}
 	var items []Automation
-	if json.Unmarshal(raw, &items) == nil {
-		s.list = items
+	if err := json.Unmarshal(raw, &items); err != nil {
+		fmt.Fprintf(os.Stderr, "[unifideck] WARNING: automations file %s is corrupt: %v — starting with empty list\n", s.path, err)
+		return
 	}
+	s.list = items
 }
 
 func (s *AutomationStore) save() error {
@@ -152,7 +165,9 @@ func (s *AutomationStore) UpdateNextRun(id string, t *time.Time) {
 	for i, a := range s.list {
 		if a.ID == id {
 			s.list[i].NextRunAt = t
-			_ = s.save()
+			if err := s.save(); err != nil {
+				fmt.Fprintf(os.Stderr, "[unifideck] ERROR: failed to save automations after UpdateNextRun id=%s: %v\n", id, err)
+			}
 			return
 		}
 	}
@@ -164,7 +179,9 @@ func (s *AutomationStore) UpdateLastRun(id string, t *time.Time) {
 	for i, a := range s.list {
 		if a.ID == id {
 			s.list[i].LastRunAt = t
-			_ = s.save()
+			if err := s.save(); err != nil {
+				fmt.Fprintf(os.Stderr, "[unifideck] ERROR: failed to save automations after UpdateLastRun id=%s: %v\n", id, err)
+			}
 			return
 		}
 	}

@@ -319,6 +319,291 @@
       transition: all 0.12s;
     }
     .dow-btn.active { background: rgba(0,111,255,0.2); border-color: var(--accent); color: var(--accent); }
+    /* ── Camera cards ─────────────────────────────── */
+    .cam-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--card-bg);
+      transition: border-color 0.15s;
+    }
+    .cam-card:hover { border-color: rgba(0,111,255,0.4); }
+    .cam-snapshot-wrap {
+      position: relative;
+      width: 100%;
+      padding-top: 56.25%; /* 16:9 */
+      background: #060a12;
+      overflow: hidden;
+    }
+    .cam-snapshot-wrap img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      cursor: zoom-in;
+    }
+    .cam-snapshot-wrap .cam-overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(6,10,18,0.7);
+      color: var(--muted);
+      font-size: 13px;
+      pointer-events: none;
+    }
+    .cam-snapshot-wrap .cam-overlay.hidden { display: none; }
+    .cam-pulse {
+      position: absolute;
+      top: 8px; right: 8px;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--ok);
+      box-shadow: 0 0 0 0 rgba(61,219,165,0.6);
+      animation: pulse 2s infinite;
+    }
+    .cam-pulse.offline { background: #555; box-shadow: none; animation: none; }
+    @keyframes pulse {
+      0%   { box-shadow: 0 0 0 0 rgba(61,219,165,0.6); }
+      70%  { box-shadow: 0 0 0 8px rgba(61,219,165,0); }
+      100% { box-shadow: 0 0 0 0 rgba(61,219,165,0); }
+    }
+    .cam-info {
+      padding: 10px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .cam-name { font-weight: 700; font-size: 14px; }
+    .cam-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .cam-ts { font-size: 10px; color: var(--muted); opacity: 0.7; white-space: nowrap; }
+    /* ── Camera inner sub-tabs ──────────────────────── */
+    .cam-inner-tabs {
+      display: flex;
+      gap: 0;
+      margin-bottom: 12px;
+      border-bottom: 2px solid var(--border);
+    }
+    .cam-inner-tab {
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      padding: 8px 20px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .cam-inner-tab:hover { color: var(--text); }
+    .cam-inner-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .cam-sub { display: none; }
+    .cam-sub.active { display: block; }
+    /* ── Snapshot strips ─────────────────────────────── */
+    .snap-strip {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--card-bg);
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+    .snap-strip-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: rgba(0,0,0,0.08);
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+    }
+    .snap-strip-title { font-weight: 700; font-size: 14px; flex: 1; }
+    .snap-strip-count { font-size: 11px; color: var(--muted); }
+    .snap-strip-scroll {
+      display: flex;
+      gap: 8px;
+      padding: 10px 12px;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+    }
+    .snap-thumb {
+      flex-shrink: 0;
+      width: 160px;
+      border-radius: 7px;
+      overflow: hidden;
+      border: 2px solid transparent;
+      background: #060a12;
+      cursor: zoom-in;
+      scroll-snap-align: start;
+      transition: border-color 0.15s, transform 0.1s;
+    }
+    .snap-thumb:hover { border-color: var(--accent); transform: scale(1.03); }
+    .snap-thumb.playing { border-color: var(--ok); }
+    .snap-thumb img {
+      width: 160px;
+      height: 90px;
+      object-fit: cover;
+      display: block;
+    }
+    .snap-thumb-label {
+      font-size: 10px;
+      color: var(--muted);
+      padding: 3px 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      background: rgba(0,0,0,0.4);
+    }
+    .snap-playbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 12px 8px;
+      flex-wrap: wrap;
+    }
+    .snap-play-btn {
+      padding: 4px 12px;
+      font-size: 12px;
+      border-radius: 6px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .snap-play-btn:hover { background: var(--accent-hover); }
+    .snap-del-btn {
+      padding: 3px 8px;
+      font-size: 11px;
+      border-radius: 5px;
+      background: rgba(255,80,80,0.12);
+      color: var(--err-color);
+      border: 1px solid rgba(255,80,80,0.25);
+      cursor: pointer;
+    }
+    .snap-del-btn:hover { background: rgba(255,80,80,0.3); }
+    /* ── Camera Lightbox ────────────────────────────── */
+    .cam-lightbox {
+      position: fixed;
+      inset: 0;
+      z-index: 9000;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .cam-lightbox.open { display: flex; }
+    .cam-lb-bg {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.92);
+      cursor: default;
+    }
+    .cam-lb-wrap {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      width: min(96vw, calc(96vh * 1.78));  /* maintain 16:9 max width */
+      max-height: 94vh;
+      background: #040810;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 12px 80px rgba(0,0,0,0.95), 0 0 0 1px rgba(255,255,255,0.06);
+    }
+    .cam-lb-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      background: rgba(0,0,0,0.7);
+      flex-shrink: 0;
+      gap: 12px;
+    }
+    .cam-lb-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #e8edf8;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .cam-lb-meta {
+      font-size: 11px;
+      color: rgba(255,255,255,0.45);
+      font-variant-numeric: tabular-nums;
+      min-width: 40px;
+      text-align: right;
+    }
+    .cam-lb-btn {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #e0e8f8;
+      border-radius: 6px;
+      padding: 5px 10px;
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .cam-lb-btn:hover { background: rgba(255,255,255,0.22); }
+    .cam-lb-close-btn:hover { background: rgba(220,50,50,0.55); }
+    .cam-lb-viewport {
+      position: relative;
+      overflow: hidden;
+      flex: 1;
+      min-height: 200px;
+      background: #000;
+      cursor: crosshair;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none;
+    }
+    .cam-lb-viewport.dragging { cursor: grabbing; }
+    .cam-lb-img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      max-width: none;
+      height: auto;
+      transform-origin: 0 0;
+      will-change: transform;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-drag: none;
+      image-rendering: auto;
+    }
+    .cam-lb-statusbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 14px;
+      background: rgba(0,0,0,0.55);
+      flex-shrink: 0;
+      gap: 12px;
+    }
+    .cam-lb-statusbar span { font-size: 11px; color: rgba(255,255,255,0.4); }
+    .cam-lb-hint { font-style: italic; }
+    /* Fullscreen: let the lightbox fill the entire screen */
+    .cam-lightbox:fullscreen,
+    .cam-lightbox:-webkit-full-screen {
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .cam-lightbox:fullscreen .cam-lb-bg,
+    .cam-lightbox:-webkit-full-screen .cam-lb-bg { display: none; }
+    .cam-lightbox:fullscreen .cam-lb-wrap,
+    .cam-lightbox:-webkit-full-screen .cam-lb-wrap {
+      width: 100vw;
+      max-height: 100vh;
+      border-radius: 0;
+      height: 100vh;
+    }
     @media (max-width: 600px) {
       .grid { grid-template-columns: 1fr; }
       .row > * { min-width: 100%; }
@@ -342,6 +627,7 @@
   <div class="tabs">
     <button type="button" class="tab-btn active" data-tab="networks" data-testid="tab-networks">Networks</button>
     <button type="button" class="tab-btn" data-tab="clients" data-testid="tab-clients">Clients</button>
+    <button type="button" class="tab-btn" data-tab="cameras" data-testid="tab-cameras">📷 Cameras</button>
     <button type="button" class="tab-btn" data-tab="automations" data-testid="tab-automations">Automations</button>
     <button type="button" class="tab-btn" data-tab="settings" data-testid="tab-settings">Settings &amp; Logs</button>
   </div>
@@ -379,6 +665,79 @@
           </thead>
           <tbody id="clientTbody"></tbody>
         </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Cameras panel ── -->
+  <section id="panel-cameras" class="panel">
+    <!-- Inner sub-tab bar -->
+    <div class="cam-inner-tabs">
+      <button type="button" class="cam-inner-tab active" data-cam-tab="live" data-testid="cam-tab-live">📷 Live View</button>
+      <button type="button" class="cam-inner-tab" data-cam-tab="timeline" data-testid="cam-tab-timeline">🗓 Timeline</button>
+    </div>
+
+    <!-- ── Live View sub-panel ── -->
+    <div id="cam-sub-live" class="cam-sub active">
+      <div class="card">
+        <div class="toolbar">
+          <button type="button" class="primary" id="refreshCamerasBtn" data-testid="refresh-cameras">Refresh</button>
+          <label style="display:flex;align-items:center;gap:6px;margin:0;">
+            <span style="font-size:12px;color:var(--muted);">Refresh:</span>
+            <select id="cameraRefreshRate" data-testid="camera-refresh-rate"
+                    style="padding:4px 8px;font-size:12px;background:var(--input-bg);color:var(--text);border:1px solid var(--input-border);border-radius:6px;cursor:pointer;">
+              <option value="0">Off</option>
+              <option value="250">Max (~4fps)</option>
+              <option value="1000">1 s</option>
+              <option value="5000" selected>5 s</option>
+              <option value="10000">10 s</option>
+              <option value="30000">30 s</option>
+            </select>
+          </label>
+          <span id="cameraStatus" class="muted"></span>
+        </div>
+        <div id="cameraGrid" class="grid" data-testid="camera-grid"></div>
+      </div>
+    </div>
+
+    <!-- ── Timeline sub-panel ── -->
+    <div id="cam-sub-timeline" class="cam-sub" style="display:none;">
+
+      <!-- Schedule config card -->
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
+          <h3 style="margin:0;font-size:15px;font-weight:700;">📅 Capture Schedule</h3>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="primary" id="captureNowBtn" data-testid="capture-now">📸 Capture Now</button>
+            <button type="button" id="saveSnapSchedBtn" data-testid="save-snap-sched">Save Schedule</button>
+          </div>
+        </div>
+        <div class="row" style="gap:16px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:160px;">
+            <label for="snapTimes">Capture times (24h HH:MM, comma-separated)</label>
+            <input id="snapTimes" data-testid="snap-times" placeholder="10:30, 19:00" autocomplete="off" />
+          </div>
+          <div style="flex:1;min-width:160px;">
+            <label for="snapTz">Timezone</label>
+            <input id="snapTz" data-testid="snap-tz" placeholder="America/New_York" autocomplete="off" />
+          </div>
+          <div style="flex:0 0 120px;">
+            <label for="snapRetain">Keep snapshots (days)</label>
+            <input id="snapRetain" data-testid="snap-retain" type="number" min="0" max="365" placeholder="30" autocomplete="off" />
+          </div>
+          <div style="display:flex;align-items:flex-end;padding-bottom:2px;">
+            <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer;white-space:nowrap;">
+              <input type="checkbox" id="snapEnabled" style="width:auto;margin-bottom:0;" checked />
+              <span style="font-size:13px;">Enable schedule</span>
+            </label>
+          </div>
+        </div>
+        <p id="snapSchedMsg" class="muted" style="margin:8px 0 0;font-size:12px;"></p>
+      </div>
+
+      <!-- Per-camera snapshot strips -->
+      <div id="snapCameraList" data-testid="snap-camera-list">
+        <p class="muted" id="snapEmptyMsg">No snapshots yet — click "Capture Now" or wait for the schedule to run.</p>
       </div>
     </div>
   </section>
@@ -536,6 +895,29 @@
     </div>
   </div>
 
+  <!-- ── Camera Lightbox ── must appear before <script> so getElementById works at parse time -->
+  <div id="camLightbox" class="cam-lightbox" role="dialog" aria-modal="true" aria-label="Camera viewer">
+    <div id="camLbBg" class="cam-lb-bg"></div>
+    <div class="cam-lb-wrap">
+      <div class="cam-lb-toolbar">
+        <span id="camLbName" class="cam-lb-title"></span>
+        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+          <span id="camLbZoomLevel" class="cam-lb-meta">100%</span>
+          <button type="button" class="cam-lb-btn" id="camLbZoomReset" title="Reset zoom (double-click)">⊡ Fit</button>
+          <button type="button" class="cam-lb-btn" id="camLbFullscreen" title="Toggle fullscreen">⛶</button>
+          <button type="button" class="cam-lb-btn cam-lb-close-btn" id="camLbClose" title="Close (Esc)">✕</button>
+        </div>
+      </div>
+      <div id="camLbViewport" class="cam-lb-viewport">
+        <img id="camLbImg" class="cam-lb-img" alt="" draggable="false" />
+      </div>
+      <div class="cam-lb-statusbar">
+        <span id="camLbStatus">Loading…</span>
+        <span id="camLbHint" class="cam-lb-hint">Scroll to zoom · Drag to pan · Double-click to fit</span>
+      </div>
+    </div>
+  </div>
+
   <script>
     console.debug('[UniFiDeck] UI loaded');
     const $ = (id) => document.getElementById(id);
@@ -590,6 +972,18 @@
         btn.classList.add('active');
         $('panel-' + btn.dataset.tab).classList.add('active');
         console.debug('[UniFiDeck] tab', btn.dataset.tab);
+        if (btn.dataset.tab === 'cameras') {
+          // Restore to Live View when switching to the cameras tab.
+          const liveTab = document.querySelector('.cam-inner-tab[data-cam-tab="live"]');
+          if (liveTab && !liveTab.classList.contains('active')) liveTab.click();
+          else {
+            if (camerasCache.length === 0) loadCameras().then(() => startSnapshotPolling()).catch(console.error);
+            else startSnapshotPolling();
+          }
+        } else {
+          stopSnapshotPolling();
+          lbStopRefresh();
+        }
       };
     });
 
@@ -979,6 +1373,595 @@
 
     $('refreshLogBtn').onclick = () => loadLog().catch(console.error);
 
+    // ── Cameras ────────────────────────────────────────────────────────────────
+    let camerasCache = [];
+    let snapshotInterval = null;
+
+    function currentRefreshMs() {
+      return parseInt($('cameraRefreshRate').value, 10) || 0;
+    }
+
+    function camStateClass(cam) {
+      return (cam.state === 'CONNECTED' || cam.isConnected) ? 'on' : 'offline';
+    }
+
+    function renderCameraCard(cam) {
+      const card = document.createElement('div');
+      card.className = 'cam-card';
+      card.dataset.testid = 'camera-card';
+      card.dataset.cameraId = cam.id;
+      const stateClass = camStateClass(cam);
+      const stateLabel = stateClass === 'on' ? 'Online' : 'Offline';
+      const snapSrc = `/api/cameras/${encodeURIComponent(cam.id)}/snapshot`;
+      card.innerHTML = `
+        <div class="cam-snapshot-wrap" data-cam-open-id="${escapeAttr(cam.id)}" data-cam-open-name="${escapeAttr(cam.name)}">
+          <img src="${snapSrc}" alt="${escapeAttr(cam.name)}" data-cam-id="${escapeAttr(cam.id)}"
+               onerror="this.style.opacity='0.2'" data-testid="cam-snapshot" />
+          <div class="cam-overlay${stateClass === 'on' ? ' hidden' : ''}">📷 Offline</div>
+          <div class="cam-pulse ${stateClass === 'on' ? '' : 'offline'}"></div>
+        </div>
+        <div class="cam-info">
+          <div>
+            <div class="cam-name">${escapeHtml(cam.name)}</div>
+            <div class="cam-meta">${escapeHtml(cam.type || 'Camera')} · <span class="${stateClass === 'on' ? 'ok' : 'muted'}">${stateLabel}</span></div>
+          </div>
+          <div class="cam-ts" data-cam-ts="${escapeAttr(cam.id)}">—</div>
+        </div>`;
+      return card;
+    }
+
+    function renderCameras() {
+      const grid = $('cameraGrid');
+      grid.innerHTML = '';
+      if (camerasCache.length === 0) {
+        grid.innerHTML = `<p class="muted">No cameras found. Make sure UniFi Protect is installed on your UDM Pro.</p>`;
+        return;
+      }
+      camerasCache.forEach(cam => grid.appendChild(renderCameraCard(cam)));
+      $('cameraStatus').textContent = `${camerasCache.length} camera(s) — click any image to view`;
+    }
+
+    async function loadCameras() {
+      $('cameraStatus').textContent = 'Loading…';
+      try {
+        const d = await api('GET', '/api/cameras');
+        camerasCache = d.cameras || [];
+        renderCameras();
+        if (camerasCache.length > 0) refreshSnapshots();
+        console.debug('[UniFiDeck] cameras', camerasCache.length);
+      } catch (e) {
+        const msg = e.message || String(e);
+        $('cameraStatus').textContent = 'Failed';
+        $('cameraStatus').className = 'err';
+        $('cameraGrid').innerHTML = `
+          <div style="grid-column:1/-1;">
+            <p class="err" style="margin-bottom:8px;">${escapeHtml(msg)}</p>
+            <p class="muted" style="font-size:12px;">
+              Make sure <strong>UniFi Protect</strong> is installed and running on your UDM Pro,
+              and that your API key has Protect access. The API key is created under
+              <em>Settings → Control Plane → Integrations</em>.
+            </p>
+          </div>`;
+        console.error('[UniFiDeck] loadCameras failed', e);
+      }
+    }
+
+    function refreshSnapshots() {
+      const imgs = document.querySelectorAll('#cameraGrid img[data-cam-id]');
+      let delay = 0;
+      imgs.forEach(img => {
+        const id = img.getAttribute('data-cam-id');
+        // Skip cameras known to be offline — avoids constant HTTP 500 errors.
+        const camInfo = camerasCache.find(c => c.id === id);
+        if (camInfo && camInfo.state !== 'CONNECTED' && !camInfo.isConnected) return;
+        // Stagger each camera request by 350 ms so we never fire all requests
+        // simultaneously, which would exceed Protect's 10 req/s rate limit.
+        setTimeout(() => {
+          img.src = `/api/cameras/${encodeURIComponent(id)}/snapshot?t=${Date.now()}`;
+          const tsEl = document.querySelector(`[data-cam-ts="${id}"]`);
+          if (tsEl) tsEl.textContent = new Date().toLocaleTimeString();
+        }, delay);
+        delay += 350;
+      });
+    }
+
+    function startSnapshotPolling() {
+      stopSnapshotPolling();
+      const ms = currentRefreshMs();
+      if (ms > 0 && camerasCache.length > 0) {
+        // Grid: never faster than 500ms to avoid hammering all cameras.
+        snapshotInterval = setInterval(refreshSnapshots, Math.max(ms, 500));
+        console.debug('[UniFiDeck] snapshot polling started', ms + 'ms');
+      }
+    }
+    function stopSnapshotPolling() {
+      if (snapshotInterval) { clearInterval(snapshotInterval); snapshotInterval = null; }
+    }
+
+    $('cameraRefreshRate').addEventListener('change', () => {
+      startSnapshotPolling();
+      lbRestartRefresh();
+    });
+    $('refreshCamerasBtn').onclick = () => loadCameras().catch(console.error);
+
+    // Open lightbox when a camera thumbnail is clicked.
+    $('cameraGrid').addEventListener('click', e => {
+      const wrap = e.target.closest('[data-cam-open-id]');
+      if (wrap) lbOpen(wrap.dataset.camOpenId, wrap.dataset.camOpenName);
+    });
+
+    // ── Camera Lightbox ────────────────────────────────────────────────────────
+    const lb       = $('camLightbox');
+    const lbVp     = $('camLbViewport');
+    const lbImg    = $('camLbImg');
+    const lbStatus = $('camLbStatus');
+    const lbZoomEl = $('camLbZoomLevel');
+
+    let lbCamId    = null;
+    let lbScale    = 1;
+    let lbPanX     = 0;
+    let lbPanY     = 0;
+    let lbDragging = false;
+    let lbDragX    = 0;
+    let lbDragY    = 0;
+    let lbInterval = null;
+
+    function lbSnapURL(id) {
+      return `/api/cameras/${encodeURIComponent(id)}/snapshot?t=${Date.now()}&highQuality=true`;
+    }
+
+    function lbApplyTransform() {
+      lbImg.style.transform = `translate(${lbPanX}px, ${lbPanY}px) scale(${lbScale})`;
+      lbZoomEl.textContent = Math.round(lbScale * 100) + '%';
+    }
+
+    function lbFit() {
+      const vw = lbVp.clientWidth;
+      const vh = lbVp.clientHeight;
+      const iw = lbImg.naturalWidth  || 640;
+      const ih = lbImg.naturalHeight || 360;
+      lbScale = Math.min(vw / iw, vh / ih);
+      lbPanX  = (vw - iw * lbScale) / 2;
+      lbPanY  = (vh - ih * lbScale) / 2;
+      lbApplyTransform();
+    }
+
+    function lbOpen(camId, camName) {
+      // Pause grid polling while lightbox is open — avoids combining grid + lightbox
+      // requests which together exceed Protect's 10 req/s rate limit (HTTP 429).
+      stopSnapshotPolling();
+
+      lbCamId = camId;
+      lbScale = 1; lbPanX = 0; lbPanY = 0;
+      $('camLbName').textContent = camName || camId;
+      lb.classList.add('open');
+
+      // If the camera is known to be offline, show a useful message immediately
+      // rather than firing a snapshot request that will always return 500.
+      const camInfo = camerasCache.find(c => c.id === camId);
+      const isOnline = !camInfo || (camInfo.state === 'CONNECTED' || camInfo.isConnected);
+      if (!isOnline) {
+        lbImg.src = '';
+        lbStatus.textContent = '⚠ Camera offline — snapshot unavailable';
+        console.debug('[UniFiDeck] lightbox: camera offline', camId);
+        return;
+      }
+
+      lbStatus.textContent = 'Loading…';
+      lbImg.src = '';
+      lbImg.onload = () => { lbFit(); lbStatus.textContent = new Date().toLocaleTimeString(); };
+      lbImg.onerror = () => {
+        lbStatus.textContent = '⚠ Snapshot unavailable (camera may be offline or rate-limited — close and retry)';
+        lbCamId = null; // stop polling for a camera that isn't responding
+        lbStopRefresh();
+        console.warn('[UniFiDeck] lightbox snapshot failed', camId);
+      };
+      lbImg.src = lbSnapURL(camId);
+      lbRestartRefresh();
+      console.debug('[UniFiDeck] lightbox open', camId);
+    }
+
+    function lbClose() {
+      lb.classList.remove('open');
+      lbCamId = null;
+      lbStopRefresh();
+      if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+      startSnapshotPolling(); // Resume grid refresh now that lightbox is closed.
+      console.debug('[UniFiDeck] lightbox close');
+    }
+
+    function lbRestartRefresh() {
+      lbStopRefresh();
+      if (!lbCamId) return;
+      const ms = currentRefreshMs();
+      if (ms <= 0) return;
+      lbInterval = setInterval(() => {
+        if (!lbCamId) return;
+        const old = lbImg.src;
+        const next = lbSnapURL(lbCamId);
+        const tmp = new Image();
+        tmp.onload = () => {
+          // Swap only after the new image fully loads to avoid flicker.
+          lbImg.src = next;
+          lbStatus.textContent = new Date().toLocaleTimeString();
+        };
+        tmp.src = next;
+      }, ms);
+    }
+    function lbStopRefresh() {
+      if (lbInterval) { clearInterval(lbInterval); lbInterval = null; }
+    }
+
+    // ── Zoom (mouse wheel) ─────────────────────────────────────────────────────
+    lbVp.addEventListener('wheel', e => {
+      e.preventDefault();
+      const factor  = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+      const rect    = lbVp.getBoundingClientRect();
+      const mx      = e.clientX - rect.left;
+      const my      = e.clientY - rect.top;
+      const newScale = Math.max(0.1, Math.min(12, lbScale * factor));
+      // Keep the point under the cursor fixed in image space.
+      lbPanX = mx - (mx - lbPanX) * (newScale / lbScale);
+      lbPanY = my - (my - lbPanY) * (newScale / lbScale);
+      lbScale = newScale;
+      lbApplyTransform();
+    }, { passive: false });
+
+    // ── Pan (drag) ─────────────────────────────────────────────────────────────
+    lbVp.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      lbDragging = true;
+      lbDragX = e.clientX - lbPanX;
+      lbDragY = e.clientY - lbPanY;
+      lbVp.classList.add('dragging');
+      e.preventDefault();
+    });
+    window.addEventListener('mousemove', e => {
+      if (!lbDragging) return;
+      lbPanX = e.clientX - lbDragX;
+      lbPanY = e.clientY - lbDragY;
+      lbApplyTransform();
+    });
+    window.addEventListener('mouseup', () => {
+      lbDragging = false;
+      lbVp.classList.remove('dragging');
+    });
+
+    // ── Double-click: fit ──────────────────────────────────────────────────────
+    lbVp.addEventListener('dblclick', () => lbFit());
+
+    // ── Fullscreen ─────────────────────────────────────────────────────────────
+    $('camLbFullscreen').addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        lb.requestFullscreen().catch(err => console.warn('fullscreen:', err));
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    });
+    document.addEventListener('fullscreenchange', () => {
+      const fs = !!document.fullscreenElement;
+      $('camLbFullscreen').textContent = fs ? '⊠ Exit' : '⛶';
+      $('camLbFullscreen').title = fs ? 'Exit fullscreen (Esc)' : 'Fullscreen';
+      // Hide the manual Fit button in fullscreen — auto-fit handles it.
+      // Keep it visible in windowed mode for manual re-centering after zoom.
+      const zoomReset = $('camLbZoomReset');
+      if (zoomReset) zoomReset.style.display = fs ? 'none' : '';
+    });
+
+    // ResizeObserver fires as soon as the viewport element finishes resizing —
+    // covers fullscreen enter/exit and window resize with zero guesswork.
+    if (window.ResizeObserver) {
+      new ResizeObserver(() => {
+        if (lb.classList.contains('open')) lbFit();
+      }).observe(lbVp);
+    }
+
+    // ── Close handlers ─────────────────────────────────────────────────────────
+    // Use arrow wrappers so the call resolves lbClose at runtime, not at bind time.
+    // This ensures the Timeline override (which stops slideshow + clears playlist)
+    // is also called when the X button or background is clicked.
+    $('camLbClose').addEventListener('click', () => lbClose());
+    $('camLbBg').addEventListener('click', () => lbClose());
+    $('camLbZoomReset').addEventListener('click', () => lbFit());
+    document.addEventListener('keydown', e => {
+      if (!lb.classList.contains('open')) return;
+      if (e.key === 'Escape') lbClose();
+      if (e.key === '+' || e.key === '=') {
+        // Zoom in centered on viewport.
+        const vw = lbVp.clientWidth / 2, vh = lbVp.clientHeight / 2;
+        const ns = Math.min(12, lbScale * 1.15);
+        lbPanX = vw - (vw - lbPanX) * (ns / lbScale);
+        lbPanY = vh - (vh - lbPanY) * (ns / lbScale);
+        lbScale = ns; lbApplyTransform();
+      }
+      if (e.key === '-') {
+        const vw = lbVp.clientWidth / 2, vh = lbVp.clientHeight / 2;
+        const ns = Math.max(0.1, lbScale / 1.15);
+        lbPanX = vw - (vw - lbPanX) * (ns / lbScale);
+        lbPanY = vh - (vh - lbPanY) * (ns / lbScale);
+        lbScale = ns; lbApplyTransform();
+      }
+      if (e.key === '0') lbFit();
+    });
+
+    // ── Camera inner sub-tabs ─────────────────────────────────────────────────
+    document.querySelectorAll('.cam-inner-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.cam-inner-tab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.cam-sub').forEach(p => p.style.display = 'none');
+        btn.classList.add('active');
+        const sub = document.getElementById('cam-sub-' + btn.dataset.camTab);
+        if (sub) sub.style.display = 'block';
+        if (btn.dataset.camTab === 'timeline') {
+          loadSnapshots().catch(console.error);
+          stopSnapshotPolling();
+        } else {
+          if (camerasCache.length === 0) loadCameras().then(() => startSnapshotPolling()).catch(console.error);
+          else startSnapshotPolling();
+        }
+        console.debug('[UniFiDeck] cam inner tab', btn.dataset.camTab);
+      });
+    });
+
+    // ── Timeline / Snapshots ──────────────────────────────────────────────────
+    let snapData = null;            // full response from /api/snapshots
+    let slideshowInterval = null;   // slideshow auto-advance timer
+    let slideshowPlaylist = [];     // array of snapshot IDs for current slideshow
+    let slideshowIdx = 0;
+
+    async function loadSnapshots() {
+      try {
+        const d = await api('GET', '/api/snapshots');
+        snapData = d;
+        renderScheduleForm(d.schedule || {});
+        renderSnapCameras(d.cameras || []);
+        console.debug('[UniFiDeck] snapshots loaded', d.total);
+      } catch (e) {
+        console.error('[UniFiDeck] loadSnapshots failed', e);
+        $('snapCameraList').innerHTML = `<p class="err">${escapeHtml(e.message || String(e))}</p>`;
+      }
+    }
+
+    function renderScheduleForm(sc) {
+      $('snapEnabled').checked = sc.enabled !== false;
+      $('snapTimes').value = (sc.times || ['10:30', '19:00']).join(', ');
+      $('snapTz').value = sc.timezone || '';
+      $('snapRetain').value = sc.retain_days != null ? sc.retain_days : 30;
+    }
+
+    function renderSnapCameras(groups) {
+      const list = $('snapCameraList');
+      const empty = $('snapEmptyMsg');
+      if (!groups || groups.length === 0) {
+        list.innerHTML = '';
+        if (empty) empty.style.display = '';
+        return;
+      }
+      if (empty) empty.style.display = 'none';
+      list.innerHTML = '';
+      groups.forEach(grp => {
+        if (!grp.snapshots || grp.snapshots.length === 0) return;
+        list.appendChild(buildSnapStrip(grp));
+      });
+    }
+
+    function buildSnapStrip(grp) {
+      const strip = document.createElement('div');
+      strip.className = 'snap-strip';
+      strip.dataset.camId = grp.camera_id;
+
+      // Header
+      const hdr = document.createElement('div');
+      hdr.className = 'snap-strip-header';
+      hdr.innerHTML = `
+        <span class="snap-strip-title">${escapeHtml(grp.camera_name)}</span>
+        <span class="snap-strip-count">${grp.snapshots.length} snapshot${grp.snapshots.length !== 1 ? 's' : ''}</span>`;
+      strip.appendChild(hdr);
+
+      // Thumbnail row
+      const scroll = document.createElement('div');
+      scroll.className = 'snap-strip-scroll';
+      // Show newest first in the strip
+      const snaps = [...grp.snapshots].reverse();
+      snaps.forEach((snap, i) => {
+        const thumb = document.createElement('div');
+        thumb.className = 'snap-thumb';
+        thumb.dataset.snapId = snap.id;
+        const dt = new Date(snap.taken_at);
+        const label = dt.toLocaleDateString([], { month: 'short', day: 'numeric' })
+                    + ' ' + dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        thumb.innerHTML = `
+          <img src="/api/snapshots/${encodeURIComponent(snap.id)}/image"
+               loading="lazy" onerror="this.style.opacity='0.2'" alt="${escapeAttr(label)}" />
+          <div class="snap-thumb-label">${escapeHtml(label)}</div>`;
+        thumb.addEventListener('click', () => {
+          // Open lightbox at this snapshot, playlist = all snaps for this camera
+          const ids = snaps.map(s => s.id);
+          lbOpenPlaylist(ids, i, grp.camera_name);
+        });
+        scroll.appendChild(thumb);
+      });
+      strip.appendChild(scroll);
+
+      // Play bar
+      const playbar = document.createElement('div');
+      playbar.className = 'snap-playbar';
+      playbar.innerHTML = `
+        <button type="button" class="snap-play-btn" data-play-cam="${escapeAttr(grp.camera_id)}">▶ Slideshow</button>
+        <button type="button" class="snap-del-btn" data-del-cam="${escapeAttr(grp.camera_id)}">🗑 Delete All</button>`;
+      playbar.querySelector('[data-play-cam]').addEventListener('click', () => {
+        const ids = snaps.map(s => s.id);
+        lbOpenPlaylist(ids, 0, grp.camera_name, true /* autoplay */);
+      });
+      playbar.querySelector('[data-del-cam]').addEventListener('click', async () => {
+        if (!confirm(`Delete all ${grp.snapshots.length} snapshot(s) for "${grp.camera_name}"?`)) return;
+        for (const snap of grp.snapshots) {
+          await api('DELETE', `/api/snapshots/${encodeURIComponent(snap.id)}`).catch(() => {});
+        }
+        await loadSnapshots();
+      });
+      strip.appendChild(playbar);
+      return strip;
+    }
+
+    // Schedule save
+    $('saveSnapSchedBtn').addEventListener('click', async () => {
+      const msg = $('snapSchedMsg');
+      msg.textContent = 'Saving…'; msg.className = 'muted';
+      try {
+        const timesRaw = $('snapTimes').value.trim();
+        const times = timesRaw.split(',').map(t => t.trim()).filter(Boolean);
+        const sc = {
+          enabled: $('snapEnabled').checked,
+          times,
+          timezone: $('snapTz').value.trim() || undefined,
+          retain_days: parseInt($('snapRetain').value, 10) || 30,
+        };
+        await api('POST', '/api/snapshots/schedule', sc);
+        msg.textContent = '✓ Schedule saved'; msg.className = 'ok';
+        console.debug('[UniFiDeck] snapshot schedule saved', sc);
+      } catch (e) {
+        msg.textContent = 'Error: ' + (e.message || e); msg.className = 'err';
+      }
+      setTimeout(() => { msg.textContent = ''; msg.className = 'muted'; }, 4000);
+    });
+
+    $('captureNowBtn').addEventListener('click', async () => {
+      const btn = $('captureNowBtn');
+      btn.disabled = true; btn.textContent = '⏳ Capturing…';
+      try {
+        await api('POST', '/api/snapshots/capture');
+        $('snapSchedMsg').textContent = 'Capture triggered — snapshots will appear in a few seconds.';
+        $('snapSchedMsg').className = 'ok';
+        // Reload after a short delay to allow server to finish writing.
+        setTimeout(() => loadSnapshots().catch(console.error), 4000);
+      } catch (e) {
+        $('snapSchedMsg').textContent = 'Error: ' + (e.message || e);
+        $('snapSchedMsg').className = 'err';
+      } finally {
+        btn.disabled = false; btn.textContent = '📸 Capture Now';
+        setTimeout(() => { $('snapSchedMsg').textContent = ''; $('snapSchedMsg').className = 'muted'; }, 8000);
+      }
+    });
+
+    // ── Lightbox playlist mode ────────────────────────────────────────────────
+    // Extends the existing lightbox with prev/next navigation and slideshow.
+    // When playlist is active, refresh is disabled (images are static archives).
+
+    let lbPlaylist = [];     // array of snapshot IDs
+    let lbPlaylistIdx = 0;   // current index
+    let lbPlaylistName = '';
+    let lbSlideshowTimer = null;
+    const LB_SLIDE_MS = 3000;
+
+    function lbOpenPlaylist(ids, startIdx, camName, autoPlay = false) {
+      if (!ids || ids.length === 0) return;
+      lbPlaylist = ids;
+      lbPlaylistIdx = startIdx;
+      lbPlaylistName = camName;
+
+      // Show playlist navigation in lightbox toolbar
+      lbEnsurePlaylistControls();
+      $('camLbPlaylistControls').style.display = 'flex';
+
+      // Stop live refresh — these are archived images
+      lbStopRefresh();
+      lbCamId = null;
+
+      const id = lbPlaylist[lbPlaylistIdx];
+      $('camLbName').textContent = `${camName} — ${lbPlaylistIdx + 1} / ${lbPlaylist.length}`;
+      lbStatus.textContent = 'Loading…';
+      lbImg.onload = () => { lbFit(); lbStatus.textContent = snapTimestamp(id); };
+      lbImg.onerror = () => { lbStatus.textContent = 'Image failed to load'; };
+      lbImg.src = `/api/snapshots/${encodeURIComponent(id)}/image`;
+      lb.classList.add('open');
+
+      if (autoPlay) lbStartSlideshow();
+      console.debug('[UniFiDeck] lb playlist open', ids.length, 'idx', startIdx);
+    }
+
+    function lbEnsurePlaylistControls() {
+      if ($('camLbPlaylistControls')) return;
+      const tb = document.querySelector('.cam-lb-toolbar > div');
+      const ctrl = document.createElement('div');
+      ctrl.id = 'camLbPlaylistControls';
+      ctrl.style.cssText = 'display:none;align-items:center;gap:6px;';
+      ctrl.innerHTML = `
+        <button type="button" class="cam-lb-btn" id="camLbPrev" title="Previous (←)">◀</button>
+        <button type="button" class="cam-lb-btn" id="camLbPlaySlide" title="Play/Pause slideshow">▶</button>
+        <button type="button" class="cam-lb-btn" id="camLbNext" title="Next (→)">▶▶</button>`;
+      tb.insertBefore(ctrl, tb.firstChild);
+      $('camLbPrev').addEventListener('click', lbPlaylistPrev);
+      $('camLbNext').addEventListener('click', lbPlaylistNext);
+      $('camLbPlaySlide').addEventListener('click', () => {
+        if (lbSlideshowTimer) lbStopSlideshow(); else lbStartSlideshow();
+      });
+    }
+
+    function snapTimestamp(id) {
+      if (!snapData) return id;
+      for (const grp of (snapData.cameras || [])) {
+        for (const snap of (grp.snapshots || [])) {
+          if (snap.id === id) {
+            return new Date(snap.taken_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+          }
+        }
+      }
+      return id;
+    }
+
+    function lbPlaylistShowIdx(idx) {
+      if (lbPlaylist.length === 0) return;
+      lbPlaylistIdx = ((idx % lbPlaylist.length) + lbPlaylist.length) % lbPlaylist.length;
+      const id = lbPlaylist[lbPlaylistIdx];
+      $('camLbName').textContent = `${lbPlaylistName} — ${lbPlaylistIdx + 1} / ${lbPlaylist.length}`;
+      lbImg.src = `/api/snapshots/${encodeURIComponent(id)}/image`;
+      lbStatus.textContent = snapTimestamp(id);
+      lbFit();
+      // Highlight the active thumb
+      document.querySelectorAll('.snap-thumb').forEach((el, i) => el.classList.toggle('playing', i === lbPlaylistIdx));
+    }
+
+    function lbPlaylistPrev() { lbPlaylistShowIdx(lbPlaylistIdx - 1); }
+    function lbPlaylistNext() {
+      if (lbPlaylistIdx === lbPlaylist.length - 1) lbStopSlideshow();
+      else lbPlaylistShowIdx(lbPlaylistIdx + 1);
+    }
+
+    function lbStartSlideshow() {
+      lbStopSlideshow();
+      const btn = $('camLbPlaySlide');
+      if (btn) { btn.textContent = '⏸'; btn.title = 'Pause'; }
+      lbSlideshowTimer = setInterval(() => {
+        if (lbPlaylistIdx >= lbPlaylist.length - 1) { lbStopSlideshow(); return; }
+        lbPlaylistShowIdx(lbPlaylistIdx + 1);
+      }, LB_SLIDE_MS);
+    }
+    function lbStopSlideshow() {
+      if (lbSlideshowTimer) { clearInterval(lbSlideshowTimer); lbSlideshowTimer = null; }
+      const btn = $('camLbPlaySlide');
+      if (btn) { btn.textContent = '▶'; btn.title = 'Play slideshow'; }
+    }
+
+    // Override the lightbox close to also stop slideshow + hide playlist controls.
+    const _origLbClose = lbClose;
+    lbClose = function() {
+      lbStopSlideshow();
+      lbPlaylist = [];
+      const ctrl = $('camLbPlaylistControls');
+      if (ctrl) ctrl.style.display = 'none';
+      document.querySelectorAll('.snap-thumb.playing').forEach(el => el.classList.remove('playing'));
+      _origLbClose();
+    };
+
+    // Arrow key navigation in playlist mode
+    document.addEventListener('keydown', e => {
+      if (!lb.classList.contains('open') || lbPlaylist.length === 0) return;
+      if (e.key === 'ArrowLeft')  lbPlaylistPrev();
+      if (e.key === 'ArrowRight') lbPlaylistNext();
+      if (e.key === ' ') { e.preventDefault(); if (lbSlideshowTimer) lbStopSlideshow(); else lbStartSlideshow(); }
+    });
+
     // ── Init ───────────────────────────────────────────────────────────────────
     (async function init() {
       try {
@@ -1003,5 +1986,6 @@
       }
     })();
   </script>
+
 </body>
 </html>

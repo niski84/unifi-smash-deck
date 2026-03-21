@@ -1,5 +1,13 @@
+# Build output
 unifi-smash-deck
 unifi-smash-deck.log
 unifi-smash-deck.pid
-data/
+
+# Runtime data — settings, automations, logs, and camera snapshots all contain
+# user-specific or potentially sensitive information; never commit them.
+data/*.json
+data/*.log
+data/snapshots/
+
+# Local env overrides (may contain API keys, IP addresses, etc.)
 .env
