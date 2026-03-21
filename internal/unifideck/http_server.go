@@ -208,20 +208,31 @@ func (s *HTTPServer) handleNetworkSubroutes(w http.ResponseWriter, r *http.Reque
 			writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
 			return
 		}
+		// Optional body: { "name": "Guest Network" } for richer log messages.
+		var reqBody struct {
+			Name string `json:"name"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&reqBody)
+
 		enabled := seg == "enable"
 		c := s.unifiClient()
 		if !c.IsConfigured() {
 			writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "UniFi not configured"})
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+		label := networkID
+		if reqBody.Name != "" {
+			label = fmt.Sprintf("%q (id=%s)", reqBody.Name, networkID)
+		}
+		s.logger.Info("network toggle %s → enabled=%v (fetching full object…)", label, enabled)
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
 		if err := c.SetNetworkEnabled(ctx, networkID, enabled); err != nil {
-			s.logger.Warn("set network enabled=%v id=%s err=%v", enabled, networkID, err)
+			s.logger.Warn("network toggle FAILED %s enabled=%v err=%v", label, enabled, err)
 			writeJSON(w, http.StatusBadGateway, apiResp{Success: false, Error: err.Error()})
 			return
 		}
-		s.logger.Info("network %s network_id=%s enabled=%v", seg, networkID, enabled)
+		s.logger.Info("network toggle OK %s enabled=%v", label, enabled)
 		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"enabled": enabled, "network_id": networkID}})
 	default:
 		writeJSON(w, http.StatusNotFound, apiResp{Success: false, Error: "not found"})

@@ -164,17 +164,60 @@ func (c *UnifiClient) ListNetworks(ctx context.Context) ([]Network, error) {
 	return resp.Data, nil
 }
 
-// SetNetworkEnabled enables or disables a network by ID.
-func (c *UnifiClient) SetNetworkEnabled(ctx context.Context, networkID string, enabled bool) error {
-	payload := map[string]any{"enabled": enabled}
+// getNetworkRaw fetches the full raw JSON object for a single network.
+// UniFi requires the full object in PUT requests — partial patches are silently ignored.
+func (c *UnifiClient) getNetworkRaw(ctx context.Context, networkID string) (map[string]any, error) {
 	var resp struct {
+		Data []map[string]any `json:"data"`
 		Meta struct {
 			RC string `json:"rc"`
 		} `json:"meta"`
 	}
+	// Fetch the single network object by ID from the list endpoint.
+	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("rest/networkconf/"+networkID), nil, &resp); err != nil {
+		return nil, err
+	}
+	if len(resp.Data) == 0 {
+		// Fall back to fetching all and finding by ID.
+		var all struct {
+			Data []map[string]any `json:"data"`
+		}
+		if err := c.doJSON(ctx, http.MethodGet, c.apiURL("rest/networkconf"), nil, &all); err != nil {
+			return nil, err
+		}
+		for _, n := range all.Data {
+			if id, _ := n["_id"].(string); id == networkID {
+				return n, nil
+			}
+		}
+		return nil, fmt.Errorf("network %s not found", networkID)
+	}
+	return resp.Data[0], nil
+}
+
+// SetNetworkEnabled enables or disables a network by ID.
+// It fetches the full object first and sends it back with only the enabled field changed,
+// because the UniFi API silently ignores partial PUT payloads.
+func (c *UnifiClient) SetNetworkEnabled(ctx context.Context, networkID string, enabled bool) error {
+	obj, err := c.getNetworkRaw(ctx, networkID)
+	if err != nil {
+		return fmt.Errorf("get network for update: %w", err)
+	}
+	obj["enabled"] = enabled
+
+	var putResp struct {
+		Data []map[string]any `json:"data"`
+		Meta struct {
+			RC  string `json:"rc"`
+			Msg string `json:"msg,omitempty"`
+		} `json:"meta"`
+	}
 	url := c.apiURL("rest/networkconf/" + networkID)
-	if err := c.doJSON(ctx, http.MethodPut, url, payload, &resp); err != nil {
-		return fmt.Errorf("set network enabled: %w", err)
+	if err := c.doJSON(ctx, http.MethodPut, url, obj, &putResp); err != nil {
+		return fmt.Errorf("put network: %w", err)
+	}
+	if putResp.Meta.RC != "" && putResp.Meta.RC != "ok" {
+		return fmt.Errorf("unifi rejected update: rc=%s msg=%s", putResp.Meta.RC, putResp.Meta.Msg)
 	}
 	return nil
 }

@@ -639,17 +639,22 @@
           const id = ev.target.getAttribute('data-network-id');
           const name = ev.target.getAttribute('data-network-name');
           const wantEnabled = ev.target.checked;
-          console.debug('[UniFiDeck] network toggle', id, wantEnabled);
+          console.debug('[UniFiDeck] network toggle', id, name, wantEnabled);
+          // Optimistically reflect toggle in UI immediately.
+          ev.target.disabled = true;
           try {
             const seg = wantEnabled ? 'enable' : 'disable';
-            await api('POST', `/api/networks/${encodeURIComponent(id)}/${seg}`);
-            networksCache = networksCache.map(n => n._id === id ? { ...n, enabled: wantEnabled } : n);
-            renderNetworks();
-            fillVlanPickSelect();
+            await api('POST', `/api/networks/${encodeURIComponent(id)}/${seg}`, { name });
+            // Reload from UDM Pro to confirm actual state.
+            await loadNetworks();
+            // Auto-refresh the activity log so user sees the entry.
+            await loadLog();
           } catch (err) {
             console.error('[UniFiDeck] network toggle failed', err);
-            ev.target.checked = !wantEnabled;
-            alert(err.message || String(err));
+            ev.target.checked = !wantEnabled; // revert
+            alert('Toggle failed: ' + (err.message || String(err)));
+          } finally {
+            ev.target.disabled = false;
           }
         });
         grid.appendChild(card);
