@@ -51,14 +51,15 @@ func LoadAppConfig(path string) AppConfig {
 			}
 		}
 	}
-	// Env always wins
-	if v := strings.TrimSpace(os.Getenv("UNIFI_HOST")); v != "" {
+	// Env vars override the file only when explicitly set (non-empty).
+	// Keep placeholder-looking values (the literal string "yourpassword" etc.) from .env.example out.
+	if v := strings.TrimSpace(os.Getenv("UNIFI_HOST")); v != "" && v != "https://192.168.1.1" {
 		cfg.UnifiHost = v
 	}
 	if v := strings.TrimSpace(os.Getenv("UNIFI_SITE")); v != "" {
 		cfg.UnifiSite = v
 	}
-	if v := strings.TrimSpace(os.Getenv("UNIFI_API_KEY")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("UNIFI_API_KEY")); v != "" && v != "your-api-key-here" {
 		cfg.UnifiAPIKey = v
 	}
 	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {
