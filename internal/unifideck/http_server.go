@@ -45,7 +45,7 @@ func (s *HTTPServer) unifiClient() *UnifiClient {
 	s.mu.RLock()
 	cfg := s.cfg
 	s.mu.RUnlock()
-	return NewUnifiClient(cfg.UnifiHost, cfg.UnifiUser, cfg.UnifiPass, cfg.UnifiSite)
+	return NewUnifiClient(cfg.UnifiHost, cfg.UnifiAPIKey, cfg.UnifiSite)
 }
 
 func (s *HTTPServer) snapshotCfg() AppConfig {
@@ -103,20 +103,20 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		cfg := s.snapshotCfg()
 		safe := map[string]string{
-			"port":        cfg.Port,
-			"unifi_host":  cfg.UnifiHost,
-			"unifi_user":  cfg.UnifiUser,
-			"unifi_pass":  maskKey(cfg.UnifiPass),
-			"unifi_site":  cfg.UnifiSite,
+			"port":          cfg.Port,
+			"unifi_host":    cfg.UnifiHost,
+			"unifi_site":    cfg.UnifiSite,
+			"unifi_api_key": maskKey(cfg.UnifiAPIKey),
 		}
 		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: safe})
 	case http.MethodPost:
 		var body struct {
-			Port       string `json:"port"`
-			UnifiHost  string `json:"unifi_host"`
-			UnifiUser  string `json:"unifi_user"`
-			UnifiPass  string `json:"unifi_pass"`
-			UnifiSite  string `json:"unifi_site"`
+			Port        string `json:"port"`
+			UnifiHost   string `json:"unifi_host"`
+			UnifiSite   string `json:"unifi_site"`
+			UnifiAPIKey string `json:"unifi_api_key"`
+			// Accept unifi_pass as alias for unifi_api_key for backward compat.
+			UnifiPass string `json:"unifi_pass"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "invalid JSON"})
@@ -129,14 +129,18 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if body.UnifiHost != "" {
 			cur.UnifiHost = strings.TrimRight(body.UnifiHost, "/")
 		}
-		if body.UnifiUser != "" {
-			cur.UnifiUser = body.UnifiUser
-		}
-		if body.UnifiPass != "" && !isMasked(body.UnifiPass) {
-			cur.UnifiPass = body.UnifiPass
-		}
 		if body.UnifiSite != "" {
 			cur.UnifiSite = body.UnifiSite
+		}
+		// Accept API key from either field name; unifi_api_key takes precedence.
+		keyVal := body.UnifiAPIKey
+		if keyVal == "" {
+			keyVal = body.UnifiPass
+		}
+		if keyVal != "" && !isMasked(keyVal) {
+			cur.UnifiAPIKey = keyVal
+			// Clear the old pass field so saved JSON stays clean.
+			cur.UnifiPass = ""
 		}
 		if err := SaveAppConfig(s.settingsPath, cur); err != nil {
 			writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: err.Error()})
@@ -147,7 +151,7 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		// Test connection
 		cfg := s.snapshotCfg()
-		c := NewUnifiClient(cfg.UnifiHost, cfg.UnifiUser, cfg.UnifiPass, cfg.UnifiSite)
+		c := NewUnifiClient(cfg.UnifiHost, cfg.UnifiAPIKey, cfg.UnifiSite)
 		if !c.IsConfigured() {
 			writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]string{"status": "not configured"}})
 			return

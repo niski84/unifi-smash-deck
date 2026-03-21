@@ -421,12 +421,9 @@
       </div>
       <div class="row">
         <div>
-          <label for="cfgUser">Username</label>
-          <input id="cfgUser" data-testid="settings-user" autocomplete="username" placeholder="admin" />
-        </div>
-        <div>
-          <label for="cfgPass">Password</label>
-          <input id="cfgPass" type="password" data-testid="settings-pass" placeholder="leave blank to keep saved" autocomplete="current-password" />
+          <label for="cfgApiKey">API Key</label>
+          <input id="cfgApiKey" type="password" data-testid="settings-api-key" placeholder="leave blank to keep saved" autocomplete="off" />
+          <p class="muted" style="font-size:11px;margin:0 0 10px 0;">Generate in UniFi Network → Settings → Control Plane → Integrations</p>
         </div>
       </div>
       <div class="row">
@@ -666,7 +663,7 @@
         const d = await api('GET', '/api/networks');
         networksCache = d.networks || [];
         const ok = d.configured !== false;
-        $('netStatus').textContent = ok ? `${networksCache.length} network(s)` : 'UniFi not configured — add settings below';
+        $('netStatus').textContent = ok ? `${networksCache.length} network(s)` : 'UniFi not configured — add host + API key in Settings';
         $('netStatus').className = ok ? 'muted' : 'err';
         console.debug('[UniFiDeck] networks', networksCache.length);
       } catch (e) {
@@ -933,13 +930,12 @@
       try {
         const body = { port: ($('cfgPort').value || '8099').trim() };
         if ($('cfgHost').value.trim()) body.unifi_host = $('cfgHost').value.trim();
-        if ($('cfgUser').value.trim()) body.unifi_user = $('cfgUser').value.trim();
         if ($('cfgSite').value.trim()) body.unifi_site = $('cfgSite').value.trim();
-        if ($('cfgPass').value.trim()) body.unifi_pass = $('cfgPass').value.trim();
+        if ($('cfgApiKey').value.trim()) body.unifi_api_key = $('cfgApiKey').value.trim();
         await api('POST', '/api/settings', body);
         $('settingsMsg').textContent = 'Saved ✓';
         $('settingsMsg').className = 'ok';
-        $('cfgPass').value = '';
+        $('cfgApiKey').value = '';
         await loadNetworks();
       } catch (e) {
         $('settingsMsg').textContent = e.message;
@@ -983,17 +979,16 @@
       try {
         const st = await api('GET', '/api/settings');
         $('cfgHost').value = st.unifi_host || '';
-        $('cfgUser').value = st.unifi_user || '';
         $('cfgSite').value = st.unifi_site || 'default';
         $('cfgPort').value = st.port || '8099';
-        $('cfgPass').value = '';
-        const hasCreds = st.unifi_host && st.unifi_user && st.unifi_pass;
-        if (hasCreds) {
-          $('cfgPass').placeholder = '•••••••• (saved — leave blank to keep)';
+        $('cfgApiKey').value = '';
+        const hasKey = st.unifi_host && st.unifi_api_key;
+        if (hasKey) {
+          $('cfgApiKey').placeholder = '•••••••• (saved — leave blank to keep)';
         }
         const connEl = $('connStatus');
-        connEl.textContent = hasCreds ? `Host: ${st.unifi_host}` : 'Not configured';
-        connEl.className = hasCreds ? 'muted' : 'warn';
+        connEl.textContent = hasKey ? `Host: ${st.unifi_host}` : 'Not configured — add API key below';
+        connEl.className = hasKey ? 'muted' : 'warn';
         console.debug('[UniFiDeck] settings loaded', st.unifi_host);
         await loadNetworks();
         await loadAutomations();

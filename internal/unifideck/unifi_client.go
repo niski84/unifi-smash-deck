@@ -8,35 +8,32 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/cookiejar"
 	"strings"
-	"sync"
 	"time"
 )
 
 // Network represents a UniFi network/VLAN from rest/networkconf.
 type Network struct {
-	ID          string `json:"_id"`
-	Name        string `json:"name"`
-	Purpose     string `json:"purpose"`
-	VlanID      int    `json:"vlan,omitempty"`
-	Enabled     bool   `json:"enabled"`
-	IPSubnet    string `json:"ip_subnet,omitempty"`
+	ID           string `json:"_id"`
+	Name         string `json:"name"`
+	Purpose      string `json:"purpose"`
+	VlanID       int    `json:"vlan,omitempty"`
+	Enabled      bool   `json:"enabled"`
+	IPSubnet     string `json:"ip_subnet,omitempty"`
 	NetworkGroup string `json:"networkgroup,omitempty"`
 	DHCPEnabled  bool   `json:"dhcpd_enabled,omitempty"`
 }
 
 // Client represents a connected client device.
 type Client struct {
-	MAC        string `json:"mac"`
-	IP         string `json:"ip,omitempty"`
-	Hostname   string `json:"hostname,omitempty"`
-	Name       string `json:"name,omitempty"`
-	NetworkID  string `json:"network_id,omitempty"`
-	VLAN       int    `json:"vlan,omitempty"`
-	SignalDBM  int    `json:"signal,omitempty"`
-	Wired      bool   `json:"is_wired"`
-	LastSeen   int64  `json:"last_seen,omitempty"`
+	MAC      string `json:"mac"`
+	IP       string `json:"ip,omitempty"`
+	Hostname string `json:"hostname,omitempty"`
+	Name     string `json:"name,omitempty"`
+	VLAN     int    `json:"vlan,omitempty"`
+	Signal   int    `json:"signal,omitempty"`
+	Wired    bool   `json:"is_wired"`
+	LastSeen int64  `json:"last_seen,omitempty"`
 }
 
 // Device represents a UniFi network device (AP, switch, etc).
@@ -56,77 +53,38 @@ type SiteHealth struct {
 	NumUser   int    `json:"num_user,omitempty"`
 	NumGuest  int    `json:"num_guest,omitempty"`
 	NumIoT    int    `json:"num_iot,omitempty"`
-	RxBytesR  int64  `json:"rx_bytes-r,omitempty"`
-	TxBytesR  int64  `json:"tx_bytes-r,omitempty"`
 }
 
-// UnifiClient handles session auth and API calls to a UDM Pro.
+// UnifiClient calls the UDM Pro API using an API key (X-API-KEY header).
+// This matches the official local Network API described at:
+//   UniFi Network > Settings > Control Plane > Integrations
 type UnifiClient struct {
-	host      string
-	user      string
-	pass      string
-	site      string
+	host       string
+	site       string
+	apiKey     string
 	httpClient *http.Client
-	jar        *cookiejar.Jar
-	mu         sync.Mutex
-	csrfToken  string
-	loggedIn   bool
 }
 
-func NewUnifiClient(host, user, pass, site string) *UnifiClient {
-	jar, _ := cookiejar.New(nil)
+func NewUnifiClient(host, apiKey, site string) *UnifiClient {
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // UDM Pro uses self-signed cert
 	}
 	return &UnifiClient{
-		host: strings.TrimRight(host, "/"),
-		user: user,
-		pass: pass,
-		site: site,
-		jar:  jar,
+		host:   strings.TrimRight(host, "/"),
+		apiKey: apiKey,
+		site:   site,
 		httpClient: &http.Client{
 			Transport: transport,
 			Timeout:   20 * time.Second,
-			Jar:       jar,
 		},
 	}
 }
 
 func (c *UnifiClient) IsConfigured() bool {
-	return c.host != "" && c.user != "" && c.pass != ""
+	return c.host != "" && c.apiKey != ""
 }
 
-// login authenticates and stores the session cookie + CSRF token.
-func (c *UnifiClient) login(ctx context.Context) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	payload, _ := json.Marshal(map[string]string{"username": c.user, "password": c.pass})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.host+"/api/auth/login", bytes.NewReader(payload))
-	if err != nil {
-		return fmt.Errorf("unifi login request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("unifi login: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("unifi login failed: HTTP %d — %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-	// Extract CSRF token from response headers (X-Csrf-Token or x-updated-csrf-token)
-	if tok := resp.Header.Get("X-Csrf-Token"); tok != "" {
-		c.csrfToken = tok
-	} else if tok := resp.Header.Get("x-updated-csrf-token"); tok != "" {
-		c.csrfToken = tok
-	}
-	c.loggedIn = true
-	return nil
-}
-
-// apiURL builds the full URL for a site-level endpoint.
+// apiURL builds the full URL for a site-level network endpoint.
 func (c *UnifiClient) apiURL(path string) string {
 	site := c.site
 	if site == "" {
@@ -135,14 +93,8 @@ func (c *UnifiClient) apiURL(path string) string {
 	return fmt.Sprintf("%s/proxy/network/api/s/%s/%s", c.host, site, strings.TrimPrefix(path, "/"))
 }
 
-// doJSON performs a JSON request, re-logging in on 401.
+// doJSON performs a JSON API request using the X-API-KEY header.
 func (c *UnifiClient) doJSON(ctx context.Context, method, url string, body any, out any) error {
-	if !c.loggedIn {
-		if err := c.login(ctx); err != nil {
-			return err
-		}
-	}
-
 	var bodyReader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -156,66 +108,35 @@ func (c *UnifiClient) doJSON(ctx context.Context, method, url string, body any, 
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-API-KEY", c.apiKey)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	c.mu.Lock()
-	if c.csrfToken != "" {
-		req.Header.Set("X-Csrf-Token", c.csrfToken)
-	}
-	c.mu.Unlock()
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Re-login on 401 and retry once
-	if resp.StatusCode == http.StatusUnauthorized {
-		c.mu.Lock()
-		c.loggedIn = false
-		c.mu.Unlock()
-		if err := c.login(ctx); err != nil {
-			return err
-		}
-		var retryReader io.Reader
-		if body != nil {
-			b, _ := json.Marshal(body)
-			retryReader = bytes.NewReader(b)
-		}
-		req2, _ := http.NewRequestWithContext(ctx, method, url, retryReader)
-		req2.Header.Set("Accept", "application/json")
-		if body != nil {
-			req2.Header.Set("Content-Type", "application/json")
-		}
-		c.mu.Lock()
-		if c.csrfToken != "" {
-			req2.Header.Set("X-Csrf-Token", c.csrfToken)
-		}
-		c.mu.Unlock()
-		resp2, err := c.httpClient.Do(req2)
-		if err != nil {
-			return err
-		}
-		defer resp2.Body.Close()
-		resp = resp2
-	}
-
-	// Update CSRF token from response
-	if tok := resp.Header.Get("X-Csrf-Token"); tok != "" {
-		c.mu.Lock()
-		c.csrfToken = tok
-		c.mu.Unlock()
-	}
-
 	rawBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("read response: %w", err)
 	}
 
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		snippet := strings.TrimSpace(string(rawBody))
+		if len(snippet) > 200 {
+			snippet = snippet[:200]
+		}
+		return fmt.Errorf("auth failed (HTTP %d) — check your API key. Response: %s", resp.StatusCode, snippet)
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("unifi API HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(rawBody)))
+		snippet := strings.TrimSpace(string(rawBody))
+		if len(snippet) > 200 {
+			snippet = snippet[:200]
+		}
+		return fmt.Errorf("unifi API HTTP %d: %s", resp.StatusCode, snippet)
 	}
 
 	if out != nil && len(rawBody) > 0 {
@@ -300,22 +221,18 @@ func (c *UnifiClient) SiteHealthList(ctx context.Context) ([]SiteHealth, error) 
 	return resp.Data, nil
 }
 
-// TestConnection verifies login and returns a brief status string.
+// TestConnection verifies the API key by fetching site health.
 func (c *UnifiClient) TestConnection(ctx context.Context) (string, error) {
-	c.mu.Lock()
-	c.loggedIn = false
-	c.mu.Unlock()
-	if err := c.login(ctx); err != nil {
-		return "", err
-	}
 	health, err := c.SiteHealthList(ctx)
 	if err != nil {
-		return "login OK, health check failed: " + err.Error(), nil
+		return "", err
 	}
+	total := 0
 	for _, h := range health {
-		if h.Subsystem == "lan" || h.Subsystem == "wlan" {
-			return fmt.Sprintf("Connected — %d client(s)", h.NumUser+h.NumGuest+h.NumIoT), nil
-		}
+		total += h.NumUser + h.NumGuest + h.NumIoT
+	}
+	if len(health) > 0 {
+		return fmt.Sprintf("Connected — %d client(s) across %d subsystem(s)", total, len(health)), nil
 	}
 	return "Connected OK", nil
 }
