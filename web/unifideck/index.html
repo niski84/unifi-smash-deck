@@ -1,0 +1,1007 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UniFi Smash Deck</title>
+  <style>
+    :root {
+      --bg: #0b0f1a;
+      --card: #131929;
+      --card-bg: #131929;
+      --border: #1e2d4a;
+      --accent: #006FFF;
+      --accent-hover: #338CFF;
+      --text: #e8edf8;
+      --muted: #8a9cbd;
+      --ok: #3ddba5;
+      --warn: #f5a623;
+      --err-color: #ff6b6b;
+      --hero-border: #1e3a6e;
+      --input-bg: #0d1525;
+      --input-border: #2a3d5e;
+      --input-color: #e8edf8;
+      --body-bg-1: #0f1929;
+      --body-bg-2: #090e18;
+      --body-bg-3: #060a12;
+      --badge-vlan: #142a52;
+      --badge-corp: #0e3248;
+    }
+    body.light {
+      --bg: #f0f3fa;
+      --card: #ffffff;
+      --card-bg: #ffffff;
+      --border: #c8d4e8;
+      --accent: #006FFF;
+      --accent-hover: #338CFF;
+      --text: #0d1525;
+      --muted: #5a6a85;
+      --ok: #1a9468;
+      --warn: #c07a10;
+      --err-color: #c0181a;
+      --hero-border: #8aaad8;
+      --input-bg: #fff;
+      --input-border: #b0c0d8;
+      --input-color: #0d1525;
+      --body-bg-1: #dce8f8;
+      --body-bg-2: #e8f0fb;
+      --body-bg-3: #f0f3fa;
+      --badge-vlan: #dde8fb;
+      --badge-corp: #d8eef8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Trebuchet MS", Arial, sans-serif;
+      margin: 0;
+      padding: 24px;
+      background: radial-gradient(circle at top, var(--body-bg-1) 0%, var(--body-bg-2) 45%, var(--body-bg-3) 100%);
+      color: var(--text);
+      min-height: 100vh;
+      transition: background 0.2s, color 0.2s;
+    }
+    .page-title {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 0;
+      padding: 10px 16px;
+      border-radius: 10px;
+      border: 2px solid var(--border);
+      background: linear-gradient(180deg, rgba(0,111,255,0.12) 0%, rgba(0,111,255,0.04) 100%);
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      font-size: 1.15rem;
+    }
+    .page-title .logo-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 8px var(--accent);
+      flex-shrink: 0;
+    }
+    .theme-hero {
+      margin: 0 0 14px 0;
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px dashed var(--hero-border);
+      background: rgba(0,111,255,0.05);
+      color: var(--muted);
+      font-size: 13px;
+      max-width: 960px;
+    }
+    /* ── Tabs ─────────────────────────────────────── */
+    .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .tab-btn {
+      position: relative;
+      overflow: hidden;
+      padding: 8px 16px;
+      border-radius: 999px;
+      border: 2px solid transparent;
+      background: rgba(0,111,255,0.08);
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 13px;
+      letter-spacing: 0.3px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .tab-btn:hover {
+      background: rgba(0,111,255,0.18);
+      color: var(--text);
+    }
+    .tab-btn.active {
+      background: linear-gradient(180deg, #338CFF 0%, #006FFF 100%);
+      color: #fff;
+      border-color: #006FFF;
+      box-shadow: 0 2px 12px rgba(0,111,255,0.4);
+    }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    /* ── Cards ────────────────────────────────────── */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .card h3 { margin: 0 0 14px 0; font-size: 15px; color: var(--text); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+    /* ── Network cards ────────────────────────────── */
+    .net-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      background: rgba(0,111,255,0.04);
+      transition: border-color 0.15s;
+    }
+    .net-card:hover { border-color: rgba(0,111,255,0.35); }
+    .net-card.disabled { opacity: 0.55; }
+    .net-name { font-weight: 700; font-size: 1rem; }
+    .net-meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .badge {
+      display: inline-block;
+      font-size: 11px; padding: 2px 8px;
+      border-radius: 6px;
+      background: var(--badge-vlan);
+      margin-right: 4px;
+      color: var(--muted);
+    }
+    .badge.corp { background: var(--badge-corp); color: #7ab0e8; }
+    .badge.guest { background: rgba(245,166,35,0.15); color: var(--warn); }
+    .badge.vlan-id { background: rgba(0,111,255,0.12); color: var(--accent); }
+    .badge.enabled { background: rgba(61,219,165,0.12); color: var(--ok); }
+    .badge.disabled-b { background: rgba(255,107,107,0.12); color: var(--err-color); }
+    /* ── Power toggle ─────────────────────────────── */
+    .pwr-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+    .pwr-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .pwr-toggle { position: relative; width: 52px; height: 30px; flex-shrink: 0; }
+    .pwr-toggle input { opacity: 0; width: 0; height: 0; }
+    .pwr-slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background: #1e2d4a; border-radius: 999px;
+      transition: background 0.2s;
+      border: 1px solid #2a3d5e;
+    }
+    .pwr-slider::before {
+      position: absolute; content: "";
+      height: 24px; width: 24px; left: 3px; bottom: 2px;
+      background: #fff; border-radius: 50%;
+      transition: transform 0.2s;
+      box-shadow: 0 1px 4px rgba(0,0,0,.4);
+    }
+    .pwr-toggle input:checked + .pwr-slider { background: linear-gradient(180deg, #338CFF 0%, #006FFF 100%); border-color: #006FFF; }
+    .pwr-toggle input:checked + .pwr-slider::before { transform: translateX(22px); }
+    .pwr-toggle input:focus-visible + .pwr-slider { outline: 2px solid var(--accent); outline-offset: 2px; }
+    /* ── Buttons ──────────────────────────────────── */
+    button.primary {
+      position: relative; overflow: hidden;
+      border: 2px solid rgba(0,111,255,0.6);
+      border-radius: 999px;
+      background: linear-gradient(180deg, #338CFF 0%, #006FFF 100%);
+      color: #fff;
+      padding: 9px 18px;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.3px;
+      cursor: pointer;
+      box-shadow: 0 2px 10px rgba(0,111,255,0.35);
+      transition: filter 0.1s ease, transform 0.08s ease;
+    }
+    button.primary:hover { filter: brightness(1.1); }
+    button.primary:active { transform: translateY(1px); filter: brightness(0.95); }
+    button.secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    button.secondary:hover { border-color: var(--accent); color: var(--text); }
+    button.danger {
+      background: rgba(255,107,107,0.12);
+      border: 1px solid rgba(255,107,107,0.35);
+      color: var(--err-color);
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    button.danger:hover { background: rgba(255,107,107,0.22); }
+    /* ── Theme toggle ─────────────────────────────── */
+    #themeToggleBtn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background 0.15s;
+    }
+    #themeToggleBtn:hover { background: rgba(0,111,255,0.1); }
+    /* ── Form elements ────────────────────────────── */
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    input, select, textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--input-border);
+      background: var(--input-bg);
+      color: var(--input-color);
+      font-family: inherit;
+      font-size: 14px;
+      margin-bottom: 10px;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+    .row > * { flex: 1; min-width: 140px; }
+    /* ── Automation cards ─────────────────────────── */
+    .auto-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      background: rgba(0,111,255,0.03);
+    }
+    .auto-card .auto-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .auto-title { font-weight: 700; font-size: 1rem; }
+    .auto-meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .auto-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    /* ── Modal ────────────────────────────────────── */
+    .modal-bg {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.7);
+      z-index: 50;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 24px;
+      overflow-y: auto;
+    }
+    .modal-bg.open { display: flex; }
+    .modal {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      max-width: 640px; width: 100%;
+      padding: 22px; margin-top: 20px;
+    }
+    .modal h3 { margin: 0 0 16px 0; }
+    /* ── Log ──────────────────────────────────────── */
+    pre.log {
+      font-size: 11px;
+      background: #060a12;
+      padding: 12px;
+      border-radius: 8px;
+      max-height: 360px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border: 1px solid var(--border);
+    }
+    .err { color: var(--err-color); }
+    .ok { color: var(--ok); }
+    .warn { color: var(--warn); }
+    .muted { color: var(--muted); font-size: 13px; }
+    /* ── Status dot ───────────────────────────────── */
+    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+    .status-dot.on { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+    .status-dot.off { background: #3a4a6a; }
+    /* ── Clients table ────────────────────────────── */
+    .client-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .client-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+    .client-table td { padding: 6px 8px; border-bottom: 1px solid rgba(30,45,74,0.5); }
+    .client-table tr:hover td { background: rgba(0,111,255,0.04); }
+    /* ── Toolbar ──────────────────────────────────── */
+    .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+    /* ── Vlan target list ─────────────────────────── */
+    .vlan-target-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+    .vlan-target-row { display: flex; align-items: center; gap: 8px; background: rgba(0,111,255,0.05); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; }
+    .vlan-target-row .vt-name { flex: 1; font-size: 13px; }
+    .vlan-target-row .vt-rm { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 4px; }
+    .vlan-target-row .vt-rm:hover { color: var(--err-color); }
+    /* ── Schedule block ───────────────────────────── */
+    .sched-block { background: rgba(0,111,255,0.05); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 10px; }
+    .dow-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+    .dow-btn {
+      padding: 5px 10px; border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent; color: var(--muted);
+      cursor: pointer; font-size: 12px; font-weight: 600;
+      transition: all 0.12s;
+    }
+    .dow-btn.active { background: rgba(0,111,255,0.2); border-color: var(--accent); color: var(--accent); }
+    @media (max-width: 600px) {
+      .grid { grid-template-columns: 1fr; }
+      .row > * { min-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+    <div class="page-title" data-testid="page-title">
+      <span class="logo-dot"></span>
+      UniFi Smash Deck
+    </div>
+    <button type="button" id="themeToggleBtn" data-testid="theme-toggle" title="Toggle dark/light theme">🌙 Dark</button>
+    <span id="connStatus" class="muted" style="font-size:12px;"></span>
+  </div>
+  <div class="theme-hero">
+    Control and schedule your <strong>UniFi UDM Pro</strong> networks &amp; VLANs.
+    Set automations to enable/disable VLANs on a schedule — like shutting down guest Wi-Fi at night.
+  </div>
+
+  <div class="tabs">
+    <button type="button" class="tab-btn active" data-tab="networks" data-testid="tab-networks">Networks</button>
+    <button type="button" class="tab-btn" data-tab="clients" data-testid="tab-clients">Clients</button>
+    <button type="button" class="tab-btn" data-tab="automations" data-testid="tab-automations">Automations</button>
+    <button type="button" class="tab-btn" data-tab="settings" data-testid="tab-settings">Settings &amp; Logs</button>
+  </div>
+
+  <!-- ── Networks panel ── -->
+  <section id="panel-networks" class="panel active">
+    <div class="card">
+      <div class="toolbar">
+        <button type="button" class="primary" id="refreshNetworksBtn" data-testid="refresh-networks">Refresh</button>
+        <input type="search" id="netSearchInput" placeholder="🔍 Search networks…" style="flex:1;min-width:160px;max-width:300px;margin-bottom:0;" data-testid="net-search" aria-label="Search networks" />
+        <span id="netStatus" class="muted"></span>
+      </div>
+      <div id="netGrid" class="grid" data-testid="network-grid"></div>
+    </div>
+  </section>
+
+  <!-- ── Clients panel ── -->
+  <section id="panel-clients" class="panel">
+    <div class="card">
+      <div class="toolbar">
+        <button type="button" class="primary" id="refreshClientsBtn" data-testid="refresh-clients">Refresh</button>
+        <input type="search" id="clientSearchInput" placeholder="🔍 Search by hostname / MAC / IP…" style="flex:1;min-width:180px;max-width:360px;margin-bottom:0;" aria-label="Search clients" />
+        <span id="clientStatus" class="muted"></span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="client-table" id="clientTable" data-testid="client-table">
+          <thead>
+            <tr>
+              <th>Hostname / Name</th>
+              <th>MAC</th>
+              <th>IP</th>
+              <th>Type</th>
+              <th>Signal</th>
+            </tr>
+          </thead>
+          <tbody id="clientTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Automations panel ── -->
+  <section id="panel-automations" class="panel">
+    <div class="card row" style="align-items:center;">
+      <button type="button" class="primary" id="newAutoBtn" data-testid="new-automation">+ New Automation</button>
+      <span class="muted">Schedule VLAN enable/disable actions at specific times.</span>
+    </div>
+    <div class="grid" id="autoGrid" data-testid="automation-grid"></div>
+  </section>
+
+  <!-- ── Settings panel ── -->
+  <section id="panel-settings" class="panel">
+    <div class="card">
+      <h3>Appearance</h3>
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <span class="muted">Theme</span>
+        <button type="button" id="themeToggleBtnSettings" data-testid="theme-toggle-settings" style="padding:8px 20px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-weight:600;">
+          Switch to Light mode
+        </button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>UniFi Controller</h3>
+      <p class="muted" style="font-size:12px;margin:0 0 12px 0;">
+        Connect to your UDM Pro. The host should include the scheme, e.g. <code>https://192.168.1.1</code>.
+        Leave password blank to keep the existing value.
+      </p>
+      <div class="row">
+        <div>
+          <label for="cfgHost">Controller Host</label>
+          <input id="cfgHost" data-testid="settings-host" placeholder="https://192.168.1.1" autocomplete="off" />
+        </div>
+        <div>
+          <label for="cfgSite">Site name</label>
+          <input id="cfgSite" data-testid="settings-site" placeholder="default" autocomplete="off" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="cfgUser">Username</label>
+          <input id="cfgUser" data-testid="settings-user" autocomplete="username" placeholder="admin" />
+        </div>
+        <div>
+          <label for="cfgPass">Password</label>
+          <input id="cfgPass" type="password" data-testid="settings-pass" placeholder="leave blank to keep saved" autocomplete="current-password" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="cfgPort">Server port (requires restart)</label>
+          <input id="cfgPort" data-testid="settings-port" placeholder="8099" style="max-width:120px;" />
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <button type="button" class="primary" id="saveSettingsBtn" data-testid="save-settings">Save Settings</button>
+        <button type="button" class="secondary" id="testConnBtn" data-testid="test-connection">Test Connection</button>
+        <span id="settingsMsg" style="font-size:13px;"></span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Activity Log</h3>
+      <div style="display:flex;gap:10px;margin-bottom:10px;">
+        <button type="button" class="secondary" id="refreshLogBtn" data-testid="refresh-log">Refresh Log</button>
+      </div>
+      <pre class="log" id="logPre" data-testid="activity-log"></pre>
+    </div>
+  </section>
+
+  <!-- ── Automation Modal ── -->
+  <div class="modal-bg" id="autoModal" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>Create / Edit Automation</h3>
+      <input type="hidden" id="editId" />
+
+      <label for="autoName">Name</label>
+      <input id="autoName" data-testid="auto-name" placeholder="e.g. Shut down guest VLAN at night" />
+
+      <div class="row">
+        <div>
+          <label for="autoType">Action</label>
+          <select id="autoType" data-testid="auto-type">
+            <option value="vlan_disable">Disable VLAN(s)</option>
+            <option value="vlan_enable">Enable VLAN(s)</option>
+            <option value="vlan_toggle">Toggle VLAN(s)</option>
+          </select>
+        </div>
+        <div>
+          <label for="runMode">When</label>
+          <select id="runMode" data-testid="auto-run-mode">
+            <option value="manual">Manual only (run button)</option>
+            <option value="scheduled">Scheduled (calendar)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- VLAN targets -->
+      <label>VLAN / Network targets</label>
+      <div id="vlanTargetList" class="vlan-target-list"></div>
+      <div class="row" style="margin-bottom:10px;">
+        <select id="vlanPickSelect" data-testid="vlan-pick-select" style="margin-bottom:0;">
+          <option value="">— select a network —</option>
+        </select>
+        <button type="button" class="secondary" id="addVlanTargetBtn" data-testid="add-vlan-target" style="flex:0;white-space:nowrap;">+ Add</button>
+      </div>
+
+      <!-- Schedule block -->
+      <div id="scheduleBlock" class="sched-block" style="display:none;">
+        <strong style="font-size:13px;color:var(--text);">Schedule</strong>
+        <div class="row" style="margin-top:10px;">
+          <div>
+            <label for="schedTime">Time (24h)</label>
+            <input id="schedTime" placeholder="22:30" data-testid="sched-time" />
+          </div>
+          <div>
+            <label for="schedTz">Timezone</label>
+            <select id="schedTz" data-testid="sched-tz">
+              <option value="">Local server</option>
+              <option value="America/Los_Angeles">America/Los_Angeles</option>
+              <option value="America/Denver">America/Denver</option>
+              <option value="America/Chicago">America/Chicago</option>
+              <option value="America/New_York">America/New_York</option>
+              <option value="UTC">UTC</option>
+            </select>
+          </div>
+        </div>
+        <label>Days (empty = every day)</label>
+        <div class="dow-row" id="dowRow">
+          <button type="button" class="dow-btn" data-dow="0">Sun</button>
+          <button type="button" class="dow-btn" data-dow="1">Mon</button>
+          <button type="button" class="dow-btn" data-dow="2">Tue</button>
+          <button type="button" class="dow-btn" data-dow="3">Wed</button>
+          <button type="button" class="dow-btn" data-dow="4">Thu</button>
+          <button type="button" class="dow-btn" data-dow="5">Fri</button>
+          <button type="button" class="dow-btn" data-dow="6">Sat</button>
+        </div>
+        <div class="row">
+          <div>
+            <label for="schedEnd">End date (optional)</label>
+            <input id="schedEnd" placeholder="YYYY-MM-DD" data-testid="sched-end" />
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;padding-top:22px;">
+            <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer;">
+              <input type="checkbox" id="schedSkipWknd" data-testid="sched-skip-weekends" style="width:auto;margin-bottom:0;" />
+              Skip weekends
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:16px;">
+        <button type="button" class="primary" id="saveAutoBtn" data-testid="save-automation">Save</button>
+        <button type="button" class="secondary" id="cancelModalBtn">Cancel</button>
+      </div>
+      <p id="autoFormErr" class="err" style="margin-top:8px;"></p>
+    </div>
+  </div>
+
+  <script>
+    console.debug('[UniFiDeck] UI loaded');
+    const $ = (id) => document.getElementById(id);
+
+    function escapeHtml(s) {
+      if (!s) return '';
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    function escapeAttr(s) {
+      if (!s) return '';
+      return String(s).replace(/"/g,'&quot;');
+    }
+
+    async function api(method, path, body) {
+      const opt = { method, headers: {} };
+      if (body !== undefined) {
+        opt.headers['Content-Type'] = 'application/json';
+        opt.body = JSON.stringify(body);
+      }
+      const res = await fetch(path, opt);
+      const j = await res.json();
+      if (!j.success) throw new Error(j.error || 'API error');
+      return j.data;
+    }
+
+    // ── Theme ──────────────────────────────────────────────────────────────────
+    function applyTheme(light) {
+      document.body.classList.toggle('light', !!light);
+      const label = light ? '☀ Light' : '🌙 Dark';
+      const switchTo = light ? 'Switch to Dark mode' : 'Switch to Light mode';
+      const tb = $('themeToggleBtn');
+      if (tb) tb.textContent = label;
+      const ts = $('themeToggleBtnSettings');
+      if (ts) ts.textContent = switchTo;
+    }
+    function isLightTheme() { return localStorage.getItem('unifideck.theme') === 'light'; }
+    function toggleTheme() {
+      const next = !isLightTheme();
+      localStorage.setItem('unifideck.theme', next ? 'light' : 'dark');
+      applyTheme(next);
+    }
+    $('themeToggleBtn').onclick = toggleTheme;
+    const tbs = $('themeToggleBtnSettings');
+    if (tbs) tbs.onclick = toggleTheme;
+    applyTheme(isLightTheme());
+
+    // ── Tabs ───────────────────────────────────────────────────────────────────
+    document.querySelectorAll('.tab-btn').forEach((btn) => {
+      btn.onclick = () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        $('panel-' + btn.dataset.tab).classList.add('active');
+        console.debug('[UniFiDeck] tab', btn.dataset.tab);
+      };
+    });
+
+    // ── Networks ───────────────────────────────────────────────────────────────
+    let networksCache = [];
+
+    function purposeBadge(p) {
+      if (p === 'corporate') return `<span class="badge corp">corporate</span>`;
+      if (p === 'guest') return `<span class="badge guest">guest</span>`;
+      return `<span class="badge">${escapeHtml(p || 'other')}</span>`;
+    }
+
+    function renderNetworks() {
+      const grid = $('netGrid');
+      grid.innerHTML = '';
+      const q = ($('netSearchInput').value || '').toLowerCase().trim();
+      const filtered = networksCache.filter(n =>
+        !q || (n.name || '').toLowerCase().includes(q) || String(n.vlan || '').includes(q)
+      );
+      if (filtered.length === 0) {
+        grid.innerHTML = `<p class="muted">No networks found.</p>`;
+        return;
+      }
+      filtered.forEach(net => {
+        const card = document.createElement('div');
+        card.className = 'net-card' + (net.enabled ? '' : ' disabled');
+        card.dataset.testid = 'network-card';
+        card.dataset.networkId = net._id;
+        const vlanBadge = net.vlan ? `<span class="badge vlan-id">VLAN ${net.vlan}</span>` : '';
+        const enBadge = net.enabled
+          ? `<span class="badge enabled">enabled</span>`
+          : `<span class="badge disabled-b">disabled</span>`;
+        card.innerHTML = `
+          <div class="net-name" data-testid="network-name">${escapeHtml(net.name)}</div>
+          <div class="net-meta" style="margin-top:5px;">
+            ${purposeBadge(net.purpose)}${vlanBadge}${enBadge}
+          </div>
+          ${net.ip_subnet ? `<div class="net-meta" style="margin-top:4px;">Subnet: <code>${escapeHtml(net.ip_subnet)}</code></div>` : ''}
+          <div class="pwr-row">
+            <span class="pwr-label">Network Active</span>
+            <label class="pwr-toggle" data-testid="network-toggle" title="${net.enabled ? 'Click to disable' : 'Click to enable'}">
+              <input type="checkbox" ${net.enabled ? 'checked' : ''} data-network-id="${escapeAttr(net._id)}" data-network-name="${escapeAttr(net.name)}" aria-label="Toggle network" />
+              <span class="pwr-slider"></span>
+            </label>
+          </div>`;
+        card.querySelector('input[type="checkbox"]').addEventListener('change', async (ev) => {
+          const id = ev.target.getAttribute('data-network-id');
+          const name = ev.target.getAttribute('data-network-name');
+          const wantEnabled = ev.target.checked;
+          console.debug('[UniFiDeck] network toggle', id, wantEnabled);
+          try {
+            const seg = wantEnabled ? 'enable' : 'disable';
+            await api('POST', `/api/networks/${encodeURIComponent(id)}/${seg}`);
+            networksCache = networksCache.map(n => n._id === id ? { ...n, enabled: wantEnabled } : n);
+            renderNetworks();
+            fillVlanPickSelect();
+          } catch (err) {
+            console.error('[UniFiDeck] network toggle failed', err);
+            ev.target.checked = !wantEnabled;
+            alert(err.message || String(err));
+          }
+        });
+        grid.appendChild(card);
+      });
+    }
+
+    async function loadNetworks() {
+      $('netStatus').textContent = 'Loading…';
+      $('netStatus').className = 'muted';
+      try {
+        const d = await api('GET', '/api/networks');
+        networksCache = d.networks || [];
+        const ok = d.configured !== false;
+        $('netStatus').textContent = ok ? `${networksCache.length} network(s)` : 'UniFi not configured — add settings below';
+        $('netStatus').className = ok ? 'muted' : 'err';
+        console.debug('[UniFiDeck] networks', networksCache.length);
+      } catch (e) {
+        networksCache = [];
+        $('netStatus').textContent = 'Failed: ' + (e.message || e);
+        $('netStatus').className = 'err';
+        console.error('[UniFiDeck] loadNetworks failed', e);
+      }
+      renderNetworks();
+      fillVlanPickSelect();
+    }
+
+    $('refreshNetworksBtn').onclick = () => loadNetworks().catch(console.error);
+    $('netSearchInput').addEventListener('input', renderNetworks);
+    $('netSearchInput').addEventListener('search', renderNetworks);
+
+    // ── Clients ────────────────────────────────────────────────────────────────
+    let clientsCache = [];
+
+    function renderClients() {
+      const tbody = $('clientTbody');
+      const q = ($('clientSearchInput').value || '').toLowerCase().trim();
+      const filtered = clientsCache.filter(c => {
+        if (!q) return true;
+        return (c.hostname || '').toLowerCase().includes(q) ||
+               (c.name || '').toLowerCase().includes(q) ||
+               (c.mac || '').toLowerCase().includes(q) ||
+               (c.ip || '').includes(q);
+      });
+      $('clientStatus').textContent = `${filtered.length} client(s)`;
+      tbody.innerHTML = filtered.map(c => {
+        const label = c.name || c.hostname || c.mac;
+        const type = c.is_wired ? '🔌 Wired' : `📶 Wi-Fi`;
+        const signal = c.is_wired ? '—' : (c.signal ? `${c.signal} dBm` : '—');
+        return `<tr>
+          <td>${escapeHtml(label)}</td>
+          <td><code>${escapeHtml(c.mac)}</code></td>
+          <td>${escapeHtml(c.ip || '—')}</td>
+          <td>${type}</td>
+          <td>${escapeHtml(signal)}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    async function loadClients() {
+      $('clientStatus').textContent = 'Loading…';
+      try {
+        const d = await api('GET', '/api/clients');
+        clientsCache = d.clients || [];
+        renderClients();
+        console.debug('[UniFiDeck] clients', clientsCache.length);
+      } catch (e) {
+        $('clientStatus').textContent = 'Failed: ' + (e.message || e);
+        $('clientStatus').className = 'err';
+        console.error('[UniFiDeck] loadClients failed', e);
+      }
+    }
+
+    $('refreshClientsBtn').onclick = () => loadClients().catch(console.error);
+    $('clientSearchInput').addEventListener('input', renderClients);
+
+    // ── Automations ────────────────────────────────────────────────────────────
+    async function loadAutomations() {
+      const d = await api('GET', '/api/automations');
+      const list = d.automations || [];
+      const grid = $('autoGrid');
+      grid.innerHTML = '';
+      if (list.length === 0) {
+        grid.innerHTML = `<p class="muted">No automations yet. Click "+ New Automation" to create one.</p>`;
+        return;
+      }
+      list.forEach(a => {
+        const card = document.createElement('div');
+        card.className = 'auto-card';
+        card.dataset.testid = 'automation-card';
+        const rm = a.run_mode || 'manual';
+        const rmBadge = rm === 'scheduled'
+          ? `<span class="badge vlan-id">Scheduled</span>`
+          : `<span class="badge">Manual</span>`;
+        const typeBadge = `<span class="badge">${escapeHtml(a.type)}</span>`;
+        const next = a.next_run_at ? new Date(a.next_run_at).toLocaleString() : '—';
+        const last = a.last_run_at ? new Date(a.last_run_at).toLocaleString() : 'Never';
+        const targets = (a.vlan_targets || []).map(t => `<code>${escapeHtml(t.network_name || t.network_id)}</code>`).join(', ') || '—';
+        const enBadge = a.enabled ? `<span class="badge enabled">active</span>` : `<span class="badge disabled-b">disabled</span>`;
+        card.innerHTML = `
+          <div class="auto-header">
+            <div>
+              <div class="auto-title" data-testid="auto-title">${escapeHtml(a.name)}</div>
+              <div class="auto-meta">${rmBadge} ${typeBadge} ${enBadge}</div>
+            </div>
+          </div>
+          <div class="auto-meta" style="margin-top:8px;">Networks: ${targets}</div>
+          ${rm === 'scheduled' && a.schedule ? `<div class="auto-meta">Time: <strong>${escapeHtml(a.schedule.time || '—')}</strong>${a.schedule.timezone ? ' ' + escapeHtml(a.schedule.timezone) : ''}</div>` : ''}
+          <div class="auto-meta">Next run: ${escapeHtml(next)} · Last run: ${escapeHtml(last)}</div>
+          <div class="auto-actions">
+            <button type="button" class="primary run-btn" data-id="${escapeAttr(a.id)}" data-testid="run-automation">▶ Run Now</button>
+            <button type="button" class="secondary edit-btn" data-id="${escapeAttr(a.id)}">Edit</button>
+            <button type="button" class="danger del-btn" data-id="${escapeAttr(a.id)}">Delete</button>
+          </div>`;
+        card.querySelector('.run-btn').onclick = () => runAuto(a.id);
+        card.querySelector('.edit-btn').onclick = () => openEdit(a);
+        card.querySelector('.del-btn').onclick = () => deleteAuto(a.id, a.name);
+        grid.appendChild(card);
+      });
+      console.debug('[UniFiDeck] automations', list.length);
+    }
+
+    async function runAuto(id) {
+      try {
+        await api('POST', `/api/automations/${encodeURIComponent(id)}/run`, {});
+        setTimeout(() => loadLog().catch(console.error), 1200);
+        setTimeout(() => loadAutomations().catch(console.error), 2000);
+      } catch (e) {
+        alert('Run failed: ' + (e.message || e));
+      }
+    }
+
+    async function deleteAuto(id, name) {
+      if (!confirm(`Delete automation "${name}"?`)) return;
+      try {
+        await api('DELETE', `/api/automations/${encodeURIComponent(id)}`);
+        await loadAutomations();
+      } catch (e) {
+        alert('Delete failed: ' + (e.message || e));
+      }
+    }
+
+    // ── VLAN targets in modal ──────────────────────────────────────────────────
+    let modalTargets = []; // { network_id, network_name }
+
+    function fillVlanPickSelect() {
+      const sel = $('vlanPickSelect');
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">— select a network —</option>';
+      networksCache.forEach(n => {
+        const opt = document.createElement('option');
+        opt.value = n._id;
+        opt.textContent = n.name + (n.vlan ? ` (VLAN ${n.vlan})` : '');
+        sel.appendChild(opt);
+      });
+      if (prev) sel.value = prev;
+    }
+
+    function renderVlanTargetList() {
+      const list = $('vlanTargetList');
+      list.innerHTML = '';
+      modalTargets.forEach((t, idx) => {
+        const row = document.createElement('div');
+        row.className = 'vlan-target-row';
+        row.innerHTML = `<span class="vt-name">${escapeHtml(t.network_name || t.network_id)}</span><button class="vt-rm" aria-label="Remove" title="Remove">×</button>`;
+        row.querySelector('.vt-rm').onclick = () => {
+          modalTargets.splice(idx, 1);
+          renderVlanTargetList();
+        };
+        list.appendChild(row);
+      });
+    }
+
+    $('addVlanTargetBtn').onclick = () => {
+      const sel = $('vlanPickSelect');
+      const id = sel.value;
+      if (!id) return;
+      if (modalTargets.find(t => t.network_id === id)) return;
+      const opt = sel.selectedOptions[0];
+      const name = opt ? opt.textContent : id;
+      modalTargets.push({ network_id: id, network_name: name });
+      sel.value = '';
+      renderVlanTargetList();
+    };
+
+    // ── Schedule dow buttons ───────────────────────────────────────────────────
+    document.querySelectorAll('.dow-btn').forEach(btn => {
+      btn.onclick = () => btn.classList.toggle('active');
+    });
+
+    function getSelectedDow() {
+      return [...document.querySelectorAll('.dow-btn.active')].map(b => parseInt(b.dataset.dow, 10));
+    }
+
+    function setSelectedDow(days) {
+      document.querySelectorAll('.dow-btn').forEach(b => {
+        b.classList.toggle('active', (days || []).includes(parseInt(b.dataset.dow, 10)));
+      });
+    }
+
+    $('runMode').onchange = () => {
+      $('scheduleBlock').style.display = $('runMode').value === 'scheduled' ? 'block' : 'none';
+    };
+
+    function openModal(a) {
+      $('autoFormErr').textContent = '';
+      $('editId').value = a.id || '';
+      $('autoName').value = a.name || '';
+      $('autoType').value = a.type || 'vlan_disable';
+      $('runMode').value = a.run_mode || 'manual';
+      modalTargets = (a.vlan_targets || []).slice();
+      renderVlanTargetList();
+      fillVlanPickSelect();
+      if (a.schedule) {
+        $('schedTime').value = a.schedule.time || '';
+        $('schedTz').value = a.schedule.timezone || '';
+        $('schedEnd').value = a.schedule.ends_on_date || '';
+        $('schedSkipWknd').checked = !!a.schedule.skip_weekends;
+        setSelectedDow(a.schedule.days_of_week || []);
+      } else {
+        $('schedTime').value = '';
+        $('schedTz').value = '';
+        $('schedEnd').value = '';
+        $('schedSkipWknd').checked = false;
+        setSelectedDow([]);
+      }
+      $('scheduleBlock').style.display = (a.run_mode === 'scheduled') ? 'block' : 'none';
+      $('autoModal').classList.add('open');
+    }
+
+    function openEdit(a) { openModal(a); }
+
+    $('newAutoBtn').onclick = () => {
+      modalTargets = [];
+      openModal({ id: '', name: '', type: 'vlan_disable', run_mode: 'manual', enabled: true });
+    };
+    $('cancelModalBtn').onclick = () => $('autoModal').classList.remove('open');
+
+    $('saveAutoBtn').onclick = async () => {
+      $('autoFormErr').textContent = '';
+      const id = $('editId').value.trim();
+      const rm = $('runMode').value;
+      const payload = {
+        id: id || undefined,
+        name: $('autoName').value.trim(),
+        type: $('autoType').value,
+        run_mode: rm,
+        enabled: true,
+        vlan_targets: modalTargets,
+      };
+      if (rm === 'scheduled') {
+        payload.schedule = {
+          time: $('schedTime').value.trim(),
+          timezone: $('schedTz').value || undefined,
+          days_of_week: getSelectedDow(),
+          ends_on_date: $('schedEnd').value.trim() || undefined,
+          skip_weekends: $('schedSkipWknd').checked,
+        };
+      }
+      console.debug('[UniFiDeck] save automation', payload);
+      try {
+        if (id) {
+          await api('PUT', `/api/automations/${encodeURIComponent(id)}`, payload);
+        } else {
+          await api('POST', '/api/automations', payload);
+        }
+        $('autoModal').classList.remove('open');
+        await loadAutomations();
+      } catch (e) {
+        $('autoFormErr').textContent = e.message || String(e);
+        console.error('[UniFiDeck] save auto failed', e);
+      }
+    };
+
+    // ── Settings ───────────────────────────────────────────────────────────────
+    $('saveSettingsBtn').onclick = async () => {
+      $('settingsMsg').textContent = '';
+      $('settingsMsg').className = '';
+      try {
+        const body = { port: ($('cfgPort').value || '8099').trim() };
+        if ($('cfgHost').value.trim()) body.unifi_host = $('cfgHost').value.trim();
+        if ($('cfgUser').value.trim()) body.unifi_user = $('cfgUser').value.trim();
+        if ($('cfgSite').value.trim()) body.unifi_site = $('cfgSite').value.trim();
+        if ($('cfgPass').value.trim()) body.unifi_pass = $('cfgPass').value.trim();
+        await api('POST', '/api/settings', body);
+        $('settingsMsg').textContent = 'Saved ✓';
+        $('settingsMsg').className = 'ok';
+        $('cfgPass').value = '';
+        await loadNetworks();
+      } catch (e) {
+        $('settingsMsg').textContent = e.message;
+        $('settingsMsg').className = 'err';
+      }
+    };
+
+    $('testConnBtn').onclick = async () => {
+      $('settingsMsg').textContent = 'Testing…';
+      $('settingsMsg').className = 'muted';
+      try {
+        const d = await api('PUT', '/api/settings');
+        $('settingsMsg').textContent = d.status || 'OK';
+        $('settingsMsg').className = 'ok';
+      } catch (e) {
+        $('settingsMsg').textContent = 'Failed: ' + (e.message || e);
+        $('settingsMsg').className = 'err';
+      }
+    };
+
+    // ── Log ────────────────────────────────────────────────────────────────────
+    async function loadLog() {
+      try {
+        const d = await api('GET', '/api/logs?lines=200');
+        const lines = d.lines || [];
+        $('logPre').innerHTML = lines.map(line => {
+          if (line.includes('[ERROR]')) return `<span class="err">${escapeHtml(line)}</span>`;
+          if (line.includes('[WARN]')) return `<span class="warn">${escapeHtml(line)}</span>`;
+          if (line.includes('[INFO]')) return `<span class="ok">${escapeHtml(line)}</span>`;
+          return escapeHtml(line);
+        }).join('\n');
+      } catch (e) {
+        $('logPre').textContent = 'Log unavailable: ' + (e.message || e);
+      }
+    }
+
+    $('refreshLogBtn').onclick = () => loadLog().catch(console.error);
+
+    // ── Init ───────────────────────────────────────────────────────────────────
+    (async function init() {
+      try {
+        const st = await api('GET', '/api/settings');
+        $('cfgHost').value = st.unifi_host || '';
+        $('cfgUser').value = st.unifi_user || '';
+        $('cfgSite').value = st.unifi_site || 'default';
+        $('cfgPort').value = st.port || '8099';
+        $('cfgPass').value = '';
+        const hasCreds = st.unifi_host && st.unifi_user && st.unifi_pass;
+        if (hasCreds) {
+          $('cfgPass').placeholder = '•••••••• (saved — leave blank to keep)';
+        }
+        const connEl = $('connStatus');
+        connEl.textContent = hasCreds ? `Host: ${st.unifi_host}` : 'Not configured';
+        connEl.className = hasCreds ? 'muted' : 'warn';
+        console.debug('[UniFiDeck] settings loaded', st.unifi_host);
+        await loadNetworks();
+        await loadAutomations();
+        await loadLog();
+      } catch (e) {
+        console.error('[UniFiDeck] init failed', e);
+      }
+    })();
+  </script>
+</body>
+</html>

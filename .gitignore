@@ -1,0 +1,5 @@
+unifi-smash-deck
+unifi-smash-deck.log
+unifi-smash-deck.pid
+data/
+.env
