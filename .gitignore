@@ -11,3 +11,6 @@ data/snapshots/
 
 # Local env overrides (may contain API keys, IP addresses, etc.)
 .env
+docs/screenshots/*.png
+docs/screenshots/*.jpg
+docs/screenshots/*.jpeg

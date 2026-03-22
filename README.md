@@ -8,16 +8,50 @@ A self-hosted web dashboard for managing and monitoring a **UniFi UDM Pro** (or 
 
 ---
 
+## Screenshots
+
+### Networks
+View and toggle all your VLANs and networks with a single click.
+
+![Networks tab](docs/screenshots/networks.png)
+
+### Clients
+Live client list with sortable columns, VLAN name resolution, search, and new-device alerts.
+
+![Clients tab](docs/screenshots/clients.png)
+
+### Cameras — Live View
+Auto-refreshing snapshot grid for all UniFi Protect cameras. Click any image to open a full-screen lightbox. Scroll to zoom and pan within the grid.
+
+![Cameras live view](docs/screenshots/cameras-live.png)
+
+### Cameras — Timeline
+Schedule recurring snapshot captures (interval or daily times, per camera or all cameras). Browse thumbnail strips and play back a slideshow for any camera.
+
+![Cameras timeline](docs/screenshots/cameras-timeline.png)
+
+### Automations
+Schedule VLANs to enable or disable on a recurring basis — supports specific times, days of week, timezone, skip-weekends, and end dates.
+
+![Automations tab](docs/screenshots/automations.png)
+
+### Settings & Logs
+Configure your UniFi host, API key, site, and port. The live activity log shows every automation run, network toggle, and snapshot capture.
+
+![Settings and logs](docs/screenshots/settings.png)
+
+---
+
 ## Features
 
 | Tab | What it does |
 |-----|-------------|
 | **Networks** | List VLANs/networks, enable or disable them with one click |
-| **Automations** | Schedule a network to be shut off (and optionally re-enabled) at a specific time — supports days-of-week, timezone, skip-weekends, and end dates |
-| **Cameras** → Live View | Live snapshot grid for all UniFi Protect cameras; click any image to open a full-screen lightbox with zoom, pan, and auto-refresh |
-| **Cameras** → Timeline | Scheduled snapshot capture (default 10:30 AM + 7:00 PM daily); browse per-camera thumbnail strips, launch a slideshow, or view any image in the lightbox |
-| **Log** | Scrollable activity log of all automation runs and network changes |
-| **Settings** | Configure your UniFi host URL, API key, site, and port — persisted across restarts |
+| **Clients** | Live connected-device list with sortable columns (hostname, MAC, IP, VLAN, type, signal), VLAN name lookup, search, 20-minute auto-refresh, new-device alert card with dismiss and OS notifications |
+| **Cameras → Live View** | Snapshot grid for all UniFi Protect cameras; adjustable refresh rate (5 s – 30 s); click to fullscreen; scroll to zoom/pan in the grid; always fetches highest-quality image |
+| **Cameras → Timeline** | Flexible snapshot scheduling (interval or fixed daily times, per camera or all); thumbnail strip per camera; slideshow playback at up to 30 fps with adjustable speed |
+| **Automations** | Schedule network enable/disable with days-of-week, timezone, skip-weekends, and end-date support |
+| **Settings & Logs** | Configure host, API key, site, and port; live activity log; light/dark theme; compact navigation mode |
 
 ---
 
@@ -34,7 +68,7 @@ docker compose up -d
 open http://<your-server-ip>:8099
 ```
 
-Then go to the **Settings** tab and enter your:
+Then go to the **Settings & Logs** tab and enter your:
 - **UniFi Host** — e.g. `https://192.168.0.1`
 - **API Key** — created in UniFi OS under *Settings → Control Plane → Integrations*
 - **Site** — usually `default`
@@ -108,6 +142,7 @@ internal/unifideck/
   unifi_client.go              ← HTTP client for UniFi Network + Protect APIs
   automation.go                ← automation types, scheduler, store, logger
   snapshot_store.go            ← scheduled snapshot capture, storage, index
+  client_tracker.go            ← persistent client history, new-device detection
   http_server.go               ← route wiring, thin handlers
 web/
   embed.go                     ← //go:embed — static assets baked into binary
