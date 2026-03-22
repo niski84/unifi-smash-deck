@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -436,7 +437,13 @@ func (ss *SnapshotScheduler) captureForRule(rule SnapshotRule, takenAt time.Time
 	}
 	filterCams := len(rule.CameraIDs) > 0
 
+	// Stagger captures by 600 ms per camera so we stay well inside UniFi
+	// Protect's 10 req/s rate limit even while the live-view grid is also polling.
+	const staggerDelay = 600 * time.Millisecond
+	const retryDelay   = 2 * time.Second
+
 	var succeeded, failed int
+	first := true
 	for _, cam := range cameras {
 		if cam.State != "CONNECTED" && !cam.IsConnected {
 			continue
@@ -444,7 +451,31 @@ func (ss *SnapshotScheduler) captureForRule(rule SnapshotRule, takenAt time.Time
 		if filterCams && !camSet[cam.ID] {
 			continue
 		}
+		// Skip the delay before the very first capture.
+		if !first {
+			select {
+			case <-ctx.Done():
+				ss.logger.Warn("snapshot capture context cancelled during stagger")
+				return
+			case <-time.After(staggerDelay):
+			}
+		}
+		first = false
+
 		data, _, err := c.CameraSnapshot(ctx, cam.ID, true)
+		if err != nil {
+			// On 429 wait briefly and retry once before giving up.
+			if strings.Contains(err.Error(), "429") {
+				ss.logger.Warn("snapshot 429 rate-limit cam=%q — retrying in %s", cam.Name, retryDelay)
+				select {
+				case <-ctx.Done():
+					failed++
+					continue
+				case <-time.After(retryDelay):
+				}
+				data, _, err = c.CameraSnapshot(ctx, cam.ID, true)
+			}
+		}
 		if err != nil {
 			ss.logger.Warn("snapshot capture failed cam=%q err=%v", cam.Name, err)
 			failed++
