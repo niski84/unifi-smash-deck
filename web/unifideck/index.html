@@ -89,6 +89,11 @@
       font-size: 13px;
       max-width: 960px;
     }
+    /* ── Compact Navigation mode ──────────────────── */
+    /* Hide the title bar and hero text; only the tab row stays at the top. */
+    body.compact #appHeader { display: none !important; }
+    body.compact #appHero   { display: none !important; }
+    body.compact { padding-top: 10px; }
     /* ── Tabs ─────────────────────────────────────── */
     .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
     .tab-btn {
@@ -297,7 +302,12 @@
     .status-dot.off { background: #3a4a6a; }
     /* ── Clients table ────────────────────────────── */
     .client-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    .client-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+    .client-table th { text-align: left; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .client-table th.sortable { cursor: pointer; user-select: none; }
+    .client-table th.sortable:hover { color: var(--fg); }
+    .client-table th .sort-ind { font-size: 10px; margin-left: 3px; opacity: 0.45; }
+    .client-table th.sort-asc  .sort-ind::after { content: '▲'; opacity: 1; }
+    .client-table th.sort-desc .sort-ind::after { content: '▼'; opacity: 1; }
     .client-table td { padding: 6px 8px; border-bottom: 1px solid rgba(30,45,74,0.5); }
     .client-table tr:hover td { background: rgba(0,111,255,0.04); }
     /* ── Toolbar ──────────────────────────────────── */
@@ -342,7 +352,37 @@
       height: 100%;
       object-fit: cover;
       cursor: zoom-in;
+      transform-origin: 0 0;
+      will-change: transform;
+      user-select: none;
+      -webkit-user-drag: none;
     }
+    .cam-snapshot-wrap img.cam-zoomed  { cursor: grab; }
+    .cam-snapshot-wrap img.cam-panning { cursor: grabbing !important; }
+    /* Reset-zoom overlay button — only visible when the camera is zoomed/panned */
+    .cam-zoom-reset {
+      position: absolute;
+      top: 7px;
+      right: 7px;
+      z-index: 4;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.55);
+      border: 1px solid rgba(255,255,255,0.18);
+      border-radius: 6px;
+      color: rgba(255,255,255,0.85);
+      font-size: 15px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.18s, background 0.15s;
+      pointer-events: auto;
+      line-height: 1;
+    }
+    .cam-zoom-reset.active { opacity: 1; }
+    .cam-zoom-reset:hover { background: rgba(0,0,0,0.82); color: #fff; }
     .cam-snapshot-wrap .cam-overlay {
       position: absolute;
       inset: 0;
@@ -457,6 +497,51 @@
       text-overflow: ellipsis;
       background: rgba(0,0,0,0.4);
     }
+    /* ── Rule cards ─────────────────────────────── */
+    .rule-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 13px 15px;
+      background: var(--surface);
+    }
+    .rule-card-hdr {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .rule-card-body { display: flex; flex-direction: column; gap: 10px; }
+    .rule-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+    .rule-cam-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 8px 10px;
+      background: var(--bg);
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .rule-cam-check {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .rule-cam-check input[type=checkbox] { width: auto; margin: 0; }
+    .btn-danger {
+      background: rgba(239,68,68,0.12);
+      color: #f87171;
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 6px;
+      padding: 5px 10px;
+      cursor: pointer;
+      font-size: 12px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .btn-danger:hover { background: rgba(239,68,68,0.22); }
     .snap-playbar {
       display: flex;
       align-items: center;
@@ -490,11 +575,23 @@
       position: fixed;
       inset: 0;
       z-index: 9000;
-      display: none;
+      display: flex;           /* always in layout so requestFullscreen() works */
       align-items: center;
       justify-content: center;
+      visibility: hidden;
+      pointer-events: none;
     }
-    .cam-lightbox.open { display: flex; }
+    .cam-lightbox.open {
+      visibility: visible;
+      pointer-events: auto;
+    }
+    /* While waiting for the fullscreen transition to complete, stay invisible so
+       the user never sees a flash of the windowed lightbox. Removed by
+       fullscreenchange (granted) or requestFullscreen().catch() (denied). */
+    .cam-lightbox.fullscreen-pending {
+      visibility: hidden !important;
+      pointer-events: none !important;
+    }
     .cam-lb-bg {
       position: absolute;
       inset: 0;
@@ -551,6 +648,29 @@
     }
     .cam-lb-btn:hover { background: rgba(255,255,255,0.22); }
     .cam-lb-close-btn:hover { background: rgba(220,50,50,0.55); }
+    /* Refresh-rate selector embedded in the lightbox toolbar */
+    .cam-lb-rate-wrap {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      color: rgba(255,255,255,0.45);
+      flex-shrink: 0;
+    }
+    .cam-lb-rate-sel {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #e0e8f8;
+      border-radius: 6px;
+      padding: 4px 7px;
+      font-size: 12px;
+      cursor: pointer;
+      outline: none;
+      appearance: none;
+      -webkit-appearance: none;
+      transition: background 0.15s;
+    }
+    .cam-lb-rate-sel:hover { background: rgba(255,255,255,0.18); }
     .cam-lb-viewport {
       position: relative;
       overflow: hidden;
@@ -587,6 +707,47 @@
     }
     .cam-lb-statusbar span { font-size: 11px; color: rgba(255,255,255,0.4); }
     .cam-lb-hint { font-style: italic; }
+    /* Title card overlay shown at slideshow start / loop */
+    .cam-lb-title-card {
+      position: absolute;
+      inset: 0;
+      z-index: 6;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0,0,0,0.82);
+      color: #fff;
+      text-align: center;
+      padding: 24px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.35s ease;
+    }
+    .cam-lb-title-card.visible { opacity: 1; }
+    .cam-lb-title-card-name {
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      margin-bottom: 10px;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+    }
+    .cam-lb-title-card-sub {
+      font-size: 0.92rem;
+      color: rgba(255,255,255,0.65);
+      line-height: 1.6;
+    }
+    .cam-lb-title-card-badge {
+      display: inline-block;
+      margin-top: 14px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      background: rgba(255,255,255,0.12);
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.5);
+    }
     /* Fullscreen: let the lightbox fill the entire screen */
     .cam-lightbox:fullscreen,
     .cam-lightbox:-webkit-full-screen {
@@ -611,7 +772,7 @@
   </style>
 </head>
 <body>
-  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
+  <div id="appHeader" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px;">
     <div class="page-title" data-testid="page-title">
       <span class="logo-dot"></span>
       UniFi Smash Deck
@@ -619,7 +780,7 @@
     <button type="button" id="themeToggleBtn" data-testid="theme-toggle" title="Toggle dark/light theme">🌙 Dark</button>
     <span id="connStatus" class="muted" style="font-size:12px;"></span>
   </div>
-  <div class="theme-hero">
+  <div id="appHero" class="theme-hero">
     Control and schedule your <strong>UniFi UDM Pro</strong> networks &amp; VLANs.
     Set automations to enable/disable VLANs on a schedule — like shutting down guest Wi-Fi at night.
   </div>
@@ -646,21 +807,51 @@
 
   <!-- ── Clients panel ── -->
   <section id="panel-clients" class="panel">
-    <div class="card">
-      <div class="toolbar">
-        <button type="button" class="primary" id="refreshClientsBtn" data-testid="refresh-clients">Refresh</button>
-        <input type="search" id="clientSearchInput" placeholder="🔍 Search by hostname / MAC / IP…" style="flex:1;min-width:180px;max-width:360px;margin-bottom:0;" aria-label="Search clients" />
-        <span id="clientStatus" class="muted"></span>
+
+    <!-- New-devices alert card — hidden until new devices are found -->
+    <div id="newDevicesSection" class="card" style="display:none;border-left:3px solid var(--accent);margin-bottom:12px;">
+      <div class="toolbar" style="margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+        <strong style="color:var(--accent);">⚡ New Devices — Last 30 Days</strong>
+        <span id="newDevicesCount" class="muted" style="font-size:12px;"></span>
+        <button type="button" id="dismissNewDevicesBtn" style="margin-left:auto;" title="Mark all as seen — they won't appear here again unless a new device joins">✕ Dismiss All</button>
       </div>
       <div style="overflow-x:auto;">
-        <table class="client-table" id="clientTable" data-testid="client-table">
+        <table class="client-table" id="newDevicesTable">
           <thead>
             <tr>
               <th>Hostname / Name</th>
               <th>MAC</th>
               <th>IP</th>
               <th>Type</th>
-              <th>Signal</th>
+              <th>First Seen</th>
+            </tr>
+          </thead>
+          <tbody id="newDevicesTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="toolbar" style="flex-wrap:wrap;gap:8px;">
+        <button type="button" class="primary" id="refreshClientsBtn" data-testid="refresh-clients">Refresh</button>
+        <input type="search" id="clientSearchInput" placeholder="🔍 Search by hostname / MAC / IP / VLAN…" style="flex:1;min-width:180px;max-width:360px;margin-bottom:0;" aria-label="Search clients" />
+        <span id="clientStatus" class="muted"></span>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;font-size:13px;margin-left:auto;" title="Request browser/OS notification the first time a new device is detected">
+          <input type="checkbox" id="clientNotifyToggle" />
+          Notify on new device
+        </label>
+        <span id="clientNextRefresh" class="muted" style="font-size:11px;white-space:nowrap;"></span>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="client-table" id="clientTable" data-testid="client-table">
+          <thead>
+            <tr>
+              <th class="sortable" data-col="label">Hostname / Name<span class="sort-ind"></span></th>
+              <th class="sortable" data-col="mac">MAC<span class="sort-ind"></span></th>
+              <th class="sortable" data-col="ip">IP<span class="sort-ind"></span></th>
+              <th class="sortable" data-col="vlan">VLAN<span class="sort-ind"></span></th>
+              <th class="sortable" data-col="type">Type<span class="sort-ind"></span></th>
+              <th class="sortable" data-col="signal">Signal<span class="sort-ind"></span></th>
             </tr>
           </thead>
           <tbody id="clientTbody"></tbody>
@@ -687,8 +878,6 @@
             <select id="cameraRefreshRate" data-testid="camera-refresh-rate"
                     style="padding:4px 8px;font-size:12px;background:var(--input-bg);color:var(--text);border:1px solid var(--input-border);border-radius:6px;cursor:pointer;">
               <option value="0">Off</option>
-              <option value="250">Max (~4fps)</option>
-              <option value="1000">1 s</option>
               <option value="5000" selected>5 s</option>
               <option value="10000">10 s</option>
               <option value="30000">30 s</option>
@@ -703,41 +892,40 @@
     <!-- ── Timeline sub-panel ── -->
     <div id="cam-sub-timeline" class="cam-sub" style="display:none;">
 
-      <!-- Schedule config card -->
+      <!-- Capture Rules card -->
       <div class="card" style="margin-bottom:16px;">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px;">
-          <h3 style="margin:0;font-size:15px;font-weight:700;">📅 Capture Schedule</h3>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <button type="button" class="primary" id="captureNowBtn" data-testid="capture-now">📸 Capture Now</button>
-            <button type="button" id="saveSnapSchedBtn" data-testid="save-snap-sched">Save Schedule</button>
-          </div>
-        </div>
-        <div class="row" style="gap:16px;flex-wrap:wrap;">
-          <div style="flex:1;min-width:160px;">
-            <label for="snapTimes">Capture times (24h HH:MM, comma-separated)</label>
-            <input id="snapTimes" data-testid="snap-times" placeholder="10:30, 19:00" autocomplete="off" />
-          </div>
-          <div style="flex:1;min-width:160px;">
-            <label for="snapTz">Timezone</label>
-            <input id="snapTz" data-testid="snap-tz" placeholder="America/New_York" autocomplete="off" />
-          </div>
-          <div style="flex:0 0 120px;">
-            <label for="snapRetain">Keep snapshots (days)</label>
-            <input id="snapRetain" data-testid="snap-retain" type="number" min="0" max="365" placeholder="30" autocomplete="off" />
-          </div>
-          <div style="display:flex;align-items:flex-end;padding-bottom:2px;">
-            <label style="display:flex;align-items:center;gap:8px;margin:0;cursor:pointer;white-space:nowrap;">
-              <input type="checkbox" id="snapEnabled" style="width:auto;margin-bottom:0;" checked />
-              <span style="font-size:13px;">Enable schedule</span>
+          <h3 style="margin:0;font-size:15px;font-weight:700;">📅 Capture Rules</h3>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);white-space:nowrap;margin:0;">
+              Retain for
+              <input id="snapRetain" type="number" min="0" max="730" placeholder="30"
+                     style="width:62px;" data-testid="snap-retain" autocomplete="off" />
+              days&nbsp;(0&nbsp;=&nbsp;forever)
             </label>
+            <button type="button" id="addRuleBtn" data-testid="add-rule">+ Add Rule</button>
+            <button type="button" class="primary" id="saveRulesBtn" data-testid="save-rules">Save Rules</button>
           </div>
         </div>
+        <div id="ruleList" style="display:flex;flex-direction:column;gap:12px;"></div>
         <p id="snapSchedMsg" class="muted" style="margin:8px 0 0;font-size:12px;"></p>
+      </div>
+
+      <!-- Capture Now card -->
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <h3 style="margin:0;font-size:15px;font-weight:700;">📸 Capture Now</h3>
+          <select id="captureNowCams" style="flex:1;min-width:160px;max-width:300px;">
+            <option value="">All cameras</option>
+          </select>
+          <button type="button" class="primary" id="captureNowBtn" data-testid="capture-now">Capture</button>
+          <span id="captureNowMsg" class="muted" style="font-size:12px;"></span>
+        </div>
       </div>
 
       <!-- Per-camera snapshot strips -->
       <div id="snapCameraList" data-testid="snap-camera-list">
-        <p class="muted" id="snapEmptyMsg">No snapshots yet — click "Capture Now" or wait for the schedule to run.</p>
+        <p class="muted" id="snapEmptyMsg">No snapshots yet — add a rule and save, or use Capture Now.</p>
       </div>
     </div>
   </section>
@@ -755,11 +943,40 @@
   <section id="panel-settings" class="panel">
     <div class="card">
       <h3>Appearance</h3>
+
+      <!-- Theme -->
       <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
         <span class="muted">Theme</span>
         <button type="button" id="themeToggleBtnSettings" data-testid="theme-toggle-settings" style="padding:8px 20px;border-radius:999px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-weight:600;">
           Switch to Light mode
         </button>
+      </div>
+
+      <!-- Compact Navigation -->
+      <div style="display:flex;align-items:flex-start;gap:10px;flex-wrap:wrap;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;white-space:nowrap;">
+          <input type="checkbox" id="compactModeToggle" style="width:auto;margin:0;" />
+          <span style="font-weight:600;">Compact Navigation</span>
+        </label>
+        <span class="muted" style="font-size:12px;padding-top:2px;">
+          Hides the title bar and description — only the tab row is shown at the top of the page.
+          The app info and connection status below remain accessible here.
+        </span>
+      </div>
+
+      <!-- App info card — always shown here; becomes the primary reference in compact mode -->
+      <div style="margin-top:14px;padding:12px 14px;border-radius:8px;background:var(--bg);border:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;">
+          <div class="page-title" style="font-size:0.9rem;padding:6px 12px;">
+            <span class="logo-dot"></span>
+            UniFi Smash Deck
+          </div>
+          <span id="settingsConnStatus" class="muted" style="font-size:12px;"></span>
+        </div>
+        <p class="muted" style="font-size:12px;margin:0;">
+          Control and schedule your <strong>UniFi UDM Pro</strong> networks &amp; VLANs.
+          Set automations to enable/disable VLANs on a schedule — like shutting down guest Wi-Fi at night.
+        </p>
       </div>
     </div>
     <div class="card">
@@ -903,6 +1120,16 @@
         <span id="camLbName" class="cam-lb-title"></span>
         <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
           <span id="camLbZoomLevel" class="cam-lb-meta">100%</span>
+          <div class="cam-lb-rate-wrap">
+            <span>↻</span>
+            <select id="camLbRefreshRate" class="cam-lb-rate-sel" title="Refresh / stream mode">
+              <option value="live">● Live</option>
+              <option value="0">Off</option>
+              <option value="5000" selected>5 s</option>
+              <option value="10000">10 s</option>
+              <option value="30000">30 s</option>
+            </select>
+          </div>
           <button type="button" class="cam-lb-btn" id="camLbZoomReset" title="Reset zoom (double-click)">⊡ Fit</button>
           <button type="button" class="cam-lb-btn" id="camLbFullscreen" title="Toggle fullscreen">⛶</button>
           <button type="button" class="cam-lb-btn cam-lb-close-btn" id="camLbClose" title="Close (Esc)">✕</button>
@@ -910,6 +1137,11 @@
       </div>
       <div id="camLbViewport" class="cam-lb-viewport">
         <img id="camLbImg" class="cam-lb-img" alt="" draggable="false" />
+        <div id="camLbTitleCard" class="cam-lb-title-card" aria-hidden="true">
+          <div id="camLbTitleName" class="cam-lb-title-card-name"></div>
+          <div id="camLbTitleSub"  class="cam-lb-title-card-sub"></div>
+          <div class="cam-lb-title-card-badge">▶ Playing</div>
+        </div>
       </div>
       <div class="cam-lb-statusbar">
         <span id="camLbStatus">Loading…</span>
@@ -964,6 +1196,108 @@
     if (tbs) tbs.onclick = toggleTheme;
     applyTheme(isLightTheme());
 
+    // ── Compact Navigation ─────────────────────────────────────────────────────
+    // Hides the title bar + hero text so only the tab row is visible at the top.
+    // The app info remains accessible in Settings → Appearance.
+    function applyCompactMode(on) {
+      document.body.classList.toggle('compact', !!on);
+      const cb = $('compactModeToggle');
+      if (cb) cb.checked = !!on;
+      localStorage.setItem('unifideck.compact', on ? '1' : '0');
+    }
+    $('compactModeToggle').addEventListener('change', e => applyCompactMode(e.target.checked));
+    applyCompactMode(localStorage.getItem('unifideck.compact') === '1');
+
+    // ── Persistent UI state ───────────────────────────────────────────────────
+    // Zoom positions (grid + lightbox) and refresh rate survive page refresh /
+    // mobile app resume.  All keys are namespaced to avoid collisions.
+    const LS_GRID_ZOOM  = 'unifideck.grid_zoom';  // {[camId]:{scale,panX,panY}}
+    const LS_LB_ZOOM    = 'unifideck.lb_zoom';    // {[camId]:{scale,panX,panY}}
+    const LS_REFRESH_MS = 'unifideck.refresh_ms'; // "5000" etc.
+    const LS_ACTIVE_TAB = 'unifideck.active_tab'; // "networks" | "cameras" | …
+    const LS_CAM_TAB    = 'unifideck.cam_tab';    // "live" | "timeline"
+
+    function lsSave(key, val) {
+      try { localStorage.setItem(key, JSON.stringify(val)); } catch(_) {}
+    }
+    function lsLoad(key, fallback) {
+      try { const v = localStorage.getItem(key); return v !== null ? JSON.parse(v) : fallback; }
+      catch(_) { return fallback; }
+    }
+
+    // Debounced grid-zoom save — fires 400 ms after the last change.
+    let _gridZoomSaveTimer = null;
+    function gridZoomSave() {
+      clearTimeout(_gridZoomSaveTimer);
+      _gridZoomSaveTimer = setTimeout(() => {
+        const obj = {};
+        gridZoomMap.forEach((st, id) => {
+          if (st.scale !== 1 || st.panX !== 0 || st.panY !== 0)
+            obj[id] = {scale: st.scale, panX: st.panX, panY: st.panY};
+        });
+        lsSave(LS_GRID_ZOOM, obj);
+        console.debug('[UniFiDeck] grid zoom saved', Object.keys(obj).length, 'cam(s)');
+      }, 400);
+    }
+
+    // Debounced lightbox-zoom save.
+    let _lbZoomSaveTimer = null;
+    function lbZoomSave() {
+      if (!lbCamId) return;
+      const snapId = lbCamId; // capture before async delay
+      clearTimeout(_lbZoomSaveTimer);
+      _lbZoomSaveTimer = setTimeout(() => {
+        const saved = lsLoad(LS_LB_ZOOM, {});
+        saved[snapId] = {scale: lbScale, panX: lbPanX, panY: lbPanY};
+        lsSave(LS_LB_ZOOM, saved);
+        console.debug('[UniFiDeck] lb zoom saved', snapId, lbScale.toFixed(2));
+      }, 400);
+    }
+    function lbZoomLoad(camId) {
+      return (lsLoad(LS_LB_ZOOM, {}) || {})[camId] || null;
+    }
+
+    // Flush all pending zoom saves immediately (no debounce).
+    function flushZoomState() {
+      clearTimeout(_gridZoomSaveTimer);
+      clearTimeout(_lbZoomSaveTimer);
+      const gridObj = {};
+      gridZoomMap.forEach((st, id) => {
+        if (st.scale !== 1 || st.panX !== 0 || st.panY !== 0)
+          gridObj[id] = {scale: st.scale, panX: st.panX, panY: st.panY};
+      });
+      lsSave(LS_GRID_ZOOM, gridObj);
+      if (lbCamId) {
+        const saved = lsLoad(LS_LB_ZOOM, {});
+        saved[lbCamId] = {scale: lbScale, panX: lbPanX, panY: lbPanY};
+        lsSave(LS_LB_ZOOM, saved);
+      }
+      lsSave(LS_REFRESH_MS, $('cameraRefreshRate').value);
+    }
+
+    // Flush on unload and on tab hide (mobile background / browser tab switch).
+    window.addEventListener('beforeunload', flushZoomState);
+
+    // Restore refresh rate from the previous session before polling starts.
+    (function() {
+      const ms = localStorage.getItem(LS_REFRESH_MS);
+      if (ms && ['0','5000','10000','30000'].includes(ms)) {
+        $('cameraRefreshRate').value = ms;
+        const lbSel = $('camLbRefreshRate');
+        if (lbSel) lbSel.value = ms;
+      }
+    }());
+
+    // ── Connection status helper ───────────────────────────────────────────────
+    // Updates both the header badge and the mirrored badge in Settings so the
+    // status is always visible regardless of whether compact mode is on.
+    function setConnStatus(text, cls) {
+      ['connStatus', 'settingsConnStatus'].forEach(id => {
+        const el = $(id);
+        if (el) { el.textContent = text; el.className = cls; }
+      });
+    }
+
     // ── Tabs ───────────────────────────────────────────────────────────────────
     document.querySelectorAll('.tab-btn').forEach((btn) => {
       btn.onclick = () => {
@@ -971,17 +1305,26 @@
         document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
         $('panel-' + btn.dataset.tab).classList.add('active');
+        lsSave(LS_ACTIVE_TAB, btn.dataset.tab); // persist for next reload
         console.debug('[UniFiDeck] tab', btn.dataset.tab);
         if (btn.dataset.tab === 'cameras') {
-          // Restore to Live View when switching to the cameras tab.
-          const liveTab = document.querySelector('.cam-inner-tab[data-cam-tab="live"]');
-          if (liveTab && !liveTab.classList.contains('active')) liveTab.click();
-          else {
+          stopClientPoll();
+          // Restore to whichever camera sub-tab was last active (default: live).
+          const savedCamTab = localStorage.getItem(LS_CAM_TAB) || 'live';
+          const camTabBtn = document.querySelector(`.cam-inner-tab[data-cam-tab="${savedCamTab}"]`);
+          if (camTabBtn && !camTabBtn.classList.contains('active')) {
+            camTabBtn.click();
+          } else {
             if (camerasCache.length === 0) loadCameras().then(() => startSnapshotPolling()).catch(console.error);
             else startSnapshotPolling();
           }
+        } else if (btn.dataset.tab === 'clients') {
+          stopSnapshotPolling();
+          lbStopRefresh();
+          startClientPoll();
         } else {
           stopSnapshotPolling();
+          stopClientPoll();
           lbStopRefresh();
         }
       };
@@ -1080,17 +1423,92 @@
     $('netSearchInput').addEventListener('search', renderNetworks);
 
     // ── Clients ────────────────────────────────────────────────────────────────
-    let clientsCache = [];
+    const LS_NOTIFIED_MACS  = 'ud_notified_macs';
+    const LS_DISMISSED_MACS = 'ud_dismissed_macs';
+    const LS_CLIENT_NOTIFY  = 'ud_client_notify';
+    let clientsCache    = [];
+    let clientPollTimer = null;
+    let clientNextRefreshAt = 0; // epoch ms when next auto-refresh fires
+    const CLIENT_POLL_MS = 20 * 60 * 1000; // 20 minutes
+
+    // Sort state for the main client table
+    let clientSortCol = 'label';
+    let clientSortAsc = true;
+
+    function macSet(key) {
+      try { return new Set(JSON.parse(localStorage.getItem(key) || '[]')); }
+      catch { return new Set(); }
+    }
+    function addToMacSet(key, mac) {
+      const s = macSet(key);
+      s.add(mac);
+      localStorage.setItem(key, JSON.stringify([...s]));
+    }
+    function notifiedMacs()  { return macSet(LS_NOTIFIED_MACS); }
+    function dismissedMacs() { return macSet(LS_DISMISSED_MACS); }
+    function saveNotifiedMac(mac)  { addToMacSet(LS_NOTIFIED_MACS,  mac); }
+    function saveDismissedMac(mac) { addToMacSet(LS_DISMISSED_MACS, mac); }
+
+    function updateSortHeaders() {
+      document.querySelectorAll('#clientTable th.sortable').forEach(th => {
+        th.classList.remove('sort-asc', 'sort-desc');
+        if (th.dataset.col === clientSortCol) {
+          th.classList.add(clientSortAsc ? 'sort-asc' : 'sort-desc');
+        }
+      });
+    }
+
+    function clientSortKey(c, col) {
+      switch (col) {
+        case 'label':  return (c.name || c.hostname || c.mac || '').toLowerCase();
+        case 'mac':    return (c.mac || '').toLowerCase();
+        case 'ip': {
+          // Sort IPs numerically (pad each octet)
+          const parts = (c.ip || '').split('.');
+          return parts.map(p => p.padStart(3, '0')).join('.');
+        }
+        case 'vlan':   return c.vlan || 0;
+        case 'type':   return c.is_wired ? 0 : 1; // wired first
+        case 'signal': return c.is_wired ? -999 : (c.signal || 0);
+        default:       return '';
+      }
+    }
 
     function renderClients() {
       const tbody = $('clientTbody');
       const q = ($('clientSearchInput').value || '').toLowerCase().trim();
-      const filtered = clientsCache.filter(c => {
+
+      // Build VLAN-id → network name lookup from the already-loaded networks cache.
+      const vlanNames = new Map();
+      networksCache.forEach(n => {
+        if (n.vlan) vlanNames.set(n.vlan, n.name);
+      });
+      // Find the default (untagged) network name — usually has vlan=0 or no vlan field.
+      const defaultNet = networksCache.find(n => !n.vlan && n.purpose === 'corporate');
+      const defaultNetName = defaultNet ? defaultNet.name : '';
+
+      const vlanLabel = (c) => {
+        if (!c.vlan) return defaultNetName ? `${defaultNetName}` : '—';
+        const name = vlanNames.get(c.vlan);
+        return name ? `${c.vlan} — ${name}` : String(c.vlan);
+      };
+
+      let filtered = clientsCache.filter(c => {
         if (!q) return true;
+        const vl = vlanLabel(c).toLowerCase();
         return (c.hostname || '').toLowerCase().includes(q) ||
                (c.name || '').toLowerCase().includes(q) ||
                (c.mac || '').toLowerCase().includes(q) ||
-               (c.ip || '').includes(q);
+               (c.ip || '').includes(q) ||
+               vl.includes(q) ||
+               (c.is_wired ? 'wired' : 'wifi wi-fi').includes(q);
+      });
+      // Sort
+      filtered.sort((a, b) => {
+        const ka = clientSortKey(a, clientSortCol);
+        const kb = clientSortKey(b, clientSortCol);
+        const cmp = ka < kb ? -1 : ka > kb ? 1 : 0;
+        return clientSortAsc ? cmp : -cmp;
       });
       $('clientStatus').textContent = `${filtered.length} client(s)`;
       tbody.innerHTML = filtered.map(c => {
@@ -1101,10 +1519,87 @@
           <td>${escapeHtml(label)}</td>
           <td><code>${escapeHtml(c.mac)}</code></td>
           <td>${escapeHtml(c.ip || '—')}</td>
+          <td>${escapeHtml(vlanLabel(c))}</td>
           <td>${type}</td>
           <td>${escapeHtml(signal)}</td>
         </tr>`;
       }).join('');
+      updateSortHeaders();
+    }
+
+    // Wire up sortable column headers
+    document.querySelectorAll('#clientTable th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        if (clientSortCol === th.dataset.col) {
+          clientSortAsc = !clientSortAsc;
+        } else {
+          clientSortCol = th.dataset.col;
+          clientSortAsc = true;
+        }
+        renderClients();
+      });
+    });
+
+    // Current new-device list (for dismiss)
+    let _lastNewDevs = [];
+
+    function renderNewDevices(devs) {
+      // Filter out already-dismissed MACs
+      const dismissed = dismissedMacs();
+      const visible = (devs || []).filter(d => !dismissed.has(d.mac));
+      _lastNewDevs = visible;
+      const section = $('newDevicesSection');
+      if (visible.length === 0) { section.style.display = 'none'; return; }
+      section.style.display = '';
+      $('newDevicesCount').textContent = `${visible.length} device(s) first seen in the last 30 days`;
+      $('newDevicesTbody').innerHTML = visible.map(d => {
+        const label = d.name || d.hostname || d.mac;
+        const type = d.is_wired ? '🔌 Wired' : '📶 Wi-Fi';
+        const firstSeen = d.first_seen ? new Date(d.first_seen).toLocaleString() : '—';
+        return `<tr>
+          <td>${escapeHtml(label)}</td>
+          <td><code>${escapeHtml(d.mac)}</code></td>
+          <td>${escapeHtml(d.ip || '—')}</td>
+          <td>${type}</td>
+          <td>${escapeHtml(firstSeen)}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    $('dismissNewDevicesBtn').addEventListener('click', () => {
+      _lastNewDevs.forEach(d => saveDismissedMac(d.mac));
+      $('newDevicesSection').style.display = 'none';
+      console.debug('[UniFiDeck] dismissed', _lastNewDevs.length, 'new-device entries');
+      _lastNewDevs = [];
+    });
+
+    async function loadNewDevices() {
+      try {
+        const d = await api('GET', '/api/clients/new');
+        const newDevs = d.new_devices || [];
+        renderNewDevices(newDevs);
+        // Fire OS/browser notifications for devices we haven't announced or dismissed yet.
+        if ($('clientNotifyToggle').checked && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          const seen = notifiedMacs();
+          const dismissed = dismissedMacs();
+          newDevs.forEach(dev => {
+            if (!seen.has(dev.mac) && !dismissed.has(dev.mac)) {
+              const label = dev.name || dev.hostname || dev.mac;
+              try {
+                new Notification('UniFi Smash Deck — New Device Detected', {
+                  body: `${label}  ·  ${dev.mac}${dev.ip ? '  ·  ' + dev.ip : ''}`,
+                  icon: '/favicon.ico',
+                  tag: 'ud-new-device-' + dev.mac,
+                });
+              } catch(e) { /* non-fatal */ }
+              saveNotifiedMac(dev.mac);
+              console.debug('[UniFiDeck] new-device notify', dev.mac);
+            }
+          });
+        }
+      } catch(e) {
+        console.error('[UniFiDeck] loadNewDevices failed', e);
+      }
     }
 
     async function loadClients() {
@@ -1121,7 +1616,57 @@
       }
     }
 
-    $('refreshClientsBtn').onclick = () => loadClients().catch(console.error);
+    function updateClientCountdown() {
+      const el = $('clientNextRefresh');
+      if (!el) return;
+      const remaining = Math.max(0, clientNextRefreshAt - Date.now());
+      if (remaining === 0) { el.textContent = ''; return; }
+      const m = Math.floor(remaining / 60000);
+      const s = Math.floor((remaining % 60000) / 1000);
+      el.textContent = `auto-refresh in ${m}m ${s}s`;
+    }
+
+    function startClientPoll() {
+      stopClientPoll();
+      loadClients();
+      loadNewDevices();
+      clientNextRefreshAt = Date.now() + CLIENT_POLL_MS;
+      clientPollTimer = setInterval(() => {
+        loadClients();
+        loadNewDevices();
+        clientNextRefreshAt = Date.now() + CLIENT_POLL_MS;
+      }, CLIENT_POLL_MS);
+      // Countdown ticker (updates every second)
+      if (!window._clientCountdownTimer) {
+        window._clientCountdownTimer = setInterval(updateClientCountdown, 1000);
+      }
+    }
+
+    function stopClientPoll() {
+      if (clientPollTimer) { clearInterval(clientPollTimer); clientPollTimer = null; }
+    }
+
+    // Notification permission toggle
+    $('clientNotifyToggle').checked = localStorage.getItem(LS_CLIENT_NOTIFY) === '1';
+    $('clientNotifyToggle').addEventListener('change', async () => {
+      const on = $('clientNotifyToggle').checked;
+      if (on && typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
+        const perm = await Notification.requestPermission();
+        if (perm !== 'granted') {
+          $('clientNotifyToggle').checked = false;
+          localStorage.setItem(LS_CLIENT_NOTIFY, '0');
+          return;
+        }
+      }
+      localStorage.setItem(LS_CLIENT_NOTIFY, on ? '1' : '0');
+      console.debug('[UniFiDeck] client notify', on ? 'enabled' : 'disabled');
+    });
+
+    $('refreshClientsBtn').onclick = () => {
+      clientNextRefreshAt = Date.now() + CLIENT_POLL_MS;
+      loadClients().catch(console.error);
+      loadNewDevices().catch(console.error);
+    };
     $('clientSearchInput').addEventListener('input', renderClients);
 
     // ── Automations ────────────────────────────────────────────────────────────
@@ -1399,6 +1944,7 @@
                onerror="this.style.opacity='0.2'" data-testid="cam-snapshot" />
           <div class="cam-overlay${stateClass === 'on' ? ' hidden' : ''}">📷 Offline</div>
           <div class="cam-pulse ${stateClass === 'on' ? '' : 'offline'}"></div>
+          <button type="button" class="cam-zoom-reset" title="Reset zoom (right-click)" data-cam-reset="${escapeAttr(cam.id)}">↺</button>
         </div>
         <div class="cam-info">
           <div>
@@ -1418,7 +1964,8 @@
         return;
       }
       camerasCache.forEach(cam => grid.appendChild(renderCameraCard(cam)));
-      $('cameraStatus').textContent = `${camerasCache.length} camera(s) — click any image to view`;
+      gridZoomRestoreAll(); // re-apply any saved zoom/pan after DOM rebuild
+      $('cameraStatus').textContent = `${camerasCache.length} camera(s) — click to fullscreen · scroll to zoom`;
     }
 
     async function loadCameras() {
@@ -1428,6 +1975,8 @@
         camerasCache = d.cameras || [];
         renderCameras();
         if (camerasCache.length > 0) refreshSnapshots();
+        populateCaptureNowCams(); // keep Capture Now selector in sync
+        renderRuleList();         // re-render rules with up-to-date camera checkboxes
         console.debug('[UniFiDeck] cameras', camerasCache.length);
       } catch (e) {
         const msg = e.message || String(e);
@@ -1447,6 +1996,10 @@
     }
 
     function refreshSnapshots() {
+      // Don't refresh the grid while the lightbox has focus on a single camera,
+      // or while the tab is hidden — saves bandwidth with no visible benefit.
+      if ((lb && lb.classList.contains('open')) || document.hidden) return;
+
       const imgs = document.querySelectorAll('#cameraGrid img[data-cam-id]');
       let delay = 0;
       imgs.forEach(img => {
@@ -1456,8 +2009,11 @@
         if (camInfo && camInfo.state !== 'CONNECTED' && !camInfo.isConnected) return;
         // Stagger each camera request by 350 ms so we never fire all requests
         // simultaneously, which would exceed Protect's 10 req/s rate limit.
+        // Re-check guards inside the timeout — state may change while waiting.
         setTimeout(() => {
-          img.src = `/api/cameras/${encodeURIComponent(id)}/snapshot?t=${Date.now()}`;
+          if ((lb && lb.classList.contains('open')) || document.hidden) return;
+          const zoomed = gridZoomState(id).scale > 1;
+          img.src = `/api/cameras/${encodeURIComponent(id)}/snapshot?t=${Date.now()}${zoomed ? '&highQuality=true' : ''}`;
           const tsEl = document.querySelector(`[data-cam-ts="${id}"]`);
           if (tsEl) tsEl.textContent = new Date().toLocaleTimeString();
         }, delay);
@@ -1467,10 +2023,14 @@
 
     function startSnapshotPolling() {
       stopSnapshotPolling();
+      // Never start the grid poll while the lightbox is showing a single camera
+      // — it would compete for bandwidth and hit the Protect rate limit (429).
+      // Also skip while the tab is hidden.
+      if ((lb && lb.classList.contains('open')) || document.hidden) return;
       const ms = currentRefreshMs();
       if (ms > 0 && camerasCache.length > 0) {
-        // Grid: never faster than 500ms to avoid hammering all cameras.
-        snapshotInterval = setInterval(refreshSnapshots, Math.max(ms, 500));
+        // Grid: never faster than 5 s — protects Protect's rate limit across all cameras.
+        snapshotInterval = setInterval(refreshSnapshots, Math.max(ms, 5000));
         console.debug('[UniFiDeck] snapshot polling started', ms + 'ms');
       }
     }
@@ -1478,14 +2038,167 @@
       if (snapshotInterval) { clearInterval(snapshotInterval); snapshotInterval = null; }
     }
 
+    // Keep the main grid selector and the in-lightbox selector in sync.
+    // currentRefreshMs() always reads #cameraRefreshRate, so we mirror any
+    // change from the lightbox selector back to the main one before calling
+    // lbRestartRefresh() — zoom / pan state is never touched by that call.
     $('cameraRefreshRate').addEventListener('change', () => {
+      const ms = $('cameraRefreshRate').value;
+      $('camLbRefreshRate').value = ms;
+      lsSave(LS_REFRESH_MS, ms);
       startSnapshotPolling();
       lbRestartRefresh();
     });
+    $('camLbRefreshRate').addEventListener('change', () => {
+      const val = $('camLbRefreshRate').value;
+      // "live" is a lightbox-only option — don't try to sync it to the main selector.
+      if (val !== 'live') {
+        $('cameraRefreshRate').value = val;
+        lsSave(LS_REFRESH_MS, val);
+      }
+      lbRestartRefresh(); // restart interval / stream — zoom/pan unchanged
+      console.debug('[UniFiDeck] lb rate changed', val);
+    });
     $('refreshCamerasBtn').onclick = () => loadCameras().catch(console.error);
 
-    // Open lightbox when a camera thumbnail is clicked.
+    // ── Camera grid pan / zoom ────────────────────────────────────────────────
+    // Each camera keeps its own zoom state; state persists across image refreshes
+    // and is re-applied after the DOM is rebuilt by renderCameras().
+
+    const gridZoomMap = new Map(); // camId → {scale, panX, panY}
+    // Populate from the previous session so gridZoomRestoreAll() can apply them
+    // the moment cameras render, before the user does anything.
+    (function() {
+      const saved = lsLoad(LS_GRID_ZOOM, {});
+      Object.entries(saved).forEach(([id, st]) =>
+        gridZoomMap.set(id, {scale: st.scale, panX: st.panX, panY: st.panY}));
+      if (Object.keys(saved).length)
+        console.debug('[UniFiDeck] grid zoom restored', Object.keys(saved).length, 'cam(s)');
+    }());
+
+    let   gridDrag      = null;    // active drag: {camId, img, wrap, startX, startY, startPanX, startPanY}
+    let   gridDragMoved = false;   // true once drag moved > 3 px — suppresses the following click
+
+    function gridZoomState(camId) {
+      if (!gridZoomMap.has(camId)) gridZoomMap.set(camId, {scale: 1, panX: 0, panY: 0});
+      return gridZoomMap.get(camId);
+    }
+
+    function gridZoomApply(img, st) {
+      img.style.transform = (st.scale === 1 && st.panX === 0 && st.panY === 0)
+        ? '' : `translate(${st.panX}px,${st.panY}px) scale(${st.scale})`;
+      img.classList.toggle('cam-zoomed', st.scale > 1);
+      const btn = img.closest('.cam-snapshot-wrap')?.querySelector('.cam-zoom-reset');
+      if (btn) btn.classList.toggle('active', st.scale > 1 || st.panX !== 0 || st.panY !== 0);
+      gridZoomSave(); // persist to localStorage (debounced)
+    }
+
+    function gridZoomClamp(st, W, H) {
+      if (st.scale <= 1) { st.panX = 0; st.panY = 0; return; }
+      st.panX = Math.min(0, Math.max(W * (1 - st.scale), st.panX));
+      st.panY = Math.min(0, Math.max(H * (1 - st.scale), st.panY));
+    }
+
+    function gridZoomReset(camId) {
+      const st = gridZoomState(camId);
+      st.scale = 1; st.panX = 0; st.panY = 0;
+      const img = document.querySelector(`#cameraGrid img[data-cam-id="${CSS.escape(camId)}"]`);
+      if (img) gridZoomApply(img, st);
+      console.debug('[UniFiDeck] grid zoom reset', camId);
+    }
+
+    function gridZoomRestoreAll() {
+      gridZoomMap.forEach((st, camId) => {
+        if (st.scale === 1 && st.panX === 0 && st.panY === 0) return;
+        const img = document.querySelector(`#cameraGrid img[data-cam-id="${CSS.escape(camId)}"]`);
+        if (img) gridZoomApply(img, st);
+      });
+    }
+
+    // Scroll wheel → zoom towards cursor
+    $('cameraGrid').addEventListener('wheel', e => {
+      const img = e.target.closest('#cameraGrid img[data-cam-id]');
+      if (!img) return;
+      e.preventDefault();
+      const camId    = img.dataset.camId;
+      const st       = gridZoomState(camId);
+      const prevScale = st.scale;
+      const wrap  = img.closest('.cam-snapshot-wrap');
+      const rect  = wrap.getBoundingClientRect();
+      const factor   = e.deltaY < 0 ? 1.25 : 1 / 1.25;
+      const newScale = Math.max(1, Math.min(8, st.scale * factor));
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      // Keep the point under the cursor fixed during scale change.
+      st.panX  = mx - (mx - st.panX) * (newScale / st.scale);
+      st.panY  = my - (my - st.panY) * (newScale / st.scale);
+      st.scale = newScale;
+      gridZoomClamp(st, rect.width, rect.height);
+      gridZoomApply(img, st);
+      // First zoom-in: immediately fetch a HQ snapshot rather than waiting for the next poll.
+      if (prevScale <= 1 && newScale > 1) {
+        img.src = `/api/cameras/${encodeURIComponent(camId)}/snapshot?t=${Date.now()}&highQuality=true`;
+        console.debug('[UniFiDeck] grid zoom HQ fetch', camId);
+      }
+      console.debug('[UniFiDeck] grid zoom', camId, 'scale', st.scale.toFixed(2));
+    }, {passive: false});
+
+    // Mousedown → begin pan (only when already zoomed)
+    $('cameraGrid').addEventListener('mousedown', e => {
+      const img = e.target.closest('#cameraGrid img[data-cam-id]');
+      if (!img || e.button !== 0) return;
+      const camId = img.dataset.camId;
+      const st    = gridZoomState(camId);
+      if (st.scale <= 1) return; // no panning at 1:1
+      e.preventDefault();
+      const wrap = img.closest('.cam-snapshot-wrap');
+      gridDrag = {camId, img, wrap, startX: e.clientX, startY: e.clientY,
+                  startPanX: st.panX, startPanY: st.panY};
+      gridDragMoved = false;
+      img.classList.add('cam-panning');
+    });
+
+    window.addEventListener('mousemove', e => {
+      if (!gridDrag) return;
+      const {camId, img, wrap, startX, startY, startPanX, startPanY} = gridDrag;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (!gridDragMoved && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) gridDragMoved = true;
+      const st   = gridZoomState(camId);
+      const rect = wrap.getBoundingClientRect();
+      st.panX = startPanX + dx;
+      st.panY = startPanY + dy;
+      gridZoomClamp(st, rect.width, rect.height);
+      gridZoomApply(img, st);
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (!gridDrag) return;
+      gridDrag.img.classList.remove('cam-panning');
+      gridDrag = null;
+      // gridDragMoved is intentionally left true until the click event below clears it.
+    });
+
+    // Right-click → reset zoom on that camera
+    $('cameraGrid').addEventListener('contextmenu', e => {
+      const img = e.target.closest('#cameraGrid img[data-cam-id]');
+      if (!img) return;
+      e.preventDefault();
+      gridZoomReset(img.dataset.camId);
+    });
+
+    // Click: reset-zoom button takes priority; drag suppresses lightbox open.
     $('cameraGrid').addEventListener('click', e => {
+      // Reset-zoom button
+      const resetBtn = e.target.closest('.cam-zoom-reset');
+      if (resetBtn) {
+        const img = resetBtn.closest('.cam-snapshot-wrap')?.querySelector('img[data-cam-id]');
+        if (img) gridZoomReset(img.dataset.camId);
+        return;
+      }
+      // Swallow click if the mousedown was a pan drag
+      if (gridDragMoved) { gridDragMoved = false; return; }
+      // Normal click → open lightbox / fullscreen
       const wrap = e.target.closest('[data-cam-open-id]');
       if (wrap) lbOpen(wrap.dataset.camOpenId, wrap.dataset.camOpenName);
     });
@@ -1501,11 +2214,20 @@
     let lbScale    = 1;
     let lbPanX     = 0;
     let lbPanY     = 0;
-    let lbDragging = false;
-    let lbDragX    = 0;
-    let lbDragY    = 0;
-    let lbInterval = null;
+    let lbDragging    = false;
+    let lbDragX       = 0;
+    let lbDragY       = 0;
+    let lbInterval    = null;
+    let lbLiveMode    = false; // true when /api/cameras/{id}/live MJPEG stream is active
+    // True only for the very first image load after lbOpen(); cleared immediately
+    // after lbFit() runs so that periodic refresh swaps preserve the user's zoom/pan.
+    let lbInitialLoad     = false;
+    // When > Date.now(), auto-fit calls (from ResizeObserver / image load) are skipped
+    // so a restored zoom position is not immediately overwritten.
+    let lbFitBlockedUntil = 0;
 
+    // Always request highest quality — the lightbox is for detailed inspection and only
+    // polls one camera at a time, so the extra payload is well worth the clarity.
     function lbSnapURL(id) {
       return `/api/cameras/${encodeURIComponent(id)}/snapshot?t=${Date.now()}&highQuality=true`;
     }
@@ -1516,6 +2238,9 @@
     }
 
     function lbFit() {
+      // Skip auto-fit briefly after a zoom restore so the resize events that
+      // accompany lightbox-open and fullscreen-enter don't overwrite the saved position.
+      if (Date.now() < lbFitBlockedUntil) return;
       const vw = lbVp.clientWidth;
       const vh = lbVp.clientHeight;
       const iw = lbImg.naturalWidth  || 640;
@@ -1532,9 +2257,19 @@
       stopSnapshotPolling();
 
       lbCamId = camId;
-      lbScale = 1; lbPanX = 0; lbPanY = 0;
       $('camLbName').textContent = camName || camId;
-      lb.classList.add('open');
+      // Mirror the current grid rate into the in-lightbox selector so they start in sync.
+      $('camLbRefreshRate').value = $('cameraRefreshRate').value;
+
+      // Always open at fit — show the full picture the moment fullscreen kicks in.
+      // The user can zoom in from there; we don't pre-restore a saved position.
+      lbScale = 1; lbPanX = 0; lbPanY = 0;
+      lbFitBlockedUntil = 0;
+      lbInitialLoad = true;
+      // Add 'open' immediately (keeps all polling/guard checks working) but also
+      // add 'fullscreen-pending' to stay invisible until fullscreen is confirmed.
+      // This prevents the windowed lightbox from flashing before fullscreen kicks in.
+      lb.classList.add('open', 'fullscreen-pending');
 
       // If the camera is known to be offline, show a useful message immediately
       // rather than firing a snapshot request that will always return 500.
@@ -1543,13 +2278,23 @@
       if (!isOnline) {
         lbImg.src = '';
         lbStatus.textContent = '⚠ Camera offline — snapshot unavailable';
+        lb.requestFullscreen().catch(() => {
+          lb.classList.remove('fullscreen-pending'); // reveal in windowed mode as fallback
+        });
         console.debug('[UniFiDeck] lightbox: camera offline', camId);
         return;
       }
 
       lbStatus.textContent = 'Loading…';
       lbImg.src = '';
-      lbImg.onload = () => { lbFit(); lbStatus.textContent = new Date().toLocaleTimeString(); };
+      lbInitialLoad = true; // fit-to-viewport on first load only
+      lbImg.onload = () => {
+        if (lbInitialLoad) {
+          lbInitialLoad = false;
+          lbFit(); // only run once per camera open — preserves zoom on subsequent refreshes
+        }
+        lbStatus.textContent = new Date().toLocaleTimeString();
+      };
       lbImg.onerror = () => {
         lbStatus.textContent = '⚠ Snapshot unavailable (camera may be offline or rate-limited — close and retry)';
         lbCamId = null; // stop polling for a camera that isn't responding
@@ -1558,38 +2303,68 @@
       };
       lbImg.src = lbSnapURL(camId);
       lbRestartRefresh();
+      // Go fullscreen — fullscreenchange will strip 'fullscreen-pending' and reveal.
+      // If fullscreen is denied fall back to the windowed lightbox immediately.
+      lb.requestFullscreen().catch(err => {
+        lb.classList.remove('fullscreen-pending');
+        console.debug('[UniFiDeck] fullscreen request:', err);
+      });
       console.debug('[UniFiDeck] lightbox open', camId);
     }
 
     function lbClose() {
-      lb.classList.remove('open');
+      lbZoomSave();                       // persist zoom before lbCamId is cleared
+      const wasLive = lbLiveMode;
+      lb.classList.remove('open', 'fullscreen-pending');
       lbCamId = null;
-      lbStopRefresh();
+      lbStopRefresh();                    // clears lbLiveMode + interval
+      if (wasLive) lbImg.src = '';        // explicitly close the MJPEG connection
       if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-      startSnapshotPolling(); // Resume grid refresh now that lightbox is closed.
+      startSnapshotPolling();             // Resume grid refresh.
       console.debug('[UniFiDeck] lightbox close');
     }
 
     function lbRestartRefresh() {
-      lbStopRefresh();
+      const wasLive = lbLiveMode;
+      lbStopRefresh(); // clears lbLiveMode + interval
+
       if (!lbCamId) return;
-      const ms = currentRefreshMs();
+
+      // Read from the lightbox selector which has the "live" option.
+      const val = $('camLbRefreshRate').value;
+
+      if (val === 'live') {
+        lbLiveMode = true;
+        // Point the img at the MJPEG stream — browser keeps the connection open
+        // and renders each arriving JPEG frame.  Zoom/pan are unaffected.
+        lbImg.src = `/api/cameras/${encodeURIComponent(lbCamId)}/live`;
+        lbStatus.textContent = '● Live';
+        console.debug('[UniFiDeck] lb live stream start', lbCamId);
+        return;
+      }
+
+      // Leaving live mode: switch src away from the stream URL so the browser
+      // sends a connection-reset and the Go handler stops fetching frames.
+      if (wasLive) lbImg.src = lbSnapURL(lbCamId);
+
+      const ms = parseInt(val, 10) || 0;
       if (ms <= 0) return;
       lbInterval = setInterval(() => {
         if (!lbCamId) return;
-        const old = lbImg.src;
         const next = lbSnapURL(lbCamId);
         const tmp = new Image();
         tmp.onload = () => {
-          // Swap only after the new image fully loads to avoid flicker.
+          // Swap only after the new image fully loads — lbInitialLoad is false
+          // so zoom/pan are preserved.
           lbImg.src = next;
-          lbStatus.textContent = new Date().toLocaleTimeString();
         };
+        tmp.onerror = () => {};
         tmp.src = next;
       }, ms);
     }
     function lbStopRefresh() {
       if (lbInterval) { clearInterval(lbInterval); lbInterval = null; }
+      lbLiveMode = false;
     }
 
     // ── Zoom (mouse wheel) ─────────────────────────────────────────────────────
@@ -1605,6 +2380,7 @@
       lbPanY = my - (my - lbPanY) * (newScale / lbScale);
       lbScale = newScale;
       lbApplyTransform();
+      lbZoomSave(); // persist after each zoom gesture (debounced)
     }, { passive: false });
 
     // ── Pan (drag) ─────────────────────────────────────────────────────────────
@@ -1623,12 +2399,13 @@
       lbApplyTransform();
     });
     window.addEventListener('mouseup', () => {
+      if (lbDragging) lbZoomSave(); // persist pan position when drag ends
       lbDragging = false;
       lbVp.classList.remove('dragging');
     });
 
     // ── Double-click: fit ──────────────────────────────────────────────────────
-    lbVp.addEventListener('dblclick', () => lbFit());
+    lbVp.addEventListener('dblclick', () => { lbFitBlockedUntil = 0; lbFit(); lbZoomSave(); });
 
     // ── Fullscreen ─────────────────────────────────────────────────────────────
     $('camLbFullscreen').addEventListener('click', () => {
@@ -1640,12 +2417,19 @@
     });
     document.addEventListener('fullscreenchange', () => {
       const fs = !!document.fullscreenElement;
-      $('camLbFullscreen').textContent = fs ? '⊠ Exit' : '⛶';
-      $('camLbFullscreen').title = fs ? 'Exit fullscreen (Esc)' : 'Fullscreen';
-      // Hide the manual Fit button in fullscreen — auto-fit handles it.
-      // Keep it visible in windowed mode for manual re-centering after zoom.
-      const zoomReset = $('camLbZoomReset');
-      if (zoomReset) zoomReset.style.display = fs ? 'none' : '';
+      if (fs) {
+        // Fullscreen granted — reveal the lightbox (was hidden to prevent windowed flash).
+        lb.classList.remove('fullscreen-pending');
+        // Restart refresh so quality/timing are correct for fullscreen.
+        if (lbCamId && !lbLiveMode) lbRestartRefresh();
+      } else {
+        // Fullscreen exited — close the lightbox and return to the live view grid.
+        // lbClose() is safe to call here: it removes 'open' before calling exitFullscreen,
+        // so this handler won't fire recursively.
+        if (lb.classList.contains('open')) {
+          lbClose();
+        }
+      }
     });
 
     // ResizeObserver fires as soon as the viewport element finishes resizing —
@@ -1656,13 +2440,32 @@
       }).observe(lbVp);
     }
 
+    // ── Page visibility — pause all camera traffic when tab is hidden ──────────
+    // When the user switches to another tab or minimises the browser there is
+    // no reason to keep polling.  Resume as soon as the tab becomes visible again
+    // (but only if the lightbox is not still open).
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        stopSnapshotPolling();
+        lbStopRefresh();       // also pause the lightbox refresh if it was running
+        flushZoomState();      // save zoom/rate immediately in case the app is killed
+      } else {
+        // Tab came back into view — resume whichever mode was active.
+        if (lb.classList.contains('open') && lbCamId) {
+          lbRestartRefresh();  // resume the single-camera lightbox poll
+        } else {
+          startSnapshotPolling(); // resume the grid poll
+        }
+      }
+    });
+
     // ── Close handlers ─────────────────────────────────────────────────────────
     // Use arrow wrappers so the call resolves lbClose at runtime, not at bind time.
     // This ensures the Timeline override (which stops slideshow + clears playlist)
     // is also called when the X button or background is clicked.
     $('camLbClose').addEventListener('click', () => lbClose());
     $('camLbBg').addEventListener('click', () => lbClose());
-    $('camLbZoomReset').addEventListener('click', () => lbFit());
+    $('camLbZoomReset').addEventListener('click', () => { lbFitBlockedUntil = 0; lbFit(); lbZoomSave(); });
     document.addEventListener('keydown', e => {
       if (!lb.classList.contains('open')) return;
       if (e.key === 'Escape') lbClose();
@@ -1672,16 +2475,16 @@
         const ns = Math.min(12, lbScale * 1.15);
         lbPanX = vw - (vw - lbPanX) * (ns / lbScale);
         lbPanY = vh - (vh - lbPanY) * (ns / lbScale);
-        lbScale = ns; lbApplyTransform();
+        lbScale = ns; lbApplyTransform(); lbZoomSave();
       }
       if (e.key === '-') {
         const vw = lbVp.clientWidth / 2, vh = lbVp.clientHeight / 2;
         const ns = Math.max(0.1, lbScale / 1.15);
         lbPanX = vw - (vw - lbPanX) * (ns / lbScale);
         lbPanY = vh - (vh - lbPanY) * (ns / lbScale);
-        lbScale = ns; lbApplyTransform();
+        lbScale = ns; lbApplyTransform(); lbZoomSave();
       }
-      if (e.key === '0') lbFit();
+      if (e.key === '0') { lbFitBlockedUntil = 0; lbFit(); lbZoomSave(); }
     });
 
     // ── Camera inner sub-tabs ─────────────────────────────────────────────────
@@ -1692,6 +2495,7 @@
         btn.classList.add('active');
         const sub = document.getElementById('cam-sub-' + btn.dataset.camTab);
         if (sub) sub.style.display = 'block';
+        lsSave(LS_CAM_TAB, btn.dataset.camTab); // persist for next reload
         if (btn.dataset.camTab === 'timeline') {
           loadSnapshots().catch(console.error);
           stopSnapshotPolling();
@@ -1704,16 +2508,28 @@
     });
 
     // ── Timeline / Snapshots ──────────────────────────────────────────────────
-    let snapData = null;            // full response from /api/snapshots
-    let slideshowInterval = null;   // slideshow auto-advance timer
-    let slideshowPlaylist = [];     // array of snapshot IDs for current slideshow
-    let slideshowIdx = 0;
+    let snapData = null;
+    let snapRules = [];     // SnapshotRule[] from the server
+    let snapRetainDays = 30;
+
+    const INTERVAL_PRESETS = [
+      { label: '5 minutes',  val: 5   },
+      { label: '10 minutes', val: 10  },
+      { label: '15 minutes', val: 15  },
+      { label: '30 minutes', val: 30  },
+      { label: '1 hour',     val: 60  },
+      { label: '2 hours',    val: 120 },
+      { label: '4 hours',    val: 240 },
+      { label: '6 hours',    val: 360 },
+      { label: '12 hours',   val: 720 },
+      { label: '24 hours',   val: 1440},
+    ];
 
     async function loadSnapshots() {
       try {
         const d = await api('GET', '/api/snapshots');
         snapData = d;
-        renderScheduleForm(d.schedule || {});
+        renderRules(d.schedule || {});
         renderSnapCameras(d.cameras || []);
         console.debug('[UniFiDeck] snapshots loaded', d.total);
       } catch (e) {
@@ -1722,15 +2538,217 @@
       }
     }
 
-    function renderScheduleForm(sc) {
-      $('snapEnabled').checked = sc.enabled !== false;
-      $('snapTimes').value = (sc.times || ['10:30', '19:00']).join(', ');
-      $('snapTz').value = sc.timezone || '';
-      $('snapRetain').value = sc.retain_days != null ? sc.retain_days : 30;
+    // ── Rule rendering ─────────────────────────────────────────────────────────
+
+    function populateCaptureNowCams() {
+      const sel = $('captureNowCams');
+      if (!sel) return;
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">All cameras</option>';
+      camerasCache.forEach(cam => {
+        const opt = document.createElement('option');
+        opt.value = cam.id;
+        opt.textContent = cam.name;
+        sel.appendChild(opt);
+      });
+      if (cur) sel.value = cur;
     }
 
+    function renderRules(cfg) {
+      snapRules = (cfg.rules || []).map(r => Object.assign({}, r));
+      snapRetainDays = cfg.retain_days != null ? cfg.retain_days : 30;
+      $('snapRetain').value = snapRetainDays;
+      renderRuleList();
+    }
+
+    function renderRuleList() {
+      const list = $('ruleList');
+      list.innerHTML = '';
+      if (snapRules.length === 0) {
+        list.innerHTML = '<p class="muted" style="font-size:12px;margin:0;">No rules — click "+ Add Rule" to create one.</p>';
+        return;
+      }
+      snapRules.forEach((rule, idx) => list.appendChild(buildRuleCard(rule, idx)));
+    }
+
+    function buildRuleCard(rule, idx) {
+      const card = document.createElement('div');
+      card.className = 'rule-card';
+      const isInterval = rule.mode === 'interval';
+      const allCams    = !rule.camera_ids || rule.camera_ids.length === 0;
+      const isCustom   = isInterval && !INTERVAL_PRESETS.find(p => p.val === rule.interval_min);
+      const presetOpts = INTERVAL_PRESETS.map(p =>
+        `<option value="${p.val}"${rule.interval_min === p.val ? ' selected' : ''}>${p.label}</option>`
+      ).join('') + `<option value="custom"${isCustom ? ' selected' : ''}>Custom…</option>`;
+      const camChecks = camerasCache.length === 0
+        ? '<span class="muted" style="font-size:12px;">Open Live View tab first to load cameras.</span>'
+        : camerasCache.map(cam =>
+            `<label class="rule-cam-check">
+               <input type="checkbox" value="${escapeAttr(cam.id)}"${(rule.camera_ids||[]).includes(cam.id)?' checked':''} />
+               ${escapeHtml(cam.name)}
+             </label>`).join('');
+
+      card.innerHTML = `
+        <div class="rule-card-hdr">
+          <input type="checkbox" class="rule-enabled" title="Enable this rule"
+                 style="width:auto;margin:0;flex-shrink:0;" ${rule.enabled?'checked':''} />
+          <input type="text" class="rule-label" value="${escapeAttr(rule.label||'')}"
+                 placeholder="Rule name" style="flex:1;" />
+          <button type="button" class="btn-danger rule-delete">🗑 Delete</button>
+        </div>
+        <div class="rule-card-body">
+          <div class="rule-row">
+            <div style="flex:1;min-width:150px;">
+              <label>Cameras</label>
+              <select class="rule-cams-mode">
+                <option value="all"   ${allCams  ?'selected':''}>All cameras</option>
+                <option value="select"${!allCams ?'selected':''}>Select cameras…</option>
+              </select>
+            </div>
+            <div style="flex:1;min-width:160px;">
+              <label>Schedule type</label>
+              <select class="rule-mode">
+                <option value="times"   ${!isInterval?'selected':''}>At specific times each day</option>
+                <option value="interval"${ isInterval?'selected':''}>Every N minutes / hours</option>
+              </select>
+            </div>
+          </div>
+          <div class="rule-cam-list" style="display:${allCams?'none':'flex'};">${camChecks}</div>
+          <div class="rule-times-row rule-row" style="display:${isInterval?'none':'flex'};">
+            <div style="flex:1;min-width:180px;">
+              <label>Capture times (24h HH:MM, comma-separated)</label>
+              <input type="text" class="rule-times" autocomplete="off"
+                     value="${escapeAttr((rule.times||[]).join(', '))}" placeholder="10:30, 19:00" />
+            </div>
+            <div style="flex:1;min-width:140px;">
+              <label>Timezone</label>
+              <input type="text" class="rule-tz" autocomplete="off"
+                     value="${escapeAttr(rule.timezone||'')}" placeholder="America/New_York" />
+            </div>
+          </div>
+          <div class="rule-interval-row rule-row" style="display:${isInterval?'flex':'none'};">
+            <div style="flex:0 0 auto;">
+              <label>Capture every</label>
+              <select class="rule-interval-preset">${presetOpts}</select>
+            </div>
+            <div class="rule-interval-custom" style="display:${isCustom?'flex':'none'};flex-direction:column;gap:4px;">
+              <label>Minutes</label>
+              <input type="number" class="rule-interval-min" min="1" max="10080"
+                     value="${isInterval?(rule.interval_min||''):''}"
+                     placeholder="60" style="width:80px;" autocomplete="off" />
+            </div>
+          </div>
+        </div>`;
+
+      // Events
+      card.querySelector('.rule-cams-mode').addEventListener('change', e =>
+        card.querySelector('.rule-cam-list').style.display = e.target.value === 'select' ? 'flex' : 'none');
+      card.querySelector('.rule-mode').addEventListener('change', e => {
+        const iv = e.target.value === 'interval';
+        card.querySelector('.rule-times-row').style.display    = iv ? 'none' : 'flex';
+        card.querySelector('.rule-interval-row').style.display = iv ? 'flex' : 'none';
+      });
+      card.querySelector('.rule-interval-preset').addEventListener('change', e => {
+        const isC = e.target.value === 'custom';
+        card.querySelector('.rule-interval-custom').style.display = isC ? 'flex' : 'none';
+        if (!isC) card.querySelector('.rule-interval-min').value = e.target.value;
+      });
+      card.querySelector('.rule-delete').addEventListener('click', () => {
+        snapRules.splice(idx, 1);
+        renderRuleList();
+      });
+      return card;
+    }
+
+    function addRule() {
+      snapRules.push({
+        id: 'rule_' + Date.now(),
+        enabled: true,
+        label: 'New Rule',
+        camera_ids: [],
+        mode: 'times',
+        times: ['10:30'],
+        timezone: '',
+        interval_min: 60,
+      });
+      renderRuleList();
+      const cards = $('ruleList').querySelectorAll('.rule-card');
+      if (cards.length) cards[cards.length-1].scrollIntoView({ behavior:'smooth', block:'nearest' });
+    }
+
+    function collectRules() {
+      return [...$('ruleList').querySelectorAll('.rule-card')].map((card, i) => {
+        const mode    = card.querySelector('.rule-mode').value;
+        const camMode = card.querySelector('.rule-cams-mode').value;
+        const cameraIDs = camMode === 'select'
+          ? [...card.querySelectorAll('.rule-cam-list input:checked')].map(cb => cb.value)
+          : [];
+        const presetSel = card.querySelector('.rule-interval-preset').value;
+        const intervalMin = mode === 'interval'
+          ? (presetSel === 'custom'
+              ? (parseInt(card.querySelector('.rule-interval-min').value, 10) || 60)
+              : (parseInt(presetSel, 10) || 60))
+          : 0;
+        const times = (card.querySelector('.rule-times').value.trim())
+          .split(',').map(t => t.trim()).filter(t => /^\d{1,2}:\d{2}$/.test(t));
+        return {
+          id:           snapRules[i] ? snapRules[i].id : ('rule_' + Date.now() + i),
+          enabled:      card.querySelector('.rule-enabled').checked,
+          label:        card.querySelector('.rule-label').value.trim() || 'Rule',
+          camera_ids:   cameraIDs,
+          mode,
+          times:        mode === 'times' ? times : [],
+          interval_min: intervalMin,
+          timezone:     card.querySelector('.rule-tz').value.trim() || undefined,
+        };
+      });
+    }
+
+    $('addRuleBtn').addEventListener('click', addRule);
+
+    $('saveRulesBtn').addEventListener('click', async () => {
+      const msg = $('snapSchedMsg');
+      msg.textContent = 'Saving…'; msg.className = 'muted';
+      try {
+        const rules = collectRules();
+        const cfg = { rules, retain_days: parseInt($('snapRetain').value, 10) || 0 };
+        await api('POST', '/api/snapshots/schedule', cfg);
+        snapRules = rules;
+        msg.textContent = `✓ Saved ${rules.length} rule${rules.length !== 1 ? 's' : ''}`;
+        msg.className = 'ok';
+        console.debug('[UniFiDeck] snapshot rules saved', rules.length);
+      } catch (e) {
+        msg.textContent = 'Error: ' + (e.message || e);
+        msg.className = 'err';
+      }
+      setTimeout(() => { msg.textContent = ''; msg.className = 'muted'; }, 4000);
+    });
+
+    $('captureNowBtn').addEventListener('click', async () => {
+      const btn   = $('captureNowBtn');
+      const msgEl = $('captureNowMsg');
+      btn.disabled = true; btn.textContent = '⏳';
+      msgEl.textContent = ''; msgEl.className = 'muted';
+      try {
+        const camSel   = $('captureNowCams');
+        const cameraIDs = camSel.value ? [camSel.value] : [];
+        await api('POST', '/api/snapshots/capture', { camera_ids: cameraIDs });
+        msgEl.textContent = 'Triggered — images appear in a few seconds.';
+        msgEl.className = 'ok';
+        setTimeout(() => loadSnapshots().catch(console.error), 4000);
+      } catch (e) {
+        msgEl.textContent = 'Error: ' + (e.message || e);
+        msgEl.className = 'err';
+      } finally {
+        btn.disabled = false; btn.textContent = 'Capture';
+        setTimeout(() => { msgEl.textContent = ''; msgEl.className = 'muted'; }, 8000);
+      }
+    });
+
+    // ── Snapshot strips ────────────────────────────────────────────────────────
+
     function renderSnapCameras(groups) {
-      const list = $('snapCameraList');
+      const list  = $('snapCameraList');
       const empty = $('snapEmptyMsg');
       if (!groups || groups.length === 0) {
         list.innerHTML = '';
@@ -1750,7 +2768,6 @@
       strip.className = 'snap-strip';
       strip.dataset.camId = grp.camera_id;
 
-      // Header
       const hdr = document.createElement('div');
       hdr.className = 'snap-strip-header';
       hdr.innerHTML = `
@@ -1758,10 +2775,8 @@
         <span class="snap-strip-count">${grp.snapshots.length} snapshot${grp.snapshots.length !== 1 ? 's' : ''}</span>`;
       strip.appendChild(hdr);
 
-      // Thumbnail row
       const scroll = document.createElement('div');
       scroll.className = 'snap-strip-scroll';
-      // Show newest first in the strip
       const snaps = [...grp.snapshots].reverse();
       snaps.forEach((snap, i) => {
         const thumb = document.createElement('div');
@@ -1775,7 +2790,6 @@
                loading="lazy" onerror="this.style.opacity='0.2'" alt="${escapeAttr(label)}" />
           <div class="snap-thumb-label">${escapeHtml(label)}</div>`;
         thumb.addEventListener('click', () => {
-          // Open lightbox at this snapshot, playlist = all snaps for this camera
           const ids = snaps.map(s => s.id);
           lbOpenPlaylist(ids, i, grp.camera_name);
         });
@@ -1783,15 +2797,13 @@
       });
       strip.appendChild(scroll);
 
-      // Play bar
       const playbar = document.createElement('div');
       playbar.className = 'snap-playbar';
       playbar.innerHTML = `
         <button type="button" class="snap-play-btn" data-play-cam="${escapeAttr(grp.camera_id)}">▶ Slideshow</button>
         <button type="button" class="snap-del-btn" data-del-cam="${escapeAttr(grp.camera_id)}">🗑 Delete All</button>`;
       playbar.querySelector('[data-play-cam]').addEventListener('click', () => {
-        const ids = snaps.map(s => s.id);
-        lbOpenPlaylist(ids, 0, grp.camera_name, true /* autoplay */);
+        lbOpenPlaylist(snaps.map(s => s.id), 0, grp.camera_name, true);
       });
       playbar.querySelector('[data-del-cam]').addEventListener('click', async () => {
         if (!confirm(`Delete all ${grp.snapshots.length} snapshot(s) for "${grp.camera_name}"?`)) return;
@@ -1804,46 +2816,6 @@
       return strip;
     }
 
-    // Schedule save
-    $('saveSnapSchedBtn').addEventListener('click', async () => {
-      const msg = $('snapSchedMsg');
-      msg.textContent = 'Saving…'; msg.className = 'muted';
-      try {
-        const timesRaw = $('snapTimes').value.trim();
-        const times = timesRaw.split(',').map(t => t.trim()).filter(Boolean);
-        const sc = {
-          enabled: $('snapEnabled').checked,
-          times,
-          timezone: $('snapTz').value.trim() || undefined,
-          retain_days: parseInt($('snapRetain').value, 10) || 30,
-        };
-        await api('POST', '/api/snapshots/schedule', sc);
-        msg.textContent = '✓ Schedule saved'; msg.className = 'ok';
-        console.debug('[UniFiDeck] snapshot schedule saved', sc);
-      } catch (e) {
-        msg.textContent = 'Error: ' + (e.message || e); msg.className = 'err';
-      }
-      setTimeout(() => { msg.textContent = ''; msg.className = 'muted'; }, 4000);
-    });
-
-    $('captureNowBtn').addEventListener('click', async () => {
-      const btn = $('captureNowBtn');
-      btn.disabled = true; btn.textContent = '⏳ Capturing…';
-      try {
-        await api('POST', '/api/snapshots/capture');
-        $('snapSchedMsg').textContent = 'Capture triggered — snapshots will appear in a few seconds.';
-        $('snapSchedMsg').className = 'ok';
-        // Reload after a short delay to allow server to finish writing.
-        setTimeout(() => loadSnapshots().catch(console.error), 4000);
-      } catch (e) {
-        $('snapSchedMsg').textContent = 'Error: ' + (e.message || e);
-        $('snapSchedMsg').className = 'err';
-      } finally {
-        btn.disabled = false; btn.textContent = '📸 Capture Now';
-        setTimeout(() => { $('snapSchedMsg').textContent = ''; $('snapSchedMsg').className = 'muted'; }, 8000);
-      }
-    });
-
     // ── Lightbox playlist mode ────────────────────────────────────────────────
     // Extends the existing lightbox with prev/next navigation and slideshow.
     // When playlist is active, refresh is disabled (images are static archives).
@@ -1851,14 +2823,58 @@
     let lbPlaylist = [];     // array of snapshot IDs
     let lbPlaylistIdx = 0;   // current index
     let lbPlaylistName = '';
-    let lbSlideshowTimer = null;
-    const LB_SLIDE_MS = 3000;
+
+    // ── RAF-based slideshow (speed-adjustable) ────────────────────────────────
+    let lbSlideMs        = 33;     // ms per frame — updated by the speed selector
+    let lbSlideshowRAF   = null;   // requestAnimationFrame handle (null = paused)
+    let lbSlideshowLastT = 0;      // DOMHighResTimeStamp of last frame advance
+    let lbTitleCardTimer = null;   // timeout for hiding the title card overlay
+
+    // Preload cache: snapshot id → HTMLImageElement.
+    // Images are fetched once and kept in memory; subsequent src swaps hit browser cache.
+    const lbPreloadCache = new Map();
+
+    function lbPreloadAll() {
+      lbPlaylist.forEach(id => {
+        if (!lbPreloadCache.has(id)) {
+          const img = new Image();
+          img.src = `/api/snapshots/${encodeURIComponent(id)}/image`;
+          lbPreloadCache.set(id, img);
+          console.debug('[UniFiDeck] preload snap', id);
+        }
+      });
+    }
+
+    function lbShowTitleCard() {
+      const card = $('camLbTitleCard');
+      if (!card || lbPlaylist.length === 0) return;
+      $('camLbTitleName').textContent = lbPlaylistName;
+      const first = snapTimestamp(lbPlaylist[0]);
+      const last  = snapTimestamp(lbPlaylist[lbPlaylist.length - 1]);
+      $('camLbTitleSub').innerHTML =
+        `${lbPlaylist.length} snapshot${lbPlaylist.length !== 1 ? 's' : ''}<br>${first} – ${last}`;
+      card.classList.add('visible');
+      clearTimeout(lbTitleCardTimer);
+      // Show for ~3 frames at the current playback speed so it's just a brief
+      // indicator at the start of each loop without interrupting playback.
+      const titleDur = Math.min(3 * lbSlideMs, 1000);
+      lbTitleCardTimer = setTimeout(() => card.classList.remove('visible'), titleDur);
+    }
+
+    function lbHideTitleCard() {
+      clearTimeout(lbTitleCardTimer);
+      const card = $('camLbTitleCard');
+      if (card) card.classList.remove('visible');
+    }
 
     function lbOpenPlaylist(ids, startIdx, camName, autoPlay = false) {
       if (!ids || ids.length === 0) return;
       lbPlaylist = ids;
       lbPlaylistIdx = startIdx;
       lbPlaylistName = camName;
+
+      // Begin preloading all frames immediately
+      lbPreloadAll();
 
       // Show playlist navigation in lightbox toolbar
       lbEnsurePlaylistControls();
@@ -1871,13 +2887,14 @@
       const id = lbPlaylist[lbPlaylistIdx];
       $('camLbName').textContent = `${camName} — ${lbPlaylistIdx + 1} / ${lbPlaylist.length}`;
       lbStatus.textContent = 'Loading…';
-      lbImg.onload = () => { lbFit(); lbStatus.textContent = snapTimestamp(id); };
+      // Only fit on the first image load; subsequent frame swaps preserve zoom/pan.
+      lbInitialLoad = true;
       lbImg.onerror = () => { lbStatus.textContent = 'Image failed to load'; };
       lbImg.src = `/api/snapshots/${encodeURIComponent(id)}/image`;
       lb.classList.add('open');
 
       if (autoPlay) lbStartSlideshow();
-      console.debug('[UniFiDeck] lb playlist open', ids.length, 'idx', startIdx);
+      console.debug('[UniFiDeck] lb playlist open', ids.length, 'idx', startIdx, 'autoPlay', autoPlay);
     }
 
     function lbEnsurePlaylistControls() {
@@ -1885,16 +2902,34 @@
       const tb = document.querySelector('.cam-lb-toolbar > div');
       const ctrl = document.createElement('div');
       ctrl.id = 'camLbPlaylistControls';
-      ctrl.style.cssText = 'display:none;align-items:center;gap:6px;';
+      ctrl.style.cssText = 'display:none;align-items:center;gap:6px;flex-wrap:nowrap;';
       ctrl.innerHTML = `
-        <button type="button" class="cam-lb-btn" id="camLbPrev" title="Previous (←)">◀</button>
-        <button type="button" class="cam-lb-btn" id="camLbPlaySlide" title="Play/Pause slideshow">▶</button>
-        <button type="button" class="cam-lb-btn" id="camLbNext" title="Next (→)">▶▶</button>`;
+        <button type="button" class="cam-lb-btn" id="camLbPrev"      title="Previous (←)">◀</button>
+        <button type="button" class="cam-lb-btn" id="camLbPlaySlide" title="Play / Pause (Space)">▶</button>
+        <button type="button" class="cam-lb-btn" id="camLbNext"      title="Next (→)">▶▶</button>
+        <div class="cam-lb-rate-wrap" title="Playback speed">
+          <span>⏩</span>
+          <select id="camLbSlideSpeed" class="cam-lb-rate-sel" title="Playback speed">
+            <option value="33"   selected>30 fps</option>
+            <option value="100">10 fps</option>
+            <option value="200">5 fps</option>
+            <option value="500">2 fps</option>
+            <option value="1000">1 fps</option>
+            <option value="2000">1 / 2s</option>
+            <option value="5000">1 / 5s</option>
+          </select>
+        </div>`;
       tb.insertBefore(ctrl, tb.firstChild);
       $('camLbPrev').addEventListener('click', lbPlaylistPrev);
       $('camLbNext').addEventListener('click', lbPlaylistNext);
       $('camLbPlaySlide').addEventListener('click', () => {
-        if (lbSlideshowTimer) lbStopSlideshow(); else lbStartSlideshow();
+        if (lbSlideshowRAF) lbStopSlideshow(); else lbStartSlideshow();
+      });
+      $('camLbSlideSpeed').addEventListener('change', () => {
+        lbSlideMs = parseInt($('camLbSlideSpeed').value, 10);
+        // If already playing, reset the frame timer so the new speed kicks in immediately.
+        if (lbSlideshowRAF) lbSlideshowLastT = performance.now();
+        console.debug('[UniFiDeck] slide speed', lbSlideMs + 'ms/frame');
       });
     }
 
@@ -1915,32 +2950,45 @@
       lbPlaylistIdx = ((idx % lbPlaylist.length) + lbPlaylist.length) % lbPlaylist.length;
       const id = lbPlaylist[lbPlaylistIdx];
       $('camLbName').textContent = `${lbPlaylistName} — ${lbPlaylistIdx + 1} / ${lbPlaylist.length}`;
-      lbImg.src = `/api/snapshots/${encodeURIComponent(id)}/image`;
+      // Use the preloaded image src so the browser serves from cache instantly.
+      const preloaded = lbPreloadCache.get(id);
+      lbImg.src = preloaded ? preloaded.src : `/api/snapshots/${encodeURIComponent(id)}/image`;
       lbStatus.textContent = snapTimestamp(id);
-      lbFit();
-      // Highlight the active thumb
+      // Do NOT call lbFit() — preserve the user's current zoom/pan across frames.
       document.querySelectorAll('.snap-thumb').forEach((el, i) => el.classList.toggle('playing', i === lbPlaylistIdx));
     }
 
     function lbPlaylistPrev() { lbPlaylistShowIdx(lbPlaylistIdx - 1); }
-    function lbPlaylistNext() {
-      if (lbPlaylistIdx === lbPlaylist.length - 1) lbStopSlideshow();
-      else lbPlaylistShowIdx(lbPlaylistIdx + 1);
-    }
+    // Manual ▶▶ always steps forward and loops — never stops playback.
+    function lbPlaylistNext() { lbPlaylistShowIdx((lbPlaylistIdx + 1) % lbPlaylist.length); }
 
     function lbStartSlideshow() {
       lbStopSlideshow();
+      lbPreloadAll(); // ensure all frames are in cache
+
       const btn = $('camLbPlaySlide');
-      if (btn) { btn.textContent = '⏸'; btn.title = 'Pause'; }
-      lbSlideshowTimer = setInterval(() => {
-        if (lbPlaylistIdx >= lbPlaylist.length - 1) { lbStopSlideshow(); return; }
-        lbPlaylistShowIdx(lbPlaylistIdx + 1);
-      }, LB_SLIDE_MS);
+      if (btn) { btn.textContent = '⏸'; btn.title = 'Pause (Space)'; }
+
+      lbShowTitleCard();
+      lbSlideshowLastT = performance.now();
+
+      function tick(now) {
+        lbSlideshowRAF = requestAnimationFrame(tick);
+        if (now - lbSlideshowLastT < lbSlideMs) return; // not time yet
+        lbSlideshowLastT = now;
+
+        const next = (lbPlaylistIdx + 1) % lbPlaylist.length;
+        lbPlaylistShowIdx(next);
+        if (next === 0) lbShowTitleCard(); // looped — show title card again
+      }
+      lbSlideshowRAF = requestAnimationFrame(tick);
     }
+
     function lbStopSlideshow() {
-      if (lbSlideshowTimer) { clearInterval(lbSlideshowTimer); lbSlideshowTimer = null; }
+      if (lbSlideshowRAF) { cancelAnimationFrame(lbSlideshowRAF); lbSlideshowRAF = null; }
+      lbHideTitleCard();
       const btn = $('camLbPlaySlide');
-      if (btn) { btn.textContent = '▶'; btn.title = 'Play slideshow'; }
+      if (btn) { btn.textContent = '▶'; btn.title = 'Play slideshow (Space)'; }
     }
 
     // Override the lightbox close to also stop slideshow + hide playlist controls.
@@ -1954,12 +3002,12 @@
       _origLbClose();
     };
 
-    // Arrow key navigation in playlist mode
+    // Arrow-key + Space navigation in playlist mode
     document.addEventListener('keydown', e => {
       if (!lb.classList.contains('open') || lbPlaylist.length === 0) return;
       if (e.key === 'ArrowLeft')  lbPlaylistPrev();
       if (e.key === 'ArrowRight') lbPlaylistNext();
-      if (e.key === ' ') { e.preventDefault(); if (lbSlideshowTimer) lbStopSlideshow(); else lbStartSlideshow(); }
+      if (e.key === ' ') { e.preventDefault(); if (lbSlideshowRAF) lbStopSlideshow(); else lbStartSlideshow(); }
     });
 
     // ── Init ───────────────────────────────────────────────────────────────────
@@ -1974,13 +3022,24 @@
         if (hasKey) {
           $('cfgApiKey').placeholder = '•••••••• (saved — leave blank to keep)';
         }
-        const connEl = $('connStatus');
-        connEl.textContent = hasKey ? `Host: ${st.unifi_host}` : 'Not configured — add API key below';
-        connEl.className = hasKey ? 'muted' : 'warn';
+        setConnStatus(
+          hasKey ? `Host: ${st.unifi_host}` : 'Not configured — add API key below',
+          hasKey ? 'muted' : 'warn'
+        );
         console.debug('[UniFiDeck] settings loaded', st.unifi_host);
         await loadNetworks();
         await loadAutomations();
         await loadLog();
+
+        // Restore the tab the user was on before the page refreshed.
+        // Runs after init so the data fetch triggered by the tab click has
+        // settings (host, API key) already loaded.
+        const savedTab = localStorage.getItem(LS_ACTIVE_TAB);
+        if (savedTab && savedTab !== 'networks') {
+          const tabBtn = document.querySelector(`.tab-btn[data-tab="${savedTab}"]`);
+          if (tabBtn) tabBtn.click();
+          console.debug('[UniFiDeck] restored tab', savedTab);
+        }
       } catch (e) {
         console.error('[UniFiDeck] init failed', e);
       }

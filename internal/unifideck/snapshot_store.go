@@ -12,16 +12,46 @@ import (
 )
 
 // ──────────────────────────────────────────────
-// Types
+// Schedule types
 // ──────────────────────────────────────────────
 
-// SnapshotSchedule defines when automatic snapshots are taken.
-type SnapshotSchedule struct {
-	Enabled    bool     `json:"enabled"`
-	Times      []string `json:"times"`              // ["10:30", "19:00"] – 24-hour HH:MM in Timezone
-	Timezone   string   `json:"timezone,omitempty"` // IANA, e.g. "America/New_York"
-	RetainDays int      `json:"retain_days"`        // 0 = keep forever
+// SnapshotRule defines one automatic-capture schedule.
+// A single installation can have any number of rules, each targeting
+// different cameras and/or different cadences.
+type SnapshotRule struct {
+	ID    string `json:"id"`
+	// Enabled lets users pause a rule without deleting it.
+	Enabled bool   `json:"enabled"`
+	Label   string `json:"label,omitempty"`
+
+	// CameraIDs lists which cameras this rule applies to.
+	// An empty/nil slice means "all connected cameras".
+	CameraIDs []string `json:"camera_ids"`
+
+	// Mode is "times" (fire at specific HH:MM each day) or
+	// "interval" (fire every IntervalMin minutes).
+	Mode string `json:"mode"` // "times" | "interval"
+
+	// Times mode: one or more "HH:MM" strings in 24-hour format.
+	Times []string `json:"times,omitempty"`
+
+	// Interval mode: minutes between captures.  Minimum 1.
+	IntervalMin int `json:"interval_min,omitempty"`
+
+	// Timezone is the IANA location name (e.g. "America/New_York").
+	// Only used for Times mode.  Defaults to UTC.
+	Timezone string `json:"timezone,omitempty"`
 }
+
+// SnapshotScheduleConfig is the top-level schedule document.
+type SnapshotScheduleConfig struct {
+	Rules      []SnapshotRule `json:"rules"`
+	RetainDays int            `json:"retain_days"` // 0 = keep forever
+}
+
+// ──────────────────────────────────────────────
+// Snapshot record types
+// ──────────────────────────────────────────────
 
 // SnapshotRecord is metadata for one saved snapshot.
 type SnapshotRecord struct {
@@ -44,27 +74,34 @@ type CameraSnapshotGroup struct {
 // ──────────────────────────────────────────────
 
 type SnapshotStore struct {
-	mu        sync.RWMutex
-	dir       string // base image directory, e.g. data/snapshots
-	indexPath string
-	schedPath string
-	records   []SnapshotRecord
-	schedule  SnapshotSchedule
+	mu          sync.RWMutex
+	dir         string
+	indexPath   string
+	schedPath   string
+	records     []SnapshotRecord
+	schedConfig SnapshotScheduleConfig
 }
 
-var defaultSchedule = SnapshotSchedule{
-	Enabled:    true,
-	Times:      []string{"10:30", "19:00"},
+var defaultScheduleConfig = SnapshotScheduleConfig{
 	RetainDays: 30,
+	Rules: []SnapshotRule{
+		{
+			ID:      "default",
+			Enabled: true,
+			Label:   "Daily (10:30 AM + 7:00 PM)",
+			Mode:    "times",
+			Times:   []string{"10:30", "19:00"},
+		},
+	},
 }
 
 func NewSnapshotStore(dataDir string) *SnapshotStore {
 	dir := filepath.Join(dataDir, "snapshots")
 	s := &SnapshotStore{
-		dir:       dir,
-		indexPath: filepath.Join(dir, "index.json"),
-		schedPath: filepath.Join(dataDir, "snapshots-schedule.json"),
-		schedule:  defaultSchedule,
+		dir:         dir,
+		indexPath:   filepath.Join(dir, "index.json"),
+		schedPath:   filepath.Join(dataDir, "snapshots-schedule.json"),
+		schedConfig: defaultScheduleConfig,
 	}
 	_ = os.MkdirAll(dir, 0o755)
 	s.loadSchedule()
@@ -72,6 +109,7 @@ func NewSnapshotStore(dataDir string) *SnapshotStore {
 	return s
 }
 
+// loadSchedule reads the on-disk schedule, migrating the old flat format if needed.
 func (s *SnapshotStore) loadSchedule() {
 	raw, err := os.ReadFile(s.schedPath)
 	if err != nil {
@@ -80,29 +118,54 @@ func (s *SnapshotStore) loadSchedule() {
 		}
 		return
 	}
-	var sc SnapshotSchedule
-	if err := json.Unmarshal(raw, &sc); err != nil {
+
+	// New format has a top-level "rules" array.
+	var cfg SnapshotScheduleConfig
+	if err := json.Unmarshal(raw, &cfg); err == nil && cfg.Rules != nil {
+		s.schedConfig = cfg
+		return
+	}
+
+	// Migrate legacy format: { enabled, times, timezone, retain_days }.
+	var old struct {
+		Enabled    bool     `json:"enabled"`
+		Times      []string `json:"times"`
+		Timezone   string   `json:"timezone"`
+		RetainDays int      `json:"retain_days"`
+	}
+	if err := json.Unmarshal(raw, &old); err != nil {
 		fmt.Fprintf(os.Stderr, "[unifideck] WARNING: snapshot schedule corrupt: %v\n", err)
 		return
 	}
-	s.schedule = sc
+	s.schedConfig = SnapshotScheduleConfig{
+		RetainDays: old.RetainDays,
+		Rules: []SnapshotRule{{
+			ID:       "migrated",
+			Enabled:  old.Enabled,
+			Label:    "Imported schedule",
+			Mode:     "times",
+			Times:    old.Times,
+			Timezone: old.Timezone,
+		}},
+	}
+	fmt.Fprintf(os.Stderr, "[unifideck] INFO: migrated legacy snapshot schedule to new format\n")
 }
 
-func (s *SnapshotStore) SaveSchedule(sc SnapshotSchedule) error {
+func (s *SnapshotStore) SaveScheduleConfig(cfg SnapshotScheduleConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.schedule = sc
-	b, err := json.MarshalIndent(sc, "", "  ")
+	s.schedConfig = cfg
+	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(s.schedPath, b, 0o644)
 }
 
-func (s *SnapshotStore) GetSchedule() SnapshotSchedule {
+func (s *SnapshotStore) GetScheduleConfig() SnapshotScheduleConfig {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.schedule
+	return s.schedConfig
 }
 
 func (s *SnapshotStore) loadIndex() {
@@ -136,7 +199,6 @@ func (s *SnapshotStore) ImagePath(id string) string {
 
 // Add saves a snapshot image and appends its record to the index.
 func (s *SnapshotStore) Add(camID, camName string, data []byte, takenAt time.Time) (SnapshotRecord, error) {
-	// ID format: first 8 chars of camID + unix millis keeps it sortable and unique.
 	pfx := camID
 	if len(pfx) > 8 {
 		pfx = pfx[:8]
@@ -163,8 +225,7 @@ func (s *SnapshotStore) GroupedByCamera() []CameraSnapshotGroup {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// Collect camera order (preserve first-seen order).
-	seen := make(map[string]int) // cameraID -> index in groups
+	seen := make(map[string]int)
 	var groups []CameraSnapshotGroup
 	for _, r := range s.records {
 		if idx, ok := seen[r.CameraID]; ok {
@@ -178,7 +239,6 @@ func (s *SnapshotStore) GroupedByCamera() []CameraSnapshotGroup {
 			})
 		}
 	}
-	// Sort each group: oldest first.
 	for i := range groups {
 		sort.Slice(groups[i].Snapshots, func(a, b int) bool {
 			return groups[i].Snapshots[a].TakenAt.Before(groups[i].Snapshots[b].TakenAt)
@@ -215,11 +275,11 @@ func (s *SnapshotStore) Delete(id string) error {
 
 // PruneOld deletes snapshots older than RetainDays (no-op if RetainDays <= 0).
 func (s *SnapshotStore) PruneOld() {
-	sc := s.GetSchedule()
-	if sc.RetainDays <= 0 {
+	cfg := s.GetScheduleConfig()
+	if cfg.RetainDays <= 0 {
 		return
 	}
-	cutoff := time.Now().AddDate(0, 0, -sc.RetainDays)
+	cutoff := time.Now().AddDate(0, 0, -cfg.RetainDays)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var kept []SnapshotRecord
@@ -247,15 +307,18 @@ func (s *SnapshotStore) Count() int {
 // SnapshotScheduler
 // ──────────────────────────────────────────────
 
-// SnapshotScheduler fires at the configured HH:MM times and captures
-// a JPEG from every connected Protect camera.
+// SnapshotScheduler fires rules on their configured cadence and captures
+// JPEGs from the matching cameras.
 type SnapshotScheduler struct {
 	store      *SnapshotStore
 	logger     *AutomationLogger
 	clientFunc func() *UnifiClient
 	stop       chan struct{}
 	mu         sync.Mutex
-	lastFired  map[string]time.Time // "HH:MM" -> last fire time to avoid duplicate triggers
+	// lastFired tracks the last fire time per rule+slot key to prevent
+	// duplicate triggers within the same minute (times mode) or before
+	// the interval has elapsed (interval mode).
+	lastFired map[string]time.Time
 }
 
 func NewSnapshotScheduler(store *SnapshotStore, logger *AutomationLogger, clientFunc func() *UnifiClient) *SnapshotScheduler {
@@ -272,7 +335,6 @@ func (ss *SnapshotScheduler) Start() { go ss.run() }
 func (ss *SnapshotScheduler) Stop()  { close(ss.stop) }
 
 func (ss *SnapshotScheduler) run() {
-	// Check every 30 seconds; fires at the first tick that matches a HH:MM slot.
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -286,38 +348,71 @@ func (ss *SnapshotScheduler) run() {
 }
 
 func (ss *SnapshotScheduler) checkAndFire(now time.Time) {
-	sc := ss.store.GetSchedule()
-	if !sc.Enabled || len(sc.Times) == 0 {
-		return
-	}
-	loc := time.UTC
-	if sc.Timezone != "" {
-		if l, err := time.LoadLocation(sc.Timezone); err == nil {
-			loc = l
+	cfg := ss.store.GetScheduleConfig()
+	for _, rule := range cfg.Rules {
+		if !rule.Enabled {
+			continue
 		}
-	}
-	hhmm := now.In(loc).Format("15:04")
-
-	ss.mu.Lock()
-	defer ss.mu.Unlock()
-	for _, t := range sc.Times {
-		if t == hhmm {
-			// Guard: fire at most once per 2-minute window per slot.
-			if now.Sub(ss.lastFired[t]) < 2*time.Minute {
+		switch rule.Mode {
+		case "interval":
+			if rule.IntervalMin < 1 {
 				continue
 			}
-			ss.lastFired[t] = now
-			go ss.captureAll(now)
+			ss.mu.Lock()
+			last := ss.lastFired[rule.ID]
+			elapsed := now.Sub(last)
+			shouldFire := last.IsZero() || elapsed >= time.Duration(rule.IntervalMin)*time.Minute
+			if shouldFire {
+				ss.lastFired[rule.ID] = now
+			}
+			ss.mu.Unlock()
+			if shouldFire {
+				go ss.captureForRule(rule, now)
+			}
+
+		default: // "times"
+			loc := time.UTC
+			if rule.Timezone != "" {
+				if l, err := time.LoadLocation(rule.Timezone); err == nil {
+					loc = l
+				}
+			}
+			hhmm := now.In(loc).Format("15:04")
+			for _, t := range rule.Times {
+				if t != hhmm {
+					continue
+				}
+				key := rule.ID + "_" + t
+				ss.mu.Lock()
+				shouldFire := now.Sub(ss.lastFired[key]) >= 2*time.Minute
+				if shouldFire {
+					ss.lastFired[key] = now
+				}
+				ss.mu.Unlock()
+				if shouldFire {
+					go ss.captureForRule(rule, now)
+				}
+				break
+			}
 		}
 	}
 }
 
-// CaptureNow triggers an immediate capture outside the schedule.
-func (ss *SnapshotScheduler) CaptureNow() {
-	go ss.captureAll(time.Now())
+// CaptureNow triggers an immediate snapshot.
+// Pass a non-empty cameraIDs slice to limit capture to specific cameras;
+// pass nil or empty to capture all connected cameras.
+func (ss *SnapshotScheduler) CaptureNow(cameraIDs []string) {
+	rule := SnapshotRule{
+		ID:        "manual",
+		Enabled:   true,
+		Label:     "Manual",
+		CameraIDs: cameraIDs,
+		Mode:      "times",
+	}
+	go ss.captureForRule(rule, time.Now())
 }
 
-func (ss *SnapshotScheduler) captureAll(takenAt time.Time) {
+func (ss *SnapshotScheduler) captureForRule(rule SnapshotRule, takenAt time.Time) {
 	c := ss.clientFunc()
 	if !c.IsConfigured() {
 		ss.logger.Warn("snapshot capture skipped: UniFi not configured")
@@ -334,9 +429,19 @@ func (ss *SnapshotScheduler) captureAll(takenAt time.Time) {
 
 	ss.store.PruneOld()
 
+	// Build a fast lookup set for camera ID filtering.
+	camSet := make(map[string]bool, len(rule.CameraIDs))
+	for _, id := range rule.CameraIDs {
+		camSet[id] = true
+	}
+	filterCams := len(rule.CameraIDs) > 0
+
 	var succeeded, failed int
 	for _, cam := range cameras {
 		if cam.State != "CONNECTED" && !cam.IsConnected {
+			continue
+		}
+		if filterCams && !camSet[cam.ID] {
 			continue
 		}
 		data, _, err := c.CameraSnapshot(ctx, cam.ID, true)
@@ -352,14 +457,10 @@ func (ss *SnapshotScheduler) captureAll(takenAt time.Time) {
 		}
 		succeeded++
 	}
-	ss.logger.Info("snapshot capture complete ok=%d fail=%d time=%s",
-		succeeded, failed, takenAt.In(func() *time.Location {
-			sc := ss.store.GetSchedule()
-			if sc.Timezone != "" {
-				if l, err := time.LoadLocation(sc.Timezone); err == nil {
-					return l
-				}
-			}
-			return time.Local
-		}()).Format("15:04 MST"))
+
+	label := rule.Label
+	if label == "" {
+		label = rule.ID
+	}
+	ss.logger.Info("snapshot rule=%q ok=%d fail=%d", label, succeeded, failed)
 }

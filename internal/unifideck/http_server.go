@@ -28,6 +28,7 @@ type HTTPServer struct {
 	scheduler        *AutomationScheduler
 	snapStore        *SnapshotStore
 	snapScheduler    *SnapshotScheduler
+	clientTracker    *ClientTracker
 }
 
 func NewHTTPServer(cfg AppConfig) *HTTPServer {
@@ -37,6 +38,7 @@ func NewHTTPServer(cfg AppConfig) *HTTPServer {
 	store := NewAutomationStore(autoPath)
 	snapStore := NewSnapshotStore(DataDir())
 	logger := NewAutomationLogger(logPath)
+	clientTracker := NewClientTracker(DataDir())
 	s := &HTTPServer{
 		cfg:            cfg,
 		settingsPath:   settingsPath,
@@ -45,6 +47,7 @@ func NewHTTPServer(cfg AppConfig) *HTTPServer {
 		store:          store,
 		logger:         logger,
 		snapStore:      snapStore,
+		clientTracker:  clientTracker,
 	}
 	s.scheduler = NewAutomationScheduler(s.store, s.logger, s.unifiClient)
 	s.snapScheduler = NewSnapshotScheduler(snapStore, logger, s.unifiClient)
@@ -94,6 +97,7 @@ func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("/api/networks", s.handleNetworks)
 	mux.HandleFunc("/api/networks/", s.handleNetworkSubroutes)
 	mux.HandleFunc("/api/clients", s.handleClients)
+	mux.HandleFunc("/api/clients/new", s.handleClientsNew)
 	mux.HandleFunc("/api/devices", s.handleDevices)
 	mux.HandleFunc("/api/cameras", s.handleCameras)
 	mux.HandleFunc("/api/cameras/", s.handleCameraSubroutes)
@@ -280,6 +284,27 @@ func (s *HTTPServer) handleClients(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"clients": clients}})
 }
 
+// handleClientsNew returns devices first seen within the last 30 days.
+// The clientTracker background poller builds this list automatically.
+func (s *HTTPServer) handleClientsNew(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	newDevices := s.clientTracker.NewDevices(30)
+	if newDevices == nil {
+		newDevices = []TrackedClient{}
+	}
+	var lastSnap int64
+	if t := s.clientTracker.LastSnapshot(); !t.IsZero() {
+		lastSnap = t.UnixMilli()
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
+		"new_devices":   newDevices,
+		"last_snapshot": lastSnap,
+	}})
+}
+
 func (s *HTTPServer) handleDevices(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
@@ -321,15 +346,15 @@ func (s *HTTPServer) handleCameras(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"cameras": cameras, "configured": true}})
 }
 
-// handleCameraSubroutes proxies snapshot images: GET /api/cameras/{id}/snapshot
+// handleCameraSubroutes routes /api/cameras/{id}/snapshot and /api/cameras/{id}/live.
 func (s *HTTPServer) handleCameraSubroutes(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/cameras/")
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) < 2 || parts[1] != "snapshot" {
+	parts := strings.SplitN(strings.Trim(path, "/"), "/", 2)
+	if len(parts) < 2 {
 		writeJSON(w, http.StatusNotFound, apiResp{Success: false, Error: "not found"})
 		return
 	}
@@ -343,29 +368,91 @@ func (s *HTTPServer) handleCameraSubroutes(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "UniFi not configured", http.StatusServiceUnavailable)
 		return
 	}
-	highQuality := r.URL.Query().Get("highQuality") == "true"
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-	data, contentType, err := c.CameraSnapshot(ctx, cameraID, highQuality)
-	if err != nil {
-		// Log to stderr only — don't pollute the user-visible activity log for routine snapshot failures.
-		log.Printf("[unifideck] camera snapshot failed id=%s err=%v", cameraID, err)
-		http.Error(w, err.Error(), http.StatusBadGateway)
+	switch parts[1] {
+	case "snapshot":
+		highQuality := r.URL.Query().Get("highQuality") == "true"
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		data, contentType, err := c.CameraSnapshot(ctx, cameraID, highQuality)
+		if err != nil {
+			log.Printf("[unifideck] camera snapshot failed id=%s err=%v", cameraID, err)
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		if contentType == "" {
+			contentType = "image/jpeg"
+		}
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data)
+	case "live":
+		s.handleCameraLive(w, r, c, cameraID)
+	default:
+		writeJSON(w, http.StatusNotFound, apiResp{Success: false, Error: "not found"})
+	}
+}
+
+// handleCameraLive streams a multipart/x-mixed-replace MJPEG feed for one camera.
+// It continuously fetches high-quality snapshots (~5 fps) and pushes them as
+// JPEG frames until the client closes the connection.
+func (s *HTTPServer) handleCameraLive(w http.ResponseWriter, r *http.Request, c *UnifiClient, cameraID string) {
+	const (
+		boundary      = "unifidecklive"
+		frameInterval = 200 * time.Millisecond // 5 fps
+		frameTimeout  = 4 * time.Second
+	)
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported by server", http.StatusInternalServerError)
 		return
 	}
-	if contentType == "" {
-		contentType = "image/jpeg"
+
+	w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary="+boundary)
+	w.Header().Set("Cache-Control", "no-cache, no-store")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // disable nginx proxy buffering
+
+	ctx := r.Context()
+	ticker := time.NewTicker(frameInterval)
+	defer ticker.Stop()
+
+	log.Printf("[unifideck] live stream start cam=%s", cameraID)
+	frames := 0
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Printf("[unifideck] live stream end cam=%s frames=%d", cameraID, frames)
+			return
+		case <-ticker.C:
+			snapCtx, cancel := context.WithTimeout(ctx, frameTimeout)
+			data, _, err := c.CameraSnapshot(snapCtx, cameraID, true) // always high quality
+			cancel()
+			if err != nil {
+				continue // skip frames on transient errors; stop only on client disconnect
+			}
+			hdr := fmt.Sprintf("--%s\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n",
+				boundary, len(data))
+			if _, err := fmt.Fprint(w, hdr); err != nil {
+				return
+			}
+			if _, err := w.Write(data); err != nil {
+				return
+			}
+			if _, err := fmt.Fprint(w, "\r\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+			frames++
+		}
 	}
-	w.Header().Set("Content-Type", contentType)
-	// Prevent browser caching so every poll gets a fresh image.
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
 }
 
 // ── Snapshot handlers ──────────────────────────────────────────────────────────
 
-// GET /api/snapshots — returns schedule + all snapshots grouped by camera.
+// GET /api/snapshots — returns schedule config + all snapshots grouped by camera.
 func (s *HTTPServer) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
@@ -376,7 +463,7 @@ func (s *HTTPServer) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 		groups = []CameraSnapshotGroup{}
 	}
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
-		"schedule": s.snapStore.GetSchedule(),
+		"schedule": s.snapStore.GetScheduleConfig(),
 		"cameras":  groups,
 		"total":    s.snapStore.Count(),
 	}})
@@ -399,19 +486,19 @@ func (s *HTTPServer) handleSnapshotSubroutes(w http.ResponseWriter, r *http.Requ
 	case "schedule":
 		switch r.Method {
 		case http.MethodGet:
-			writeJSON(w, http.StatusOK, apiResp{Success: true, Data: s.snapStore.GetSchedule()})
+			writeJSON(w, http.StatusOK, apiResp{Success: true, Data: s.snapStore.GetScheduleConfig()})
 		case http.MethodPost:
-			var sc SnapshotSchedule
-			if err := json.NewDecoder(r.Body).Decode(&sc); err != nil {
+			var cfg SnapshotScheduleConfig
+			if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
 				writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "invalid JSON"})
 				return
 			}
-			if err := s.snapStore.SaveSchedule(sc); err != nil {
+			if err := s.snapStore.SaveScheduleConfig(cfg); err != nil {
 				writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: err.Error()})
 				return
 			}
-			s.logger.Info("snapshot schedule updated times=%v tz=%s retain=%dd", sc.Times, sc.Timezone, sc.RetainDays)
-			writeJSON(w, http.StatusOK, apiResp{Success: true, Data: sc})
+			s.logger.Info("snapshot schedule updated: %d rule(s), retain=%dd", len(cfg.Rules), cfg.RetainDays)
+			writeJSON(w, http.StatusOK, apiResp{Success: true, Data: cfg})
 		default:
 			writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
 		}
@@ -421,8 +508,17 @@ func (s *HTTPServer) handleSnapshotSubroutes(w http.ResponseWriter, r *http.Requ
 			writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
 			return
 		}
-		s.snapScheduler.CaptureNow()
-		s.logger.Info("snapshot capture triggered manually")
+		// Optional body: {"camera_ids": ["id1","id2"]} — omit or empty to capture all.
+		var body struct {
+			CameraIDs []string `json:"camera_ids"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body) // ignore decode error; body is optional
+		s.snapScheduler.CaptureNow(body.CameraIDs)
+		if len(body.CameraIDs) > 0 {
+			s.logger.Info("snapshot capture triggered manually for %d camera(s)", len(body.CameraIDs))
+		} else {
+			s.logger.Info("snapshot capture triggered manually (all cameras)")
+		}
 		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]string{"status": "capturing"}})
 
 	default:
@@ -576,16 +672,25 @@ func (s *HTTPServer) handleLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"lines": lines}})
 }
 
-// StartScheduler starts both the automation and snapshot background schedulers.
+// StartScheduler starts both the automation and snapshot background schedulers,
+// and the client device tracker.
 func (s *HTTPServer) StartScheduler() {
 	s.scheduler.Start()
 	s.snapScheduler.Start()
+	s.clientTracker.Start(func(ctx context.Context) ([]Client, error) {
+		c := s.unifiClient()
+		if !c.IsConfigured() {
+			return nil, nil // not configured yet — skip silently
+		}
+		return c.ListClients(ctx)
+	})
 }
 
-// StopScheduler stops both schedulers.
+// StopScheduler stops both schedulers and the client tracker.
 func (s *HTTPServer) StopScheduler() {
 	s.scheduler.Stop()
 	s.snapScheduler.Stop()
+	s.clientTracker.Stop()
 }
 
 func maskKey(k string) string {
