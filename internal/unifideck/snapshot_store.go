@@ -48,6 +48,9 @@ type SnapshotRule struct {
 type SnapshotScheduleConfig struct {
 	Rules      []SnapshotRule `json:"rules"`
 	RetainDays int            `json:"retain_days"` // 0 = keep forever
+	// DayTimezone is an IANA zone name (e.g. America/New_York) used to assign each
+	// snapshot to a calendar day for the Timeline UI. Empty means UTC.
+	DayTimezone string `json:"day_timezone,omitempty"`
 }
 
 // ──────────────────────────────────────────────
@@ -63,11 +66,28 @@ type SnapshotRecord struct {
 	SizeBytes  int64     `json:"size_bytes"`
 }
 
+// SnapshotRecordAPI is the JSON shape for GET /api/snapshots — includes day_key for timeline filtering.
+type SnapshotRecordAPI struct {
+	ID         string    `json:"id"`
+	CameraID   string    `json:"camera_id"`
+	CameraName string    `json:"camera_name"`
+	TakenAt    time.Time `json:"taken_at"`
+	DayKey     string    `json:"day_key"` // YYYY-MM-DD in DayTimezone
+	SizeBytes  int64     `json:"size_bytes"`
+}
+
 // CameraSnapshotGroup groups snapshots by camera for the API response.
 type CameraSnapshotGroup struct {
 	CameraID   string           `json:"camera_id"`
 	CameraName string           `json:"camera_name"`
 	Snapshots  []SnapshotRecord `json:"snapshots"`
+}
+
+// CameraSnapshotGroupAPI is used for GET /api/snapshots (snapshots include day_key).
+type CameraSnapshotGroupAPI struct {
+	CameraID   string              `json:"camera_id"`
+	CameraName string              `json:"camera_name"`
+	Snapshots  []SnapshotRecordAPI `json:"snapshots"`
 }
 
 // ──────────────────────────────────────────────
@@ -246,6 +266,43 @@ func (s *SnapshotStore) GroupedByCamera() []CameraSnapshotGroup {
 		})
 	}
 	return groups
+}
+
+// resolveDayLocation returns the timezone used to bucket snapshots into calendar days.
+func resolveDayLocation(tz string) *time.Location {
+	if strings.TrimSpace(tz) == "" {
+		return time.UTC
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}
+
+// GroupedByCameraAPI returns the same grouping as GroupedByCamera but with each
+// snapshot annotated with day_key (YYYY-MM-DD in the configured DayTimezone).
+func (s *SnapshotStore) GroupedByCameraAPI() []CameraSnapshotGroupAPI {
+	cfg := s.GetScheduleConfig()
+	loc := resolveDayLocation(cfg.DayTimezone)
+	groups := s.GroupedByCamera()
+	out := make([]CameraSnapshotGroupAPI, len(groups))
+	for i, g := range groups {
+		out[i].CameraID = g.CameraID
+		out[i].CameraName = g.CameraName
+		out[i].Snapshots = make([]SnapshotRecordAPI, len(g.Snapshots))
+		for j, r := range g.Snapshots {
+			out[i].Snapshots[j] = SnapshotRecordAPI{
+				ID:         r.ID,
+				CameraID:   r.CameraID,
+				CameraName: r.CameraName,
+				TakenAt:    r.TakenAt,
+				DayKey:     r.TakenAt.In(loc).Format("2006-01-02"),
+				SizeBytes:  r.SizeBytes,
+			}
+		}
+	}
+	return out
 }
 
 // Get returns a snapshot record by ID.

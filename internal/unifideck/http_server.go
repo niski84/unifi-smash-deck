@@ -458,9 +458,9 @@ func (s *HTTPServer) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
 		return
 	}
-	groups := s.snapStore.GroupedByCamera()
+	groups := s.snapStore.GroupedByCameraAPI()
 	if groups == nil {
-		groups = []CameraSnapshotGroup{}
+		groups = []CameraSnapshotGroupAPI{}
 	}
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
 		"schedule": s.snapStore.GetScheduleConfig(),

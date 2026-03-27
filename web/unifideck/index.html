@@ -460,8 +460,17 @@
       border-bottom: 1px solid var(--border);
       flex-wrap: wrap;
     }
-    .snap-strip-title { font-weight: 700; font-size: 14px; flex: 1; }
+    .snap-strip-title { font-weight: 700; font-size: 14px; }
     .snap-strip-count { font-size: 11px; color: var(--muted); }
+    .snap-day-filter {
+      padding: 4px 8px;
+      font-size: 12px;
+      border-radius: 6px;
+      background: var(--input-bg);
+      color: var(--text);
+      border: 1px solid var(--input-border);
+      max-width: 220px;
+    }
     .snap-strip-scroll {
       display: flex;
       gap: 8px;
@@ -903,6 +912,11 @@
                      style="width:62px;" data-testid="snap-retain" autocomplete="off" />
               days&nbsp;(0&nbsp;=&nbsp;forever)
             </label>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);margin:0;max-width:min(100%,22rem);">
+              <span title="Used to assign each snapshot to a calendar day in the timeline (IANA, e.g. America/New_York). Empty = UTC.">Day catalog TZ</span>
+              <input id="snapDayTz" type="text" placeholder="America/New_York" autocomplete="off"
+                     style="flex:1;min-width:140px;max-width:200px;padding:4px 8px;font-size:12px;background:var(--input-bg);color:var(--text);border:1px solid var(--input-border);border-radius:6px;" />
+            </label>
             <button type="button" id="addRuleBtn" data-testid="add-rule">+ Add Rule</button>
             <button type="button" class="primary" id="saveRulesBtn" data-testid="save-rules">Save Rules</button>
           </div>
@@ -925,7 +939,7 @@
 
       <!-- Per-camera snapshot strips -->
       <p class="muted" style="font-size:12px;margin:0 0 10px;max-width:52rem;line-height:1.45;">
-        Thumbnail labels show <strong>when each JPEG was captured</strong> (your local time). This list <strong>auto-refreshes every 45s</strong> while you stay on Timeline so new captures appear without switching tabs. If dates look stuck in the past, scheduled captures may still be failing with HTTP 429 — the live grid no longer polls in the background while you are here, and the server staggers archive snapshots (standard quality, ~1.5s apart) to stay under Protect’s rate limit.
+        Use <strong>Day catalog TZ</strong> above so each snapshot is filed under the correct calendar day for your region. Each camera has a <strong>day dropdown</strong> — pick a day to view that day’s thumbnails and slideshow only. Thumbnail times are still shown in your browser’s local timezone. This list auto-refreshes every 45s while you stay on Timeline.
       </p>
       <div id="snapCameraList" data-testid="snap-camera-list">
         <p class="muted" id="snapEmptyMsg">No snapshots yet — add a rule and save, or use Capture Now.</p>
@@ -2611,6 +2625,8 @@
       snapRules = (cfg.rules || []).map(r => Object.assign({}, r));
       snapRetainDays = cfg.retain_days != null ? cfg.retain_days : 30;
       $('snapRetain').value = snapRetainDays;
+      const tzEl = $('snapDayTz');
+      if (tzEl) tzEl.value = cfg.day_timezone || '';
       renderRuleList();
     }
 
@@ -2764,7 +2780,11 @@
       msg.textContent = 'Saving…'; msg.className = 'muted';
       try {
         const rules = collectRules();
-        const cfg = { rules, retain_days: parseInt($('snapRetain').value, 10) || 0 };
+        const cfg = {
+          rules,
+          retain_days: parseInt($('snapRetain').value, 10) || 0,
+          day_timezone: ($('snapDayTz') && $('snapDayTz').value.trim()) || '',
+        };
         await api('POST', '/api/snapshots/schedule', cfg);
         snapRules = rules;
         msg.textContent = `✓ Saved ${rules.length} rule${rules.length !== 1 ? 's' : ''}`;
@@ -2816,50 +2836,115 @@
       });
     }
 
+    function snapDayKey(s) {
+      if (s.day_key && /^\d{4}-\d{2}-\d{2}$/.test(s.day_key)) return s.day_key;
+      const d = new Date(s.taken_at);
+      if (Number.isNaN(d.getTime())) return '';
+      return d.toISOString().slice(0, 10);
+    }
+
+    function formatSnapDayLabel(dk) {
+      const p = dk.split('-').map(Number);
+      if (p.length !== 3 || !p[0]) return dk;
+      return new Date(p[0], p[1] - 1, p[2]).toLocaleDateString([], {
+        weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+      });
+    }
+
     function buildSnapStrip(grp) {
       const strip = document.createElement('div');
       strip.className = 'snap-strip';
       strip.dataset.camId = grp.camera_id;
 
+      const dayMap = {};
+      (grp.snapshots || []).forEach(s => {
+        const dk = snapDayKey(s);
+        if (!dk) return;
+        if (!dayMap[dk]) dayMap[dk] = [];
+        dayMap[dk].push(s);
+      });
+      const days = Object.keys(dayMap).sort();
+      if (days.length === 0) return strip;
+
       const hdr = document.createElement('div');
       hdr.className = 'snap-strip-header';
-      hdr.innerHTML = `
-        <span class="snap-strip-title">${escapeHtml(grp.camera_name)}</span>
-        <span class="snap-strip-count">${grp.snapshots.length} snapshot${grp.snapshots.length !== 1 ? 's' : ''}</span>`;
+
+      const title = document.createElement('span');
+      title.className = 'snap-strip-title';
+      title.textContent = grp.camera_name;
+
+      const daySel = document.createElement('select');
+      daySel.className = 'snap-day-filter';
+      daySel.setAttribute('data-testid', 'snap-day-filter');
+      daySel.setAttribute('aria-label', 'Day — snapshots for this calendar day');
+      days.slice().reverse().forEach(dk => {
+        const opt = document.createElement('option');
+        opt.value = dk;
+        opt.textContent = formatSnapDayLabel(dk);
+        daySel.appendChild(opt);
+      });
+
+      const countSpan = document.createElement('span');
+      countSpan.className = 'snap-strip-count';
+
+      hdr.appendChild(title);
+      hdr.appendChild(daySel);
+      hdr.appendChild(countSpan);
       strip.appendChild(hdr);
 
       const scroll = document.createElement('div');
       scroll.className = 'snap-strip-scroll';
-      const snaps = [...grp.snapshots].reverse();
-      snaps.forEach((snap, i) => {
-        const thumb = document.createElement('div');
-        thumb.className = 'snap-thumb';
-        thumb.dataset.snapId = snap.id;
-        const dt = new Date(snap.taken_at);
-        const label = dt.toLocaleDateString([], { month: 'short', day: 'numeric' })
-                    + ' ' + dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        thumb.innerHTML = `
-          <img src="/api/snapshots/${encodeURIComponent(snap.id)}/image"
-               loading="lazy" onerror="this.style.opacity='0.2'" alt="${escapeAttr(label)}" />
-          <div class="snap-thumb-label">${escapeHtml(label)}</div>`;
-        thumb.addEventListener('click', () => {
-          const ids = snaps.map(s => s.id);
-          lbOpenPlaylist(ids, i, grp.camera_name);
+
+      function thumbsForDay(dk) {
+        const list = dayMap[dk] || [];
+        return [...list].sort((a, b) => new Date(a.taken_at) - new Date(b.taken_at));
+      }
+
+      function renderThumbs(dk) {
+        const ordered = thumbsForDay(dk);
+        const snaps = [...ordered].reverse();
+        countSpan.textContent = `${snaps.length} snapshot${snaps.length !== 1 ? 's' : ''} · ${formatSnapDayLabel(dk)}`;
+        scroll.innerHTML = '';
+        snaps.forEach((snap, i) => {
+          const thumb = document.createElement('div');
+          thumb.className = 'snap-thumb';
+          thumb.dataset.snapId = snap.id;
+          const dt = new Date(snap.taken_at);
+          const label = dt.toLocaleDateString([], { month: 'short', day: 'numeric' })
+                      + ' ' + dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          thumb.innerHTML = `
+            <img src="/api/snapshots/${encodeURIComponent(snap.id)}/image"
+                 loading="lazy" onerror="this.style.opacity='0.2'" alt="${escapeAttr(label)}" />
+            <div class="snap-thumb-label">${escapeHtml(label)}</div>`;
+          thumb.addEventListener('click', () => {
+            const ids = snaps.map(s => s.id);
+            lbOpenPlaylist(ids, i, grp.camera_name);
+          });
+          scroll.appendChild(thumb);
         });
-        scroll.appendChild(thumb);
+      }
+
+      daySel.addEventListener('change', () => {
+        renderThumbs(daySel.value);
+        console.debug('[UniFiDeck] snap day filter', grp.camera_id, daySel.value);
       });
+      renderThumbs(daySel.value);
+
       strip.appendChild(scroll);
 
       const playbar = document.createElement('div');
       playbar.className = 'snap-playbar';
       playbar.innerHTML = `
-        <button type="button" class="snap-play-btn" data-play-cam="${escapeAttr(grp.camera_id)}">▶ Slideshow</button>
+        <button type="button" class="snap-play-btn" data-play-cam="${escapeAttr(grp.camera_id)}">▶ Slideshow (this day)</button>
         <button type="button" class="snap-del-btn" data-del-cam="${escapeAttr(grp.camera_id)}">🗑 Delete All</button>`;
       playbar.querySelector('[data-play-cam]').addEventListener('click', () => {
+        const dk = daySel.value;
+        const snaps = [...thumbsForDay(dk)].reverse();
+        if (snaps.length === 0) return;
         lbOpenPlaylist(snaps.map(s => s.id), 0, grp.camera_name, true);
       });
       playbar.querySelector('[data-del-cam]').addEventListener('click', async () => {
-        if (!confirm(`Delete all ${grp.snapshots.length} snapshot(s) for "${grp.camera_name}"?`)) return;
+        if (!confirm(`Delete all ${grp.snapshots.length} snapshot(s) for "${grp.camera_name}" (all days)?`)) return;
         for (const snap of grp.snapshots) {
           await api('DELETE', `/api/snapshots/${encodeURIComponent(snap.id)}`).catch(() => {});
         }
