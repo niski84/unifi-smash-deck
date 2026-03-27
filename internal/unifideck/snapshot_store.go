@@ -470,7 +470,7 @@ func (ss *SnapshotScheduler) CaptureNow(cameraIDs []string) {
 	go ss.captureForRule(rule, time.Now())
 }
 
-func (ss *SnapshotScheduler) captureForRule(rule SnapshotRule, takenAt time.Time) {
+func (ss *SnapshotScheduler) captureForRule(rule SnapshotRule, scheduledAt time.Time) {
 	c := ss.clientFunc()
 	if !c.IsConfigured() {
 		ss.logger.Warn("snapshot capture skipped: UniFi not configured")
@@ -479,6 +479,16 @@ func (ss *SnapshotScheduler) captureForRule(rule SnapshotRule, takenAt time.Time
 	// Long timeout: many cameras × stagger + 429 retry backoffs can exceed 3 minutes.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
+
+	cfgTZ := ss.store.GetScheduleConfig().DayTimezone
+	dayLoc := resolveDayLocation(cfgTZ)
+
+	label := rule.Label
+	if label == "" {
+		label = rule.ID
+	}
+	ss.logger.Info("snapshot run start rule=%q scheduled_at=%s day_tz=%q",
+		label, scheduledAt.Format(time.RFC3339), cfgTZ)
 
 	cameras, err := c.ListCameras(ctx)
 	if err != nil {
@@ -506,6 +516,8 @@ func (ss *SnapshotScheduler) captureForRule(rule SnapshotRule, takenAt time.Time
 	retryWaits := []time.Duration{3 * time.Second, 5 * time.Second, 8 * time.Second, 12 * time.Second}
 
 	var succeeded, failed int
+	var minCap, maxCap time.Time
+	var haveCap bool
 	first := true
 	for _, cam := range cameras {
 		if cam.State != "CONNECTED" && !cam.IsConnected {
@@ -559,17 +571,33 @@ func (ss *SnapshotScheduler) captureForRule(rule SnapshotRule, takenAt time.Time
 			failed++
 			continue
 		}
-		if _, err := ss.store.Add(cam.ID, cam.Name, data, takenAt); err != nil {
+		// Stamp each file at actual capture time (after stagger) so the timeline
+		// shows real clock spread — not one identical time for every camera in the run.
+		capAt := time.Now()
+		if _, err := ss.store.Add(cam.ID, cam.Name, data, capAt); err != nil {
 			ss.logger.Error("snapshot store failed cam=%q err=%v", cam.Name, err)
 			failed++
 			continue
 		}
 		succeeded++
+		if !haveCap {
+			minCap, maxCap, haveCap = capAt, capAt, true
+		} else {
+			if capAt.Before(minCap) {
+				minCap = capAt
+			}
+			if capAt.After(maxCap) {
+				maxCap = capAt
+			}
+		}
 	}
 
-	label := rule.Label
-	if label == "" {
-		label = rule.ID
+	if succeeded > 0 {
+		ss.logger.Info("snapshot rule=%q ok=%d fail=%d span_utc=%s..%s span_day=%s..%s (day_tz=%q)",
+			label, succeeded, failed,
+			minCap.Format(time.RFC3339), maxCap.Format(time.RFC3339),
+			minCap.In(dayLoc).Format("2006-01-02"), maxCap.In(dayLoc).Format("2006-01-02"), cfgTZ)
+	} else {
+		ss.logger.Info("snapshot rule=%q ok=%d fail=%d", label, succeeded, failed)
 	}
-	ss.logger.Info("snapshot rule=%q ok=%d fail=%d", label, succeeded, failed)
 }
