@@ -925,7 +925,7 @@
 
       <!-- Per-camera snapshot strips -->
       <p class="muted" style="font-size:12px;margin:0 0 10px;max-width:52rem;line-height:1.45;">
-        Thumbnail labels show <strong>when each JPEG was captured</strong> (your local time). If all thumbnails share an older date, no new snapshots were saved after that — often because UniFi Protect rate-limited snapshot requests (HTTP 429). See Activity Log; captures are now staggered to avoid that.
+        Thumbnail labels show <strong>when each JPEG was captured</strong> (your local time). This list <strong>auto-refreshes every 45s</strong> while you stay on Timeline so new captures appear without switching tabs. If dates look stuck in the past, scheduled captures may still be failing with HTTP 429 — the live grid no longer polls in the background while you are here, and the server staggers archive snapshots (standard quality, ~1.5s apart) to stay under Protect’s rate limit.
       </p>
       <div id="snapCameraList" data-testid="snap-camera-list">
         <p class="muted" id="snapEmptyMsg">No snapshots yet — add a rule and save, or use Capture Now.</p>
@@ -1318,15 +1318,20 @@
           if (camTabBtn && !camTabBtn.classList.contains('active')) {
             camTabBtn.click();
           } else {
-            if (camerasCache.length === 0) loadCameras().then(() => startSnapshotPolling()).catch(console.error);
+            if (savedCamTab === 'timeline') {
+              loadSnapshots().catch(console.error);
+              startTimelineSnapshotsPoll();
+            } else if (camerasCache.length === 0) loadCameras().then(() => startSnapshotPolling()).catch(console.error);
             else startSnapshotPolling();
           }
         } else if (btn.dataset.tab === 'clients') {
           stopSnapshotPolling();
+          stopTimelineSnapshotsPoll();
           lbStopRefresh();
           startClientPoll();
         } else {
           stopSnapshotPolling();
+          stopTimelineSnapshotsPoll();
           stopClientPoll();
           lbStopRefresh();
         }
@@ -2001,7 +2006,10 @@
     function refreshSnapshots() {
       // Don't refresh the grid while the lightbox has focus on a single camera,
       // or while the tab is hidden — saves bandwidth with no visible benefit.
+      // Also skip when Timeline is active — the grid is not visible but the DOM
+      // still has <img> nodes that would otherwise compete with scheduled captures.
       if ((lb && lb.classList.contains('open')) || document.hidden) return;
+      if (!isCamerasPanelActive() || !isCamLiveViewActive()) return;
 
       const imgs = document.querySelectorAll('#cameraGrid img[data-cam-id]');
       let delay = 0;
@@ -2015,6 +2023,7 @@
         // Re-check guards inside the timeout — state may change while waiting.
         setTimeout(() => {
           if ((lb && lb.classList.contains('open')) || document.hidden) return;
+          if (!isCamerasPanelActive() || !isCamLiveViewActive()) return;
           const zoomed = gridZoomState(id).scale > 1;
           img.src = `/api/cameras/${encodeURIComponent(id)}/snapshot?t=${Date.now()}${zoomed ? '&highQuality=true' : ''}`;
           const tsEl = document.querySelector(`[data-cam-ts="${id}"]`);
@@ -2028,8 +2037,9 @@
       stopSnapshotPolling();
       // Never start the grid poll while the lightbox is showing a single camera
       // — it would compete for bandwidth and hit the Protect rate limit (429).
-      // Also skip while the tab is hidden.
+      // Also skip while the tab is hidden or the user is on Timeline / another main tab.
       if ((lb && lb.classList.contains('open')) || document.hidden) return;
+      if (!isCamerasPanelActive() || !isCamLiveViewActive()) return;
       const ms = currentRefreshMs();
       if (ms > 0 && camerasCache.length > 0) {
         // Grid: never faster than 5 s — protects Protect's rate limit across all cameras.
@@ -2039,6 +2049,40 @@
     }
     function stopSnapshotPolling() {
       if (snapshotInterval) { clearInterval(snapshotInterval); snapshotInterval = null; }
+    }
+
+    // Only poll the live grid when that sub-panel is visible — otherwise we still
+    // hit /snapshot for every camera in the background while you are on Timeline,
+    // which stacks with scheduled captures and causes HTTP 429.
+    function isCamerasPanelActive() {
+      const p = $('panel-cameras');
+      return !!(p && p.classList.contains('active'));
+    }
+    function isCamLiveViewActive() {
+      const t = document.querySelector('.cam-inner-tab[data-cam-tab="live"]');
+      return !!(t && t.classList.contains('active'));
+    }
+    function isCamTimelineActive() {
+      const t = document.querySelector('.cam-inner-tab[data-cam-tab="timeline"]');
+      return !!(t && t.classList.contains('active'));
+    }
+
+    let timelineSnapshotsPoll = null;
+    const TIMELINE_SNAPSHOT_POLL_MS = 45000;
+
+    function startTimelineSnapshotsPoll() {
+      stopTimelineSnapshotsPoll();
+      timelineSnapshotsPoll = setInterval(() => {
+        if (!isCamerasPanelActive() || !isCamTimelineActive() || document.hidden) return;
+        loadSnapshots().catch(console.error);
+        console.debug('[UniFiDeck] timeline snapshots auto-refresh');
+      }, TIMELINE_SNAPSHOT_POLL_MS);
+    }
+    function stopTimelineSnapshotsPoll() {
+      if (timelineSnapshotsPoll) {
+        clearInterval(timelineSnapshotsPoll);
+        timelineSnapshotsPoll = null;
+      }
     }
 
     // Keep the main grid selector and the in-lightbox selector in sync.
@@ -2450,14 +2494,18 @@
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         stopSnapshotPolling();
+        stopTimelineSnapshotsPoll();
         lbStopRefresh();       // also pause the lightbox refresh if it was running
         flushZoomState();      // save zoom/rate immediately in case the app is killed
       } else {
         // Tab came back into view — resume whichever mode was active.
         if (lb.classList.contains('open') && lbCamId) {
           lbRestartRefresh();  // resume the single-camera lightbox poll
-        } else {
-          startSnapshotPolling(); // resume the grid poll
+        } else if (isCamerasPanelActive() && isCamTimelineActive()) {
+          loadSnapshots().catch(console.error);
+          startTimelineSnapshotsPoll();
+        } else if (isCamerasPanelActive() && isCamLiveViewActive()) {
+          startSnapshotPolling();
         }
       }
     });
@@ -2502,7 +2550,9 @@
         if (btn.dataset.camTab === 'timeline') {
           loadSnapshots().catch(console.error);
           stopSnapshotPolling();
+          startTimelineSnapshotsPoll();
         } else {
+          stopTimelineSnapshotsPoll();
           if (camerasCache.length === 0) loadCameras().then(() => startSnapshotPolling()).catch(console.error);
           else startSnapshotPolling();
         }

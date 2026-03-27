@@ -419,7 +419,8 @@ func (ss *SnapshotScheduler) captureForRule(rule SnapshotRule, takenAt time.Time
 		ss.logger.Warn("snapshot capture skipped: UniFi not configured")
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	// Long timeout: many cameras × stagger + 429 retry backoffs can exceed 3 minutes.
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	cameras, err := c.ListCameras(ctx)
@@ -437,10 +438,15 @@ func (ss *SnapshotScheduler) captureForRule(rule SnapshotRule, takenAt time.Time
 	}
 	filterCams := len(rule.CameraIDs) > 0
 
-	// Stagger captures by 600 ms per camera so we stay well inside UniFi
-	// Protect's 10 req/s rate limit even while the live-view grid is also polling.
-	const staggerDelay = 600 * time.Millisecond
-	const retryDelay   = 2 * time.Second
+	// Stagger + standard quality:
+	// - highQuality=false uses a single HTTP GET per camera (HQ mode can issue two
+	//   back-to-back requests when the first fails, which doubles load and blows
+	//   Protect's ~10 req/s limit when combined with the live-view grid).
+	// - 1.5 s between cameras keeps total snapshot traffic well under the limit
+	//   even if the UI is also refreshing the live grid.
+	const staggerDelay = 1500 * time.Millisecond
+	const max429Retries = 4
+	retryWaits := []time.Duration{3 * time.Second, 5 * time.Second, 8 * time.Second, 12 * time.Second}
 
 	var succeeded, failed int
 	first := true
@@ -462,18 +468,33 @@ func (ss *SnapshotScheduler) captureForRule(rule SnapshotRule, takenAt time.Time
 		}
 		first = false
 
-		data, _, err := c.CameraSnapshot(ctx, cam.ID, true)
-		if err != nil {
-			// On 429 wait briefly and retry once before giving up.
-			if strings.Contains(err.Error(), "429") {
-				ss.logger.Warn("snapshot 429 rate-limit cam=%q — retrying in %s", cam.Name, retryDelay)
+		// Archived timeline snapshots: standard quality only (one request each).
+		var data []byte
+		var err error
+	attemptLoop:
+		for attempt := 0; attempt <= max429Retries; attempt++ {
+			if attempt > 0 {
+				w := retryWaits[attempt-1]
+				if attempt-1 >= len(retryWaits) {
+					w = retryWaits[len(retryWaits)-1]
+				}
+				ss.logger.Warn("snapshot 429 backoff cam=%q attempt=%d wait=%s", cam.Name, attempt, w)
 				select {
 				case <-ctx.Done():
-					failed++
-					continue
-				case <-time.After(retryDelay):
+					ss.logger.Warn("snapshot capture context cancelled during 429 backoff")
+					return
+				case <-time.After(w):
 				}
-				data, _, err = c.CameraSnapshot(ctx, cam.ID, true)
+			}
+			data, _, err = c.CameraSnapshot(ctx, cam.ID, false)
+			if err == nil {
+				break attemptLoop
+			}
+			if !strings.Contains(err.Error(), "429") {
+				break attemptLoop
+			}
+			if attempt == max429Retries {
+				break
 			}
 		}
 		if err != nil {
