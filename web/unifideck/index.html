@@ -2901,8 +2901,8 @@
       }
 
       function renderThumbs(dk) {
-        const ordered = thumbsForDay(dk);
-        const snaps = [...ordered].reverse();
+        // Oldest → newest (left to right). Slideshow / Next (→) advance idx+1, so this order is forward in time.
+        const snaps = thumbsForDay(dk);
         countSpan.textContent = `${snaps.length} snapshot${snaps.length !== 1 ? 's' : ''} · ${formatSnapDayLabel(dk)}`;
         scroll.innerHTML = '';
         snaps.forEach((snap, i) => {
@@ -2939,7 +2939,7 @@
         <button type="button" class="snap-del-btn" data-del-cam="${escapeAttr(grp.camera_id)}">🗑 Delete All</button>`;
       playbar.querySelector('[data-play-cam]').addEventListener('click', () => {
         const dk = daySel.value;
-        const snaps = [...thumbsForDay(dk)].reverse();
+        const snaps = thumbsForDay(dk);
         if (snaps.length === 0) return;
         lbOpenPlaylist(snaps.map(s => s.id), 0, grp.camera_name, true);
       });
