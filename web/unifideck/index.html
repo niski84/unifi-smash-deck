@@ -939,7 +939,7 @@
 
       <!-- Per-camera snapshot strips -->
       <p class="muted" style="font-size:12px;margin:0 0 10px;max-width:52rem;line-height:1.45;">
-        Use <strong>Day catalog TZ</strong> above so each snapshot is filed under the correct calendar day for your region. Each camera has a <strong>day dropdown</strong> — pick a day to view that day’s thumbnails and slideshow only. Thumbnail times are still shown in your browser’s local timezone. This list auto-refreshes every 45s while you stay on Timeline.
+        <strong>Day catalog TZ</strong> (above) only controls how the <strong>server</strong> assigns each snapshot to a calendar day (<code>day_key</code>) for the timeline buckets — set it to match how you think about “which day” a capture belongs to (San Antonio: <code>America/Chicago</code>). <strong>Thumbnail and lightbox times</strong> use your <strong>browser’s local timezone</strong> (your OS region/time — for San Antonio wall clock, set the device to Central Time). If catalog TZ and local TZ differ, a bucket label can occasionally disagree with the local date on a thumbnail near midnight; align both to <code>America/Chicago</code> if you want them to match. This list auto-refreshes every 45s on Timeline.
       </p>
       <div id="snapCameraList" data-testid="snap-camera-list">
         <p class="muted" id="snapEmptyMsg">No snapshots yet — add a rule and save, or use Capture Now.</p>
@@ -2829,6 +2829,9 @@
         return;
       }
       if (empty) empty.style.display = 'none';
+      try {
+        console.debug('[UniFiDeck] snapshot labels use browser local TZ', Intl.DateTimeFormat().resolvedOptions().timeZone);
+      } catch (_) {}
       list.innerHTML = '';
       groups.forEach(grp => {
         if (!grp.snapshots || grp.snapshots.length === 0) return;
@@ -2843,12 +2846,40 @@
       return d.toISOString().slice(0, 10);
     }
 
+    /** Wall clock in the browser/OS local timezone (e.g. San Antonio when system is America/Chicago). */
+    function formatTakenAtLocal(iso) {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return '—';
+      try {
+        return d.toLocaleString([], {
+          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+        });
+      } catch (e) {
+        return '—';
+      }
+    }
+
     function formatSnapDayLabel(dk) {
       const p = dk.split('-').map(Number);
       if (p.length !== 3 || !p[0]) return dk;
       return new Date(p[0], p[1] - 1, p[2]).toLocaleDateString([], {
         weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
       });
+    }
+
+    /** Day dropdown label in local timezone so it matches thumbnail clocks. */
+    function formatDayDropdownLabel(dk, sampleSnap) {
+      if (sampleSnap && sampleSnap.taken_at) {
+        try {
+          const d = new Date(sampleSnap.taken_at);
+          if (!Number.isNaN(d.getTime())) {
+            return d.toLocaleDateString([], {
+              weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+            });
+          }
+        } catch (_) { /* fall through */ }
+      }
+      return formatSnapDayLabel(dk);
     }
 
     function buildSnapStrip(grp) {
@@ -2880,7 +2911,8 @@
       days.slice().reverse().forEach(dk => {
         const opt = document.createElement('option');
         opt.value = dk;
-        opt.textContent = formatSnapDayLabel(dk);
+        const sample = (dayMap[dk] && dayMap[dk][0]) || null;
+        opt.textContent = formatDayDropdownLabel(dk, sample);
         daySel.appendChild(opt);
       });
 
@@ -2903,15 +2935,13 @@
       function renderThumbs(dk) {
         // Oldest → newest (left to right). Slideshow / Next (→) advance idx+1, so this order is forward in time.
         const snaps = thumbsForDay(dk);
-        countSpan.textContent = `${snaps.length} snapshot${snaps.length !== 1 ? 's' : ''} · ${formatSnapDayLabel(dk)}`;
+        countSpan.textContent = `${snaps.length} snapshot${snaps.length !== 1 ? 's' : ''} · ${formatDayDropdownLabel(dk, snaps[0])}`;
         scroll.innerHTML = '';
         snaps.forEach((snap, i) => {
           const thumb = document.createElement('div');
           thumb.className = 'snap-thumb';
           thumb.dataset.snapId = snap.id;
-          const dt = new Date(snap.taken_at);
-          const label = dt.toLocaleDateString([], { month: 'short', day: 'numeric' })
-                      + ' ' + dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          const label = formatTakenAtLocal(snap.taken_at);
           thumb.innerHTML = `
             <img src="/api/snapshots/${encodeURIComponent(snap.id)}/image"
                  loading="lazy" onerror="this.style.opacity='0.2'" alt="${escapeAttr(label)}" />
@@ -3076,7 +3106,7 @@
       for (const grp of (snapData.cameras || [])) {
         for (const snap of (grp.snapshots || [])) {
           if (snap.id === id) {
-            return new Date(snap.taken_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+            return formatTakenAtLocal(snap.taken_at);
           }
         }
       }
