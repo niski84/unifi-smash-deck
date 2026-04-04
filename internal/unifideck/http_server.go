@@ -33,6 +33,7 @@ type HTTPServer struct {
 	threatStore      *ThreatStore
 	threatPoller     *IPSThreatPoller
 	honeypotSrv      *HoneypotServer
+	sigUpdater       *SignatureUpdater
 }
 
 func NewHTTPServer(cfg AppConfig) *HTTPServer {
@@ -46,6 +47,7 @@ func NewHTTPServer(cfg AppConfig) *HTTPServer {
 	threatStore := NewThreatStore(DataDir())
 	threatPoller := NewIPSThreatPoller(threatStore, clientTracker)
 	honeypotSrv := NewHoneypotServer(threatStore, clientTracker, nil) // webhook wired after cfg known
+	sigUpdater := NewSignatureUpdater(DataDir())
 
 	s := &HTTPServer{
 		cfg:            cfg,
@@ -59,6 +61,7 @@ func NewHTTPServer(cfg AppConfig) *HTTPServer {
 		threatStore:    threatStore,
 		threatPoller:   threatPoller,
 		honeypotSrv:    honeypotSrv,
+		sigUpdater:     sigUpdater,
 	}
 	s.scheduler = NewAutomationScheduler(s.store, s.logger, s.unifiClient)
 	s.snapScheduler = NewSnapshotScheduler(snapStore, logger, s.unifiClient)
@@ -114,6 +117,7 @@ func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("/api/security/events", s.handleSecurityEvents)
 	mux.HandleFunc("/api/security/summary", s.handleSecuritySummary)
 	mux.HandleFunc("/api/security/test", s.handleSecurityTest)
+	mux.HandleFunc("/api/security/signatures", s.handleSecuritySignatures)
 	mux.HandleFunc("/api/devices", s.handleDevices)
 	mux.HandleFunc("/api/cameras", s.handleCameras)
 	mux.HandleFunc("/api/cameras/", s.handleCameraSubroutes)
@@ -150,6 +154,7 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 			"unifi_api_key":        maskKey(cfg.UnifiAPIKey),
 			"honeypot_ports":       cfg.HoneypotPorts,
 			"security_webhook_url": cfg.SecurityWebhookURL,
+			"threat_feed_mode":     cfg.ThreatFeedMode,
 		}})
 	case http.MethodPost:
 		var body struct {
@@ -160,6 +165,7 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 			UnifiPass          string `json:"unifi_pass"` // backward compat alias
 			HoneypotPorts      []int  `json:"honeypot_ports"`
 			SecurityWebhookURL string `json:"security_webhook_url"`
+			ThreatFeedMode     string `json:"threat_feed_mode"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "invalid JSON"})
@@ -188,6 +194,9 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 			cur.HoneypotPorts = body.HoneypotPorts
 		}
 		cur.SecurityWebhookURL = body.SecurityWebhookURL
+		if body.ThreatFeedMode != "" {
+			cur.ThreatFeedMode = string(ValidThreatFeedMode(body.ThreatFeedMode))
+		}
 		if err := SaveAppConfig(s.settingsPath, cur); err != nil {
 			writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: err.Error()})
 			return
@@ -195,6 +204,10 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 		s.replaceCfg(cur)
 		// Reconcile honeypot listeners with new port list.
 		s.honeypotSrv.UpdatePorts(cur.HoneypotPorts)
+		// Apply new feed mode immediately.
+		if cur.ThreatFeedMode != "" {
+			s.sigUpdater.SetMode(ValidThreatFeedMode(cur.ThreatFeedMode))
+		}
 		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]bool{"saved": true}})
 	case http.MethodPut:
 		// Test connection
@@ -477,6 +490,20 @@ func (s *HTTPServer) handleSecurityEvents(w http.ResponseWriter, r *http.Request
 		"events":          events,
 		"honeypot_active": ports,
 	}})
+}
+
+// handleSecuritySignatures returns the threat intel feed status (GET) or triggers
+// an immediate refresh (POST).
+func (s *HTTPServer) handleSecuritySignatures(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: s.sigUpdater.Status()})
+	case http.MethodPost:
+		go s.sigUpdater.fetch()
+		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]string{"status": "refresh triggered"}})
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+	}
 }
 
 // handleSecuritySummary returns counts for the dashboard badge.
@@ -884,6 +911,11 @@ func (s *HTTPServer) StartScheduler() {
 	s.honeypotSrv.UpdatePorts(cfg.HoneypotPorts)
 	// Wire webhook after we have cfg.
 	s.honeypotSrv.webhookFn = s.fireSecurityWebhook
+	// Signature feed updater — apply saved mode then start.
+	if cfg.ThreatFeedMode != "" {
+		s.sigUpdater.SetMode(ValidThreatFeedMode(cfg.ThreatFeedMode))
+	}
+	s.sigUpdater.Start()
 }
 
 // StopScheduler stops both schedulers, the client tracker, and security components.
@@ -893,6 +925,7 @@ func (s *HTTPServer) StopScheduler() {
 	s.clientTracker.Stop()
 	s.threatPoller.Stop()
 	s.honeypotSrv.StopAll()
+	s.sigUpdater.Stop()
 }
 
 func maskKey(k string) string {

@@ -1127,6 +1127,29 @@
           <input id="cfgSecWebhook" placeholder="https://your-scene-runner/hook/…" autocomplete="off" />
         </div>
       </div>
+      <div class="row">
+        <div>
+          <label for="cfgThreatFeedMode">Threat intel feed updates</label>
+          <select id="cfgThreatFeedMode" data-testid="threat-feed-mode">
+            <option value="passive">Passive — every 24 hours</option>
+            <option value="balanced" selected>Balanced — every 6 hours (default)</option>
+            <option value="aggressive">Aggressive — every hour</option>
+          </select>
+          <p class="muted" style="font-size:11px;margin:4px 0 0 0;">
+            Downloads the <a href="https://feodotracker.abuse.ch/" target="_blank" rel="noopener noreferrer" style="color:inherit;">Feodo Tracker</a>
+            botnet C2 IP blocklist to flag known-bad source IPs in threat events.
+          </p>
+        </div>
+        <div>
+          <label>Feed status</label>
+          <div id="sigFeedStatus" data-testid="sig-feed-status" style="font-size:12px;color:var(--muted);line-height:1.6;">
+            <span class="muted">Loading…</span>
+          </div>
+          <button type="button" class="secondary" id="refreshSigFeedBtn" data-testid="refresh-sig-feed" style="margin-top:8px;font-size:12px;padding:4px 12px;">
+            Refresh Now
+          </button>
+        </div>
+      </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <button type="button" class="primary" id="saveSecuritySettingsBtn">Save Security Settings</button>
         <span id="securitySettingsMsg" style="font-size:13px;"></span>
@@ -2373,15 +2396,53 @@
         const body = {
           honeypot_ports:       ports,
           security_webhook_url: ($('cfgSecWebhook').value || '').trim(),
+          threat_feed_mode:     $('cfgThreatFeedMode').value || 'balanced',
         };
         await api('POST', '/api/settings', body);
         $('securitySettingsMsg').textContent = 'Saved ✓';
         $('securitySettingsMsg').className = 'ok';
-        // Reload honeypot status on security tab.
+        // Reload honeypot status and feed status.
         loadSecurityEvents().catch(console.error);
+        loadSigFeedStatus().catch(console.error);
       } catch (e) {
         $('securitySettingsMsg').textContent = e.message;
         $('securitySettingsMsg').className = 'err';
+      }
+    };
+
+    async function loadSigFeedStatus() {
+      try {
+        const d = await api('GET', '/api/security/signatures');
+        const el = $('sigFeedStatus');
+        if (!el) return;
+        const lines = [];
+        if (d.entry_count != null) lines.push(`Entries: <strong>${d.entry_count.toLocaleString()}</strong>`);
+        if (d.last_updated_ms) {
+          lines.push(`Updated: <strong>${new Date(d.last_updated_ms).toLocaleString()}</strong>`);
+        } else {
+          lines.push(`Updated: <span class="muted">never</span>`);
+        }
+        if (d.next_update_in) lines.push(`Next in: <strong>${d.next_update_in}</strong>`);
+        if (d.last_error) lines.push(`<span class="err">Error: ${escapeHtml(d.last_error)}</span>`);
+        el.innerHTML = lines.join('<br>');
+      } catch (e) {
+        const el = $('sigFeedStatus');
+        if (el) el.innerHTML = `<span class="err">Unavailable</span>`;
+      }
+    }
+
+    $('refreshSigFeedBtn').onclick = async () => {
+      $('refreshSigFeedBtn').disabled = true;
+      $('refreshSigFeedBtn').textContent = 'Refreshing…';
+      try {
+        await api('POST', '/api/security/signatures');
+        // Short delay then reload status so the fetch has time to start.
+        setTimeout(() => loadSigFeedStatus().catch(console.error), 1500);
+      } catch (e) {
+        console.error('[UniFiDeck] sig feed refresh failed', e);
+      } finally {
+        $('refreshSigFeedBtn').disabled = false;
+        $('refreshSigFeedBtn').textContent = 'Refresh Now';
       }
     };
 
@@ -3674,6 +3735,8 @@
         const hp = st.honeypot_ports;
         $('cfgHoneypotPorts').value = (Array.isArray(hp) && hp.length) ? hp.join(', ') : '';
         $('cfgSecWebhook').value = st.security_webhook_url || '';
+        if (st.threat_feed_mode) $('cfgThreatFeedMode').value = st.threat_feed_mode;
+        loadSigFeedStatus().catch(console.error);
         console.debug('[UniFiDeck] settings loaded', st.unifi_host);
         await loadNetworks();
         await loadAutomations();

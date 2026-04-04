@@ -19,6 +19,7 @@ type AppConfig struct {
 	// Security
 	HoneypotPorts      []int  `json:"honeypot_ports,omitempty"`
 	SecurityWebhookURL string `json:"security_webhook_url,omitempty"`
+	ThreatFeedMode     string `json:"threat_feed_mode,omitempty"` // passive|balanced|aggressive
 }
 
 // DataDir returns the directory used for all persistent data files.
