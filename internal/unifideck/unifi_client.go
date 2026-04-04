@@ -371,6 +371,94 @@ func (c *UnifiClient) CameraSnapshot(ctx context.Context, cameraID string, highQ
 	return data, ct, nil
 }
 
+// IPSAlert is the nested alert block in an IPS event.
+type IPSAlert struct {
+	Signature string `json:"signature"`
+	Category  string `json:"category"`
+	Severity  int    `json:"severity"` // 1=critical 2=major 3=minor (Suricata convention)
+	Action    string `json:"action"`   // "alert" or "drop"
+}
+
+// IPSEvent is one entry from the stat/ips/event endpoint.
+type IPSEvent struct {
+	ID       string   `json:"_id"`
+	Datetime string   `json:"datetime"` // ISO-8601
+	SrcIP    string   `json:"src_ip"`
+	DstIP    string   `json:"dst_ip"`
+	SrcPort  int      `json:"src_port"`
+	DstPort  int      `json:"dst_port"`
+	Proto    string   `json:"proto"`
+	Alert    IPSAlert `json:"alert"`
+	InIface  string   `json:"in_iface,omitempty"`
+	AppProto string   `json:"app_proto,omitempty"`
+}
+
+// TimestampMs parses the event datetime into Unix milliseconds.
+func (e IPSEvent) TimestampMs() int64 {
+	t, err := time.Parse(time.RFC3339, e.Datetime)
+	if err != nil {
+		// Fallback: try without timezone offset.
+		t, err = time.Parse("2006-01-02T15:04:05", e.Datetime)
+		if err != nil {
+			return time.Now().UnixMilli()
+		}
+	}
+	return t.UnixMilli()
+}
+
+// ListIPSEvents returns IDS/IPS events since the given time.
+// Returns nil (not an error) when Threat Management is not enabled.
+func (c *UnifiClient) ListIPSEvents(ctx context.Context, since time.Time) ([]IPSEvent, error) {
+	url := fmt.Sprintf("%s?_limit=200&_start=%d", c.apiURL("stat/ips/event"), since.Unix())
+	var resp struct {
+		Data []IPSEvent `json:"data"`
+		Meta struct {
+			RC string `json:"rc"`
+		} `json:"meta"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, url, nil, &resp); err != nil {
+		// IPS not enabled returns a 400 or non-ok rc — treat as empty, not fatal.
+		return nil, fmt.Errorf("ips events: %w", err)
+	}
+	return resp.Data, nil
+}
+
+// BlockClient blocks a client by MAC address on the site.
+func (c *UnifiClient) BlockClient(ctx context.Context, mac string) error {
+	body := map[string]string{"cmd": "block-sta", "mac": mac}
+	var resp struct {
+		Meta struct {
+			RC  string `json:"rc"`
+			Msg string `json:"msg,omitempty"`
+		} `json:"meta"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, c.apiURL("cmd/stamgr"), body, &resp); err != nil {
+		return fmt.Errorf("block client: %w", err)
+	}
+	if resp.Meta.RC != "" && resp.Meta.RC != "ok" {
+		return fmt.Errorf("block client: rc=%s msg=%s", resp.Meta.RC, resp.Meta.Msg)
+	}
+	return nil
+}
+
+// UnblockClient unblocks a previously blocked client by MAC address.
+func (c *UnifiClient) UnblockClient(ctx context.Context, mac string) error {
+	body := map[string]string{"cmd": "unblock-sta", "mac": mac}
+	var resp struct {
+		Meta struct {
+			RC  string `json:"rc"`
+			Msg string `json:"msg,omitempty"`
+		} `json:"meta"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, c.apiURL("cmd/stamgr"), body, &resp); err != nil {
+		return fmt.Errorf("unblock client: %w", err)
+	}
+	if resp.Meta.RC != "" && resp.Meta.RC != "ok" {
+		return fmt.Errorf("unblock client: rc=%s msg=%s", resp.Meta.RC, resp.Meta.Msg)
+	}
+	return nil
+}
+
 func timeNowMS() int64 {
 	return time.Now().UnixNano() / int64(time.Millisecond)
 }

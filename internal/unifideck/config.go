@@ -16,6 +16,9 @@ type AppConfig struct {
 	// UnifiUser/UnifiPass kept for reading old settings files and migrating.
 	UnifiUser string `json:"unifi_user,omitempty"`
 	UnifiPass string `json:"unifi_pass,omitempty"`
+	// Security
+	HoneypotPorts      []int  `json:"honeypot_ports,omitempty"`
+	SecurityWebhookURL string `json:"security_webhook_url,omitempty"`
 }
 
 // DataDir returns the directory used for all persistent data files.

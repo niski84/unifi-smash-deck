@@ -1,6 +1,7 @@
 package unifideck
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -29,6 +30,9 @@ type HTTPServer struct {
 	snapStore        *SnapshotStore
 	snapScheduler    *SnapshotScheduler
 	clientTracker    *ClientTracker
+	threatStore      *ThreatStore
+	threatPoller     *IPSThreatPoller
+	honeypotSrv      *HoneypotServer
 }
 
 func NewHTTPServer(cfg AppConfig) *HTTPServer {
@@ -39,6 +43,10 @@ func NewHTTPServer(cfg AppConfig) *HTTPServer {
 	snapStore := NewSnapshotStore(DataDir())
 	logger := NewAutomationLogger(logPath)
 	clientTracker := NewClientTracker(DataDir())
+	threatStore := NewThreatStore(DataDir())
+	threatPoller := NewIPSThreatPoller(threatStore, clientTracker)
+	honeypotSrv := NewHoneypotServer(threatStore, clientTracker, nil) // webhook wired after cfg known
+
 	s := &HTTPServer{
 		cfg:            cfg,
 		settingsPath:   settingsPath,
@@ -48,6 +56,9 @@ func NewHTTPServer(cfg AppConfig) *HTTPServer {
 		logger:         logger,
 		snapStore:      snapStore,
 		clientTracker:  clientTracker,
+		threatStore:    threatStore,
+		threatPoller:   threatPoller,
+		honeypotSrv:    honeypotSrv,
 	}
 	s.scheduler = NewAutomationScheduler(s.store, s.logger, s.unifiClient)
 	s.snapScheduler = NewSnapshotScheduler(snapStore, logger, s.unifiClient)
@@ -98,6 +109,11 @@ func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("/api/networks/", s.handleNetworkSubroutes)
 	mux.HandleFunc("/api/clients", s.handleClients)
 	mux.HandleFunc("/api/clients/new", s.handleClientsNew)
+	mux.HandleFunc("/api/clients/dismiss", s.handleClientsDismiss)
+	mux.HandleFunc("/api/clients/block", s.handleClientBlock)
+	mux.HandleFunc("/api/security/events", s.handleSecurityEvents)
+	mux.HandleFunc("/api/security/summary", s.handleSecuritySummary)
+	mux.HandleFunc("/api/security/test", s.handleSecurityTest)
 	mux.HandleFunc("/api/devices", s.handleDevices)
 	mux.HandleFunc("/api/cameras", s.handleCameras)
 	mux.HandleFunc("/api/cameras/", s.handleCameraSubroutes)
@@ -127,21 +143,23 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		cfg := s.snapshotCfg()
-		safe := map[string]string{
-			"port":          cfg.Port,
-			"unifi_host":    cfg.UnifiHost,
-			"unifi_site":    cfg.UnifiSite,
-			"unifi_api_key": maskKey(cfg.UnifiAPIKey),
-		}
-		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: safe})
+		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
+			"port":                 cfg.Port,
+			"unifi_host":           cfg.UnifiHost,
+			"unifi_site":           cfg.UnifiSite,
+			"unifi_api_key":        maskKey(cfg.UnifiAPIKey),
+			"honeypot_ports":       cfg.HoneypotPorts,
+			"security_webhook_url": cfg.SecurityWebhookURL,
+		}})
 	case http.MethodPost:
 		var body struct {
-			Port        string `json:"port"`
-			UnifiHost   string `json:"unifi_host"`
-			UnifiSite   string `json:"unifi_site"`
-			UnifiAPIKey string `json:"unifi_api_key"`
-			// Accept unifi_pass as alias for unifi_api_key for backward compat.
-			UnifiPass string `json:"unifi_pass"`
+			Port               string `json:"port"`
+			UnifiHost          string `json:"unifi_host"`
+			UnifiSite          string `json:"unifi_site"`
+			UnifiAPIKey        string `json:"unifi_api_key"`
+			UnifiPass          string `json:"unifi_pass"` // backward compat alias
+			HoneypotPorts      []int  `json:"honeypot_ports"`
+			SecurityWebhookURL string `json:"security_webhook_url"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "invalid JSON"})
@@ -157,21 +175,26 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if body.UnifiSite != "" {
 			cur.UnifiSite = body.UnifiSite
 		}
-		// Accept API key from either field name; unifi_api_key takes precedence.
 		keyVal := body.UnifiAPIKey
 		if keyVal == "" {
 			keyVal = body.UnifiPass
 		}
 		if keyVal != "" && !isMasked(keyVal) {
 			cur.UnifiAPIKey = keyVal
-			// Clear the old pass field so saved JSON stays clean.
 			cur.UnifiPass = ""
 		}
+		// Security settings (nil body fields mean "leave unchanged" for ports)
+		if body.HoneypotPorts != nil {
+			cur.HoneypotPorts = body.HoneypotPorts
+		}
+		cur.SecurityWebhookURL = body.SecurityWebhookURL
 		if err := SaveAppConfig(s.settingsPath, cur); err != nil {
 			writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: err.Error()})
 			return
 		}
 		s.replaceCfg(cur)
+		// Reconcile honeypot listeners with new port list.
+		s.honeypotSrv.UpdatePorts(cur.HoneypotPorts)
 		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]bool{"saved": true}})
 	case http.MethodPut:
 		// Test connection
@@ -302,6 +325,171 @@ func (s *HTTPServer) handleClientsNew(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
 		"new_devices":   newDevices,
 		"last_snapshot": lastSnap,
+	}})
+}
+
+// handleClientsDismiss marks the given MACs as dismissed so they no longer
+// appear in the new-devices list. Persisted server-side in client-history.json.
+func (s *HTTPServer) handleClientsDismiss(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	var body struct {
+		MACs []string `json:"macs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.MACs) == 0 {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "macs array required"})
+		return
+	}
+	s.clientTracker.Dismiss(body.MACs)
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"dismissed": len(body.MACs)}})
+}
+
+// handleClientBlock blocks or unblocks a client by MAC via UniFi cmd/stamgr.
+func (s *HTTPServer) handleClientBlock(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	var body struct {
+		MAC    string `json:"mac"`
+		Action string `json:"action"` // "block" or "unblock"
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.MAC == "" {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "mac and action required"})
+		return
+	}
+	if body.Action != "block" && body.Action != "unblock" {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "action must be block or unblock"})
+		return
+	}
+	c := s.unifiClient()
+	if !c.IsConfigured() {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "UniFi not configured"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	var err error
+	if body.Action == "block" {
+		err = c.BlockClient(ctx, body.MAC)
+	} else {
+		err = c.UnblockClient(ctx, body.MAC)
+	}
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]string{"mac": body.MAC, "action": body.Action}})
+}
+
+// handleSecurityTest runs built-in test scenarios or a single custom probe.
+// POST body:
+//
+//	{}                                          → run all built-in scenarios
+//	{"type":"honeypot","port":4444,"payload":"USER root\r\n"}
+//	{"type":"ips","src_ip":"10.0.0.1","severity":1,"signature":"ET TEST","category":"Test"}
+func (s *HTTPServer) handleSecurityTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	var body struct {
+		Type      string `json:"type"`      // "honeypot" | "ips" | "" = all
+		Port      int    `json:"port"`      // honeypot port to probe (0 = use temp port)
+		Payload   string `json:"payload"`   // bytes to send
+		SrcIP     string `json:"src_ip"`
+		Severity  int    `json:"severity"`
+		Signature string `json:"signature"`
+		Category  string `json:"category"`
+	}
+	// Empty body is valid (runs all scenarios).
+	json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck
+
+	var triggered []ThreatEvent
+
+	switch body.Type {
+	case "", "all":
+		triggered = s.RunTestScenarios()
+
+	case "honeypot":
+		port := body.Port
+		if port == 0 {
+			port = tempHoneypotPort
+			existing := s.honeypotSrv.ActivePorts()
+			s.honeypotSrv.UpdatePorts(append(existing, port))
+			time.Sleep(80 * time.Millisecond)
+			defer s.honeypotSrv.UpdatePorts(existing)
+		}
+		e, err := s.probeHoneypot(port, body.Payload)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: err.Error()})
+			return
+		}
+		if e != nil {
+			triggered = append(triggered, *e)
+		}
+
+	case "ips":
+		src := body.SrcIP
+		if src == "" {
+			src = "10.0.254.1"
+		}
+		sev := body.Severity
+		if sev == 0 {
+			sev = 1
+		}
+		sig := body.Signature
+		if sig == "" {
+			sig = "ET TEST Manual injection"
+		}
+		cat := body.Category
+		if cat == "" {
+			cat = categoryForSeverity(sev)
+		}
+		e := s.injectIPSEvent(src, sev, sig, cat)
+		triggered = append(triggered, e)
+
+	default:
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "type must be honeypot, ips, or all"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
+		"triggered": triggered,
+		"count":     len(triggered),
+	}})
+}
+
+// handleSecurityEvents returns recent threat events (IPS + honeypot).
+func (s *HTTPServer) handleSecurityEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	events := s.threatStore.Recent(500)
+	if events == nil {
+		events = []ThreatEvent{}
+	}
+	ports := s.honeypotSrv.ActivePorts()
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
+		"events":          events,
+		"honeypot_active": ports,
+	}})
+}
+
+// handleSecuritySummary returns counts for the dashboard badge.
+func (s *HTTPServer) handleSecuritySummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	total, critical, honeypot := s.threatStore.Summary()
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
+		"total":    total,
+		"critical": critical,
+		"honeypot": honeypot,
 	}})
 }
 
@@ -684,13 +872,27 @@ func (s *HTTPServer) StartScheduler() {
 		}
 		return c.ListClients(ctx)
 	})
+	// Security: IPS poller + honeypot listeners.
+	s.threatPoller.Start(func(ctx context.Context, since time.Time) ([]IPSEvent, error) {
+		c := s.unifiClient()
+		if !c.IsConfigured() {
+			return nil, nil
+		}
+		return c.ListIPSEvents(ctx, since)
+	})
+	cfg := s.snapshotCfg()
+	s.honeypotSrv.UpdatePorts(cfg.HoneypotPorts)
+	// Wire webhook after we have cfg.
+	s.honeypotSrv.webhookFn = s.fireSecurityWebhook
 }
 
-// StopScheduler stops both schedulers and the client tracker.
+// StopScheduler stops both schedulers, the client tracker, and security components.
 func (s *HTTPServer) StopScheduler() {
 	s.scheduler.Stop()
 	s.snapScheduler.Stop()
 	s.clientTracker.Stop()
+	s.threatPoller.Stop()
+	s.honeypotSrv.StopAll()
 }
 
 func maskKey(k string) string {
@@ -705,4 +907,33 @@ func maskKey(k string) string {
 
 func isMasked(s string) bool {
 	return strings.Contains(s, "•") || strings.HasPrefix(s, "****")
+}
+
+// fireSecurityWebhook POSTs a ThreatEvent to the configured security webhook URL.
+// Called by the honeypot server (and can be called for IPS events in future).
+func (s *HTTPServer) fireSecurityWebhook(e ThreatEvent) {
+	cfg := s.snapshotCfg()
+	url := strings.TrimSpace(cfg.SecurityWebhookURL)
+	if url == "" {
+		return
+	}
+	go func() {
+		b, err := json.Marshal(e)
+		if err != nil {
+			return
+		}
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(b))
+		if err != nil {
+			log.Printf("[threats] webhook request error: %v", err)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Printf("[threats] webhook delivery error: %v", err)
+			return
+		}
+		resp.Body.Close()
+		log.Printf("[threats] webhook fired → %s (HTTP %d)", url, resp.StatusCode)
+	}()
 }

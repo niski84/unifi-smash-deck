@@ -13,13 +13,14 @@ import (
 
 // TrackedClient is a device entry persisted by ClientTracker.
 type TrackedClient struct {
-	MAC       string `json:"mac"`
-	Hostname  string `json:"hostname,omitempty"`
-	Name      string `json:"name,omitempty"`
-	IP        string `json:"ip,omitempty"`
-	FirstSeen int64  `json:"first_seen"` // Unix ms
-	LastSeen  int64  `json:"last_seen"`  // Unix ms
-	IsWired   bool   `json:"is_wired"`
+	MAC         string `json:"mac"`
+	Hostname    string `json:"hostname,omitempty"`
+	Name        string `json:"name,omitempty"`
+	IP          string `json:"ip,omitempty"`
+	FirstSeen   int64  `json:"first_seen"`             // Unix ms
+	LastSeen    int64  `json:"last_seen"`              // Unix ms
+	IsWired     bool   `json:"is_wired"`
+	DismissedAt int64  `json:"dismissed_at,omitempty"` // Unix ms; 0 = not dismissed
 }
 
 type clientTrackerDisk struct {
@@ -120,14 +121,14 @@ func (ct *ClientTracker) Snapshot(clients []Client) []TrackedClient {
 }
 
 // NewDevices returns all tracked devices whose FirstSeen is within the last
-// `days` days, sorted newest first.
+// `days` days that have not been dismissed, sorted newest first.
 func (ct *ClientTracker) NewDevices(days int) []TrackedClient {
 	ct.mu.Lock()
 	defer ct.mu.Unlock()
 	cutoff := time.Now().AddDate(0, 0, -days).UnixMilli()
 	var out []TrackedClient
 	for _, tc := range ct.known {
-		if tc.FirstSeen >= cutoff {
+		if tc.FirstSeen >= cutoff && tc.DismissedAt == 0 {
 			out = append(out, *tc)
 		}
 	}
@@ -135,6 +136,19 @@ func (ct *ClientTracker) NewDevices(days int) []TrackedClient {
 		return out[i].FirstSeen > out[j].FirstSeen
 	})
 	return out
+}
+
+// Dismiss marks the given MACs as dismissed so they no longer appear in NewDevices.
+func (ct *ClientTracker) Dismiss(macs []string) {
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+	now := time.Now().UnixMilli()
+	for _, mac := range macs {
+		if tc, ok := ct.known[mac]; ok {
+			tc.DismissedAt = now
+		}
+	}
+	ct.save()
 }
 
 // LastSnapshot returns when the last successful poll completed (zero if never).

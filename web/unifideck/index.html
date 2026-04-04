@@ -26,6 +26,8 @@
       --body-bg-3: #060a12;
       --badge-vlan: #142a52;
       --badge-corp: #0e3248;
+      --danger: #e53935;
+      --danger-dim: rgba(229,57,53,0.12);
     }
     body.light {
       --bg: #f0f3fa;
@@ -157,6 +159,25 @@
     .badge.vlan-id { background: rgba(0,111,255,0.12); color: var(--accent); }
     .badge.enabled { background: rgba(61,219,165,0.12); color: var(--ok); }
     .badge.disabled-b { background: rgba(255,107,107,0.12); color: var(--err-color); }
+    .badge.sev-1 { background: rgba(229,57,53,0.18); color: #ef5350; font-weight:700; }
+    .badge.sev-2 { background: rgba(245,166,35,0.15); color: var(--warn); }
+    .badge.sev-3 { background: rgba(61,219,165,0.10); color: var(--ok); }
+    .badge.kind-ips      { background: rgba(0,111,255,0.12); color: var(--accent); }
+    .badge.kind-honeypot { background: rgba(229,57,53,0.12); color: #ef5350; }
+    .sec-filter.active-filter { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .sec-block-btn { font-size:11px; padding:2px 8px; border-radius:4px; border:1px solid var(--danger); color:var(--danger); background:transparent; cursor:pointer; white-space:nowrap; }
+    .sec-block-btn:hover { background:var(--danger-dim); }
+    .sec-expand-btn { background:none; border:none; cursor:pointer; color:var(--muted); font-size:12px; padding:2px 4px; line-height:1; }
+    .sec-expand-btn:hover { color:var(--text); }
+    .sec-detail-row td { background:var(--bg); padding:0 !important; }
+    .sec-detail-inner { padding:10px 14px; font-size:12px; }
+    .hex-dump { font-family:monospace; font-size:11px; line-height:1.6; white-space:pre; overflow-x:auto; }
+    .hex-offset { color:var(--muted); }
+    .hex-bytes  { color:var(--accent); }
+    .hex-ascii  { color:var(--ok); }
+    .sec-detail-tabs { display:flex; gap:4px; margin-bottom:8px; }
+    .sec-dtab { font-size:11px; padding:2px 10px; border-radius:4px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; }
+    .sec-dtab.active { background:var(--accent); color:#fff; border-color:var(--accent); }
     /* ── Power toggle ─────────────────────────────── */
     .pwr-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
     .pwr-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
@@ -799,6 +820,7 @@
     <button type="button" class="tab-btn" data-tab="clients" data-testid="tab-clients">Clients</button>
     <button type="button" class="tab-btn" data-tab="cameras" data-testid="tab-cameras">📷 Cameras</button>
     <button type="button" class="tab-btn" data-tab="automations" data-testid="tab-automations">Automations</button>
+    <button type="button" class="tab-btn" data-tab="security" data-testid="tab-security">🔒 Security <span id="securityBadge" style="display:none;background:var(--danger,#e53935);color:#fff;border-radius:999px;font-size:11px;padding:1px 6px;margin-left:4px;vertical-align:middle;"></span></button>
     <button type="button" class="tab-btn" data-tab="settings" data-testid="tab-settings">Settings &amp; Logs</button>
   </div>
 
@@ -846,7 +868,7 @@
         <input type="search" id="clientSearchInput" placeholder="🔍 Search by hostname / MAC / IP / VLAN…" style="flex:1;min-width:180px;max-width:360px;margin-bottom:0;" aria-label="Search clients" />
         <span id="clientStatus" class="muted"></span>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;font-size:13px;margin-left:auto;" title="Request browser/OS notification the first time a new device is detected">
-          <input type="checkbox" id="clientNotifyToggle" />
+          <input type="checkbox" id="clientNotifyToggle" style="width:auto;margin:0;" />
           Notify on new device
         </label>
         <span id="clientNextRefresh" class="muted" style="font-size:11px;white-space:nowrap;"></span>
@@ -957,6 +979,63 @@
   </section>
 
   <!-- ── Settings panel ── -->
+  <!-- ── Security panel ──────────────────────────────────────────────────── -->
+  <section id="panel-security" class="panel">
+    <!-- Summary bar -->
+    <div class="card" style="margin-bottom:10px;">
+      <div class="toolbar" style="flex-wrap:wrap;gap:10px;">
+        <strong>🔒 Threat Overview</strong>
+        <span id="secSummary" class="muted" style="font-size:13px;">Loading…</span>
+        <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
+          <button type="button" id="secFilterAll"      class="secondary sec-filter active-filter" data-filter="all">All</button>
+          <button type="button" id="secFilterIPS"      class="secondary sec-filter" data-filter="ips">IPS</button>
+          <button type="button" id="secFilterHoneypot" class="secondary sec-filter" data-filter="honeypot">Honeypot</button>
+          <button type="button" id="secFilterCritical" class="secondary sec-filter" data-filter="critical">Critical</button>
+        </div>
+        <button type="button" id="refreshSecurityBtn" class="primary">Refresh</button>
+      </div>
+      <!-- Honeypot status -->
+      <div id="honeypotStatus" style="margin-top:8px;font-size:12px;color:var(--muted);"></div>
+    </div>
+
+    <!-- Event table -->
+    <div class="card" style="padding:0;overflow-x:auto;">
+      <table class="client-table" id="securityTable">
+        <thead>
+          <tr>
+            <th style="width:24px;"></th><!-- expand toggle -->
+            <th>Time</th>
+            <th>Kind</th>
+            <th>Severity</th>
+            <th>Source</th>
+            <th>Signature / Port</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="securityTbody"></tbody>
+      </table>
+      <p id="securityEmpty" class="muted" style="text-align:center;padding:24px;display:none;">No threat events yet. IDS/IPS events will appear here once detected. Honeypot hits appear immediately.</p>
+    </div>
+
+    <!-- Test harness -->
+    <div class="card">
+      <h3>Test Harness</h3>
+      <p class="muted" style="font-size:12px;margin:0 0 10px 0;">
+        Fire simulated attacks against the live honeypot and inject synthetic IPS events.
+        Uses a temporary port (19991) so your real config is not modified.
+      </p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+        <button type="button" id="runAllTestsBtn" class="primary">▶ Run All Scenarios</button>
+        <button type="button" id="runHoneypotTestBtn" class="secondary">Honeypot Probe</button>
+        <button type="button" id="runIPSTestBtn" class="secondary">Inject IPS Alert</button>
+        <span id="testHarnessStatus" class="muted" style="font-size:13px;"></span>
+      </div>
+      <div id="testHarnessResults" style="display:none;margin-top:12px;">
+        <pre id="testHarnessOutput" style="font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;"></pre>
+      </div>
+    </div>
+  </section>
+
   <section id="panel-settings" class="panel">
     <div class="card">
       <h3>Appearance</h3>
@@ -1029,6 +1108,28 @@
         <button type="button" class="primary" id="saveSettingsBtn" data-testid="save-settings">Save Settings</button>
         <button type="button" class="secondary" id="testConnBtn" data-testid="test-connection">Test Connection</button>
         <span id="settingsMsg" style="font-size:13px;"></span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Security</h3>
+      <p class="muted" style="font-size:12px;margin:0 0 12px 0;">
+        Configure the honeypot listener ports and an optional webhook for alert delivery.
+        Honeypot hits fire the webhook immediately. Set ports like <code>2222, 3389, 4444</code> — any
+        connection to these ports is logged as a critical threat. Leave blank to disable honeypots.
+      </p>
+      <div class="row">
+        <div>
+          <label for="cfgHoneypotPorts">Honeypot ports (comma-separated)</label>
+          <input id="cfgHoneypotPorts" placeholder="e.g. 2222, 3389, 4444, 8888" autocomplete="off" />
+        </div>
+        <div>
+          <label for="cfgSecWebhook">Security webhook URL</label>
+          <input id="cfgSecWebhook" placeholder="https://your-scene-runner/hook/…" autocomplete="off" />
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <button type="button" class="primary" id="saveSecuritySettingsBtn">Save Security Settings</button>
+        <span id="securitySettingsMsg" style="font-size:13px;"></span>
       </div>
     </div>
     <div class="card">
@@ -1343,6 +1444,13 @@
           stopTimelineSnapshotsPoll();
           lbStopRefresh();
           startClientPoll();
+        } else if (btn.dataset.tab === 'security') {
+          stopSnapshotPolling();
+          stopTimelineSnapshotsPoll();
+          stopClientPoll();
+          lbStopRefresh();
+          loadSecurityEvents().catch(console.error);
+          loadSecuritySummary().catch(console.error);
         } else {
           stopSnapshotPolling();
           stopTimelineSnapshotsPoll();
@@ -1588,11 +1696,18 @@
       }).join('');
     }
 
-    $('dismissNewDevicesBtn').addEventListener('click', () => {
-      _lastNewDevs.forEach(d => saveDismissedMac(d.mac));
+    $('dismissNewDevicesBtn').addEventListener('click', async () => {
+      const toDismiss = _lastNewDevs.slice();
+      if (toDismiss.length === 0) return;
       $('newDevicesSection').style.display = 'none';
-      console.debug('[UniFiDeck] dismissed', _lastNewDevs.length, 'new-device entries');
       _lastNewDevs = [];
+      // Persist dismissal server-side so it survives browser storage clears.
+      try {
+        await api('POST', '/api/clients/dismiss', { macs: toDismiss.map(d => d.mac) });
+        console.debug('[UniFiDeck] dismissed', toDismiss.length, 'new-device entries (server-side)');
+      } catch (e) {
+        console.error('[UniFiDeck] dismiss failed', e);
+      }
     });
 
     async function loadNewDevices() {
@@ -1672,16 +1787,23 @@
     $('clientNotifyToggle').checked = localStorage.getItem(LS_CLIENT_NOTIFY) === '1';
     $('clientNotifyToggle').addEventListener('change', async () => {
       const on = $('clientNotifyToggle').checked;
-      if (on && typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
-        const perm = await Notification.requestPermission();
-        if (perm !== 'granted') {
-          $('clientNotifyToggle').checked = false;
-          localStorage.setItem(LS_CLIENT_NOTIFY, '0');
-          return;
-        }
-      }
+      // Save preference immediately — don't gate it on notification permission.
       localStorage.setItem(LS_CLIENT_NOTIFY, on ? '1' : '0');
       console.debug('[UniFiDeck] client notify', on ? 'enabled' : 'disabled');
+      if (!on) return;
+      // When enabling, request permission if not yet decided.
+      if (typeof Notification !== 'undefined') {
+        if (Notification.permission === 'default') {
+          const perm = await Notification.requestPermission().catch(() => 'denied');
+          if (perm !== 'granted') {
+            $('clientStatus').textContent = 'Browser notifications blocked — allow them in site settings to receive alerts.';
+            $('clientStatus').className = 'muted';
+          }
+        } else if (Notification.permission === 'denied') {
+          $('clientStatus').textContent = 'Browser notifications blocked — allow them in site settings to receive alerts.';
+          $('clientStatus').className = 'muted';
+        }
+      }
     });
 
     $('refreshClientsBtn').onclick = () => {
@@ -1889,6 +2011,337 @@
       }
     };
 
+    // ── Security ───────────────────────────────────────────────────────────────
+    let _secEvents = [];
+    let _secFilter = 'all';
+
+    function secSeverityBadge(sev) {
+      const labels = { 1: 'Critical', 2: 'Major', 3: 'Minor' };
+      const cls    = { 1: 'sev-1',   2: 'sev-2', 3: 'sev-3' };
+      const label = labels[sev] || `Sev ${sev}`;
+      const c = cls[sev] || '';
+      return `<span class="badge ${c}">${label}</span>`;
+    }
+
+    function secKindBadge(kind) {
+      return kind === 'honeypot'
+        ? `<span class="badge kind-honeypot">Honeypot</span>`
+        : `<span class="badge kind-ips">IPS</span>`;
+    }
+
+    // ── Hex dump helpers ───────────────────────────────────────────────────────
+    function hexToBytes(hex) {
+      const out = [];
+      for (let i = 0; i < hex.length - 1; i += 2) {
+        out.push(parseInt(hex.substring(i, i+2), 16));
+      }
+      return out;
+    }
+
+    function renderHexDump(hex) {
+      if (!hex) return '<span class="muted">(no data received)</span>';
+      const bytes = hexToBytes(hex);
+      let html = '<div class="hex-dump">';
+      for (let i = 0; i < bytes.length; i += 16) {
+        const chunk = bytes.slice(i, i + 16);
+        const offset = i.toString(16).padStart(8, '0');
+        const hexPart = chunk.map(b => b.toString(16).padStart(2, '0')).join(' ')
+          .padEnd(16 * 3 - 1, ' ');
+        const asciiPart = chunk.map(b => (b >= 0x20 && b < 0x7f) ? String.fromCharCode(b) : '.').join('');
+        html += `<span class="hex-offset">${escapeHtml(offset)}</span>  `
+              + `<span class="hex-bytes">${escapeHtml(hexPart)}</span>  `
+              + `<span class="hex-ascii">${escapeHtml(asciiPart)}</span>\n`;
+      }
+      return html + '</div>';
+    }
+
+    function renderDecodedText(hex) {
+      if (!hex) return '<span class="muted">(no data received)</span>';
+      const bytes = hexToBytes(hex);
+      // Decode as UTF-8, replace non-printable with escape sequences.
+      let text = '';
+      try { text = new TextDecoder('utf-8', { fatal: false }).decode(new Uint8Array(bytes)); }
+      catch { text = bytes.map(b => String.fromCharCode(b)).join(''); }
+      // Render control chars visibly.
+      const rendered = text.replace(/\r\n/g, '↵\n').replace(/\r/g, '↵\n')
+        .replace(/\n/g, '\n')
+        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, c =>
+          `<span style="color:var(--warn);font-size:10px;">[0x${c.charCodeAt(0).toString(16).padStart(2,'0')}]</span>`);
+      return `<pre style="margin:0;white-space:pre-wrap;word-break:break-all;font-size:11px;">${rendered}</pre>`;
+    }
+
+    function buildDetailPanel(e) {
+      const hasSession = e.kind === 'honeypot';
+      let html = `<div class="sec-detail-inner">`;
+
+      // Metadata grid
+      html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:6px 20px;margin-bottom:10px;font-size:12px;">`;
+      const meta = [
+        ['Kind', e.kind === 'honeypot' ? '🕳 Honeypot' : '🛡 IDS/IPS'],
+        ['Severity', {1:'Critical',2:'Major',3:'Minor'}[e.severity] || e.severity],
+        ['Time', new Date(e.timestamp).toLocaleString()],
+        ['Source IP', e.src_ip || '—'],
+        ['Client', e.client_name ? `${e.client_name} (${e.client_mac})` : '—'],
+        ['Destination', e.dst_ip ? `${e.dst_ip}:${e.dst_port}` : (e.honeypot_port ? `port ${e.honeypot_port}` : '—')],
+        ['Protocol', e.proto || (e.kind==='honeypot'?'TCP':'—')],
+        ['Action', e.action || '—'],
+        ['Category', e.category || '—'],
+      ];
+      meta.forEach(([k,v]) => {
+        html += `<div><span class="muted">${k}:</span> ${escapeHtml(String(v))}</div>`;
+      });
+      html += `</div>`;
+
+      if (e.signature) {
+        html += `<div style="font-size:12px;margin-bottom:10px;padding:6px 10px;border-left:2px solid var(--accent);background:rgba(0,111,255,0.05);">
+          <span class="muted">Signature:</span> ${escapeHtml(e.signature)}</div>`;
+      }
+
+      if (hasSession) {
+        const hasData = e.banner_data && e.banner_data.length > 0;
+        html += `<div style="margin-top:4px;">`;
+        html += `<div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--text);">
+          Session Data <span class="muted">${hasData ? `(${e.bytes_recv} bytes received)` : '(no payload sent)'}</span></div>`;
+
+        if (hasData) {
+          const uid = 'sd-' + e.id.replace(/[^a-z0-9]/gi, '');
+          html += `<div class="sec-detail-tabs">
+            <button class="sec-dtab active" onclick="secDetailTab(this,'${uid}','hex')">Hex Dump</button>
+            <button class="sec-dtab" onclick="secDetailTab(this,'${uid}','text')">Decoded Text</button>
+          </div>
+          <div id="${uid}-hex">${renderHexDump(e.banner_data)}</div>
+          <div id="${uid}-text" style="display:none;">${renderDecodedText(e.banner_data)}</div>`;
+        } else {
+          html += `<span class="muted" style="font-size:12px;">Client connected but sent no data before timeout.</span>`;
+        }
+        html += `</div>`;
+      }
+
+      const blockAction = e.client_mac
+        ? `<button class="sec-block-btn" style="margin-top:8px;"
+            data-mac="${escapeAttr(e.client_mac)}" data-name="${escapeAttr(e.client_name||e.src_ip)}">Block Client</button>`
+        : '';
+      if (blockAction) html += blockAction;
+
+      html += `</div>`;
+      return html;
+    }
+
+    window.secDetailTab = function(btn, uid, tab) {
+      btn.closest('.sec-detail-inner').querySelectorAll('.sec-dtab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById(uid + '-hex').style.display  = tab === 'hex'  ? '' : 'none';
+      document.getElementById(uid + '-text').style.display = tab === 'text' ? '' : 'none';
+    };
+
+    function renderSecurityEvents() {
+      const tbody = $('securityTbody');
+      let filtered = _secEvents;
+      if (_secFilter === 'ips')       filtered = _secEvents.filter(e => e.kind === 'ips');
+      if (_secFilter === 'honeypot')  filtered = _secEvents.filter(e => e.kind === 'honeypot');
+      if (_secFilter === 'critical')  filtered = _secEvents.filter(e => e.severity === 1);
+
+      $('securityEmpty').style.display = filtered.length === 0 ? '' : 'none';
+      $('securityTable').style.display  = filtered.length === 0 ? 'none' : '';
+
+      // Track which rows are currently expanded so we can re-expand after re-render.
+      const wasExpanded = new Set();
+      tbody.querySelectorAll('tr[data-event-id].expanded').forEach(r => wasExpanded.add(r.dataset.eventId));
+
+      const rows = [];
+      filtered.forEach(e => {
+        const ts = new Date(e.timestamp).toLocaleString();
+        const sigOrPort = e.kind === 'honeypot'
+          ? `Port ${e.honeypot_port}${e.bytes_recv ? ` · ${e.bytes_recv}B` : ''}`
+          : escapeHtml(e.signature || e.category || '—');
+        const blockBtn = e.client_mac
+          ? `<button class="sec-block-btn" data-mac="${escapeAttr(e.client_mac)}" data-name="${escapeAttr(e.client_name||e.src_ip)}">Block</button>`
+          : '';
+        const srcLabel = e.client_name
+          ? `${escapeHtml(e.src_ip)} <span class="muted" style="font-size:10px;">${escapeHtml(e.client_name)}</span>`
+          : escapeHtml(e.src_ip);
+        const expandedClass = wasExpanded.has(e.id) ? ' expanded' : '';
+        rows.push(`<tr data-event-id="${escapeAttr(e.id)}" class="sec-event-row${expandedClass}" style="cursor:pointer;">
+          <td><button class="sec-expand-btn" title="Show session detail">${wasExpanded.has(e.id)?'▼':'▶'}</button></td>
+          <td style="white-space:nowrap;font-size:12px;">${escapeHtml(ts)}</td>
+          <td>${secKindBadge(e.kind)}</td>
+          <td>${secSeverityBadge(e.severity)}</td>
+          <td style="font-family:monospace;font-size:12px;">${srcLabel}</td>
+          <td style="font-size:12px;max-width:260px;word-break:break-word;">${sigOrPort}</td>
+          <td>${blockBtn}</td>
+        </tr>`);
+
+        if (wasExpanded.has(e.id)) {
+          rows.push(`<tr class="sec-detail-row" data-for="${escapeAttr(e.id)}"><td colspan="7">${buildDetailPanel(e)}</td></tr>`);
+        }
+      });
+      tbody.innerHTML = rows.join('');
+
+      // Wire expand toggles.
+      tbody.querySelectorAll('.sec-event-row').forEach(row => {
+        const toggle = () => {
+          const eid = row.dataset.eventId;
+          const isExpanded = row.classList.contains('expanded');
+          const btn = row.querySelector('.sec-expand-btn');
+
+          if (isExpanded) {
+            row.classList.remove('expanded');
+            btn.textContent = '▶';
+            const detailRow = tbody.querySelector(`tr.sec-detail-row[data-for="${eid}"]`);
+            if (detailRow) detailRow.remove();
+          } else {
+            row.classList.add('expanded');
+            btn.textContent = '▼';
+            const e = filtered.find(ev => ev.id === eid);
+            if (e) {
+              const detailRow = document.createElement('tr');
+              detailRow.className = 'sec-detail-row';
+              detailRow.dataset.for = eid;
+              detailRow.innerHTML = `<td colspan="7">${buildDetailPanel(e)}</td>`;
+              row.insertAdjacentElement('afterend', detailRow);
+            }
+          }
+        };
+        row.querySelector('.sec-expand-btn').addEventListener('click', e => { e.stopPropagation(); toggle(); });
+        row.addEventListener('click', toggle);
+      });
+
+      // Wire block buttons.
+      tbody.querySelectorAll('.sec-block-btn').forEach(btn => {
+        btn.addEventListener('click', async ev => {
+          ev.stopPropagation();
+          const mac  = btn.dataset.mac;
+          const name = btn.dataset.name;
+          if (!confirm(`Block ${name} (${mac})? This disconnects the device.`)) return;
+          btn.disabled = true;
+          btn.textContent = '…';
+          try {
+            await api('POST', '/api/clients/block', { mac, action: 'block' });
+            btn.textContent = 'Blocked ✓';
+            btn.style.color = 'var(--ok)';
+            btn.style.borderColor = 'var(--ok)';
+          } catch (err) {
+            btn.disabled = false;
+            btn.textContent = 'Block';
+            alert('Block failed: ' + (err.message || err));
+          }
+        });
+      });
+    }
+
+    async function loadSecurityEvents() {
+      try {
+        const d = await api('GET', '/api/security/events');
+        _secEvents = d.events || [];
+        const ports = d.honeypot_active || [];
+        $('honeypotStatus').textContent = ports.length > 0
+          ? `Honeypot active on port${ports.length > 1 ? 's' : ''}: ${ports.sort((a,b)=>a-b).join(', ')}`
+          : 'Honeypot not configured — add ports in Settings.';
+        renderSecurityEvents();
+      } catch (e) {
+        console.error('[UniFiDeck] loadSecurityEvents failed', e);
+      }
+    }
+
+    async function loadSecuritySummary() {
+      try {
+        const d = await api('GET', '/api/security/summary');
+        const badge = $('securityBadge');
+        if (d.critical > 0) {
+          badge.textContent = d.critical;
+          badge.style.display = '';
+        } else {
+          badge.style.display = 'none';
+        }
+        $('secSummary').textContent =
+          `${d.total} event${d.total !== 1 ? 's' : ''} · ${d.critical} critical · ${d.honeypot} honeypot hit${d.honeypot !== 1 ? 's' : ''}`;
+      } catch (e) {
+        console.error('[UniFiDeck] loadSecuritySummary failed', e);
+      }
+    }
+
+    // Filter buttons
+    document.querySelectorAll('.sec-filter').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.sec-filter').forEach(b => b.classList.remove('active-filter'));
+        btn.classList.add('active-filter');
+        _secFilter = btn.dataset.filter;
+        renderSecurityEvents();
+      });
+    });
+
+    $('refreshSecurityBtn').addEventListener('click', () => {
+      loadSecurityEvents().catch(console.error);
+      loadSecuritySummary().catch(console.error);
+    });
+
+    // ── Test harness ───────────────────────────────────────────────────────────
+    async function runSecTest(body, label) {
+      const status = $('testHarnessStatus');
+      const out    = $('testHarnessOutput');
+      const panel  = $('testHarnessResults');
+      status.textContent = `Running ${label}…`;
+      status.className = 'muted';
+      panel.style.display = 'none';
+      try {
+        const d = await api('POST', '/api/security/test', body);
+        const events = d.triggered || [];
+        status.textContent = `✓ ${events.length} event(s) generated`;
+        status.className = 'ok';
+
+        // Pretty-print results.
+        let text = `=== ${label} — ${events.length} event(s) ===\n\n`;
+        events.forEach((e, i) => {
+          text += `[${i+1}] ${e.kind.toUpperCase()} · ${e.signature || e.category || '—'}\n`;
+          text += `    Source : ${e.src_ip}${e.client_name ? ' (' + e.client_name + ')' : ''}\n`;
+          text += `    Severity: ${{1:'Critical',2:'Major',3:'Minor'}[e.severity]||e.severity}\n`;
+          if (e.bytes_recv) {
+            text += `    Session : ${e.bytes_recv} byte(s) received\n`;
+            if (e.banner_data) {
+              // Show decoded text inline in the output panel.
+              const bytes = [];
+              for (let j = 0; j < e.banner_data.length - 1; j += 2) {
+                bytes.push(parseInt(e.banner_data.substring(j, j+2), 16));
+              }
+              let decoded = '';
+              try { decoded = new TextDecoder('utf-8', {fatal:false}).decode(new Uint8Array(bytes)); }
+              catch { decoded = bytes.map(b => String.fromCharCode(b)).join(''); }
+              decoded = decoded.replace(/\r\n/g,'↵\n').replace(/\r/g,'↵\n');
+              text += `    Payload :\n${decoded.split('\n').map(l=>'      '+l).join('\n')}\n`;
+            }
+          }
+          text += '\n';
+        });
+        out.textContent = text;
+        panel.style.display = '';
+
+        // Refresh the event table so new events appear immediately.
+        await loadSecurityEvents();
+        await loadSecuritySummary();
+      } catch (e) {
+        status.textContent = 'Failed: ' + (e.message || e);
+        status.className = 'err';
+      }
+    }
+
+    $('runAllTestsBtn').addEventListener('click', () =>
+      runSecTest({}, 'All Scenarios'));
+
+    $('runHoneypotTestBtn').addEventListener('click', () =>
+      runSecTest({
+        type: 'honeypot',
+        payload: 'USER admin\r\nPASS Password1!\r\nUSER root\r\nPASS toor\r\n',
+      }, 'Honeypot Probe'));
+
+    $('runIPSTestBtn').addEventListener('click', () =>
+      runSecTest({
+        type: 'ips',
+        src_ip: '10.0.0.' + (Math.floor(Math.random()*253)+1),
+        severity: 1,
+        signature: 'ET MALWARE Manual Test Injection',
+        category: 'Malware Command and Control Activity Detected',
+      }, 'IPS Injection'));
+
     // ── Settings ───────────────────────────────────────────────────────────────
     $('saveSettingsBtn').onclick = async () => {
       $('settingsMsg').textContent = '';
@@ -1906,6 +2359,29 @@
       } catch (e) {
         $('settingsMsg').textContent = e.message;
         $('settingsMsg').className = 'err';
+      }
+    };
+
+    $('saveSecuritySettingsBtn').onclick = async () => {
+      $('securitySettingsMsg').textContent = '';
+      $('securitySettingsMsg').className = '';
+      try {
+        const rawPorts = ($('cfgHoneypotPorts').value || '').trim();
+        const ports = rawPorts === '' ? [] : rawPorts.split(',')
+          .map(s => parseInt(s.trim(), 10))
+          .filter(n => !isNaN(n) && n > 0 && n < 65536);
+        const body = {
+          honeypot_ports:       ports,
+          security_webhook_url: ($('cfgSecWebhook').value || '').trim(),
+        };
+        await api('POST', '/api/settings', body);
+        $('securitySettingsMsg').textContent = 'Saved ✓';
+        $('securitySettingsMsg').className = 'ok';
+        // Reload honeypot status on security tab.
+        loadSecurityEvents().catch(console.error);
+      } catch (e) {
+        $('securitySettingsMsg').textContent = e.message;
+        $('securitySettingsMsg').className = 'err';
       }
     };
 
@@ -3194,10 +3670,15 @@
           hasKey ? `Host: ${st.unifi_host}` : 'Not configured — add API key below',
           hasKey ? 'muted' : 'warn'
         );
+        // Populate security settings fields.
+        const hp = st.honeypot_ports;
+        $('cfgHoneypotPorts').value = (Array.isArray(hp) && hp.length) ? hp.join(', ') : '';
+        $('cfgSecWebhook').value = st.security_webhook_url || '';
         console.debug('[UniFiDeck] settings loaded', st.unifi_host);
         await loadNetworks();
         await loadAutomations();
         await loadLog();
+        loadSecuritySummary().catch(console.error);
 
         // Restore the tab the user was on before the page refreshed.
         // Runs after init so the data fetch triggered by the tab click has
