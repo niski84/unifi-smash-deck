@@ -36,6 +36,7 @@ type HTTPServer struct {
 	threatPoller     *IPSThreatPoller
 	honeypotSrv      *HoneypotServer
 	sigUpdater       *SignatureUpdater
+	watchdog         *UDMWatchdog
 }
 
 func NewHTTPServer(cfg AppConfig) *HTTPServer {
@@ -52,6 +53,8 @@ func NewHTTPServer(cfg AppConfig) *HTTPServer {
 	honeypotSrv := NewHoneypotServer(threatStore, clientTracker, nil) // webhook wired after cfg known
 	sigUpdater := NewSignatureUpdater(DataDir())
 
+	watchdogCfgPath := filepath.Join(DataDir(), "udm-watchdog.json")
+
 	s := &HTTPServer{
 		cfg:            cfg,
 		settingsPath:   settingsPath,
@@ -67,6 +70,7 @@ func NewHTTPServer(cfg AppConfig) *HTTPServer {
 		honeypotSrv:    honeypotSrv,
 		sigUpdater:     sigUpdater,
 	}
+	s.watchdog = NewUDMWatchdog(watchdogCfgPath, s.snapshotCfg)
 	s.scheduler = NewAutomationScheduler(s.store, s.logger, s.unifiClient)
 	s.snapScheduler = NewSnapshotScheduler(snapStore, logger, s.unifiClient)
 	s.cfgSnapScheduler = NewConfigSnapshotScheduler(cfgSnapStore, logger, s.unifiClient, s.snapshotCfg)
@@ -142,6 +146,13 @@ func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("/api/firewall-audit", s.handleFirewallAudit)
 	mux.HandleFunc("/api/network-insights", s.handleNetworkInsights)
 	mux.HandleFunc("/api/udm-process-scan", s.handleUDMProcessScan)
+	mux.HandleFunc("/api/udm-watchdog", s.handleUDMWatchdog)
+	mux.HandleFunc("/api/udm-sysconfig", s.handleUDMSysConfig)
+
+	// Auto-start watchdog if it was previously enabled.
+	if s.watchdog.Status().Config.Enabled {
+		_ = s.watchdog.Start()
+	}
 
 	mux.Handle("/", http.FileServer(http.FS(webFS)))
 	return mux

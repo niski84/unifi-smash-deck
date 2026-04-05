@@ -1485,6 +1485,81 @@
       </div>
     </div>
 
+    <!-- Memory Watchdog -->
+    <div class="card" id="niWatchdogCard">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+        <h3 style="margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Memory Watchdog</h3>
+        <span id="wdBadge" style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--border);color:var(--muted);">STOPPED</span>
+        <div style="flex:1;"></div>
+        <button type="button" class="primary" id="wdStartBtn" style="font-size:12px;padding:4px 12px;">Start</button>
+        <button type="button" id="wdStopBtn" style="font-size:12px;padding:4px 12px;display:none;">Stop</button>
+        <button type="button" id="wdCheckBtn" style="font-size:12px;padding:4px 12px;">Check Now</button>
+        <span id="wdStatus" style="font-size:12px;color:var(--muted);"></span>
+      </div>
+
+      <!-- Config row -->
+      <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;">
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Threshold (MB MemAvailable)</label>
+          <input id="wdThreshMB" type="number" min="128" max="2048" value="512"
+            style="width:90px;background:var(--card);border:1px solid var(--input-border);color:var(--text);border-radius:4px;padding:4px 8px;font-size:12px;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Poll Interval (seconds)</label>
+          <input id="wdIntervalSecs" type="number" min="30" max="3600" value="240"
+            style="width:80px;background:var(--card);border:1px solid var(--input-border);color:var(--text);border-radius:4px;padding:4px 8px;font-size:12px;">
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Max Restarts / 24 h</label>
+          <input id="wdMaxDay" type="number" min="0" max="10" value="3"
+            style="width:60px;background:var(--card);border:1px solid var(--input-border);color:var(--text);border-radius:4px;padding:4px 8px;font-size:12px;">
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <input id="wdDryRun" type="checkbox">
+          <label for="wdDryRun" style="font-size:12px;color:var(--text);">Dry-run (log only)</label>
+        </div>
+        <button type="button" id="wdSaveCfg" style="font-size:12px;padding:4px 12px;">Save Config</button>
+      </div>
+
+      <!-- Stats row -->
+      <div id="wdStats" style="display:none;font-size:12px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap;margin-bottom:12px;">
+        <span>Last check: <strong id="wdLastCheck">—</strong></span>
+        <span>MemAvail: <strong id="wdLastMem">—</strong></span>
+        <span>Total restarts: <strong id="wdRestartCount" style="color:var(--warn);">0</strong></span>
+      </div>
+
+      <!-- Event log -->
+      <div>
+        <h4 style="margin:0 0 6px;font-size:12px;color:var(--muted);">Event Log</h4>
+        <div id="wdEventLog" style="font-size:11px;font-family:monospace;max-height:240px;overflow-y:auto;background:var(--input-bg);border:1px solid var(--border);border-radius:4px;padding:6px 8px;">
+          <span style="color:var(--muted);">No events yet.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- system.properties Editor -->
+    <div class="card" id="niSysPropCard">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+        <h3 style="margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">system.properties</h3>
+        <code style="font-size:10px;color:var(--muted);">/usr/lib/unifi/data/system.properties</code>
+        <div style="flex:1;"></div>
+        <button type="button" id="spLoadBtn" class="primary" style="font-size:12px;padding:4px 12px;">Load from UDM</button>
+        <button type="button" id="spBackupBtn" style="font-size:12px;padding:4px 12px;">Backup Only</button>
+        <button type="button" id="spApplyBtn" style="font-size:12px;padding:4px 12px;display:none;">Apply + Backup</button>
+        <span id="spStatus" style="font-size:12px;color:var(--muted);"></span>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">
+        Edit JVM heap (<code>unifi.xmx</code>/<code>unifi.xms</code>) and MongoDB WiredTiger cache (<code>db.mongo.wt.cache_size</code>) here.
+        Changes auto-backup the original before writing. Run <code>systemctl restart unifi</code> on the UDM after applying.
+      </p>
+      <textarea id="spContent" rows="16" style="width:100%;box-sizing:border-box;font-family:monospace;font-size:11px;background:var(--input-bg);color:var(--text);border:1px solid var(--input-border);border-radius:4px;padding:8px;resize:vertical;display:none;" spellcheck="false"></textarea>
+      <!-- Backups list -->
+      <div id="spBackupsBlock" style="display:none;margin-top:10px;">
+        <h4 style="margin:0 0 4px;font-size:11px;color:var(--muted);">Stored backups on UDM (most recent first)</h4>
+        <div id="spBackupsList" style="font-size:11px;font-family:monospace;color:var(--muted);"></div>
+      </div>
+    </div>
+
   </section>
 
   <section id="panel-settings" class="panel">
@@ -5354,6 +5429,173 @@
     }
 
   })();
+
+  // ── Memory Watchdog ──────────────────────────────────────────────────────────
+  (function() {
+    let wdPollTimer = null;
+
+    function wdBuildCfg() {
+      return {
+        threshold_mb:     parseInt(document.getElementById('wdThreshMB').value)    || 512,
+        interval_secs:    parseInt(document.getElementById('wdIntervalSecs').value) || 240,
+        max_restarts_day: parseInt(document.getElementById('wdMaxDay').value)       || 3,
+        dry_run:          document.getElementById('wdDryRun').checked,
+        enabled:          false, // updated by start/stop
+      };
+    }
+
+    async function wdPost(action, cfg) {
+      const body = { action };
+      if (cfg) body.config = cfg;
+      const r = await fetch('/api/udm-watchdog', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+      return r.json();
+    }
+
+    function wdRender(d) {
+      if (!d) return;
+      const running = d.running;
+      const badge = document.getElementById('wdBadge');
+      badge.textContent  = running ? 'RUNNING' : 'STOPPED';
+      badge.style.background = running ? 'rgba(61,219,165,0.15)' : 'var(--border)';
+      badge.style.color      = running ? 'var(--ok)' : 'var(--muted)';
+      document.getElementById('wdStartBtn').style.display = running ? 'none' : '';
+      document.getElementById('wdStopBtn').style.display  = running ? '' : 'none';
+
+      if (d.config) {
+        document.getElementById('wdThreshMB').value     = d.config.threshold_mb    || 512;
+        document.getElementById('wdIntervalSecs').value = d.config.interval_secs   || 240;
+        document.getElementById('wdMaxDay').value       = d.config.max_restarts_day != null ? d.config.max_restarts_day : 3;
+        document.getElementById('wdDryRun').checked     = !!d.config.dry_run;
+      }
+
+      document.getElementById('wdStats').style.display = '';
+      document.getElementById('wdLastCheck').textContent = d.last_check_at ? new Date(d.last_check_at).toLocaleTimeString() : '—';
+      const thresh = d.config?.threshold_mb || 512;
+      const memColor = d.last_mem_avail_mb > 0 && d.last_mem_avail_mb < thresh ? '#ef4444'
+                     : d.last_mem_avail_mb < thresh * 1.2 ? 'var(--warn)' : 'var(--ok)';
+      document.getElementById('wdLastMem').textContent = d.last_mem_avail_mb > 0 ? d.last_mem_avail_mb + ' MB' : '—';
+      document.getElementById('wdLastMem').style.color = memColor;
+      const rc = document.getElementById('wdRestartCount');
+      rc.textContent = d.restart_count_total || 0;
+      rc.style.color = d.restart_count_total > 0 ? 'var(--warn)' : 'var(--muted)';
+
+      const log = document.getElementById('wdEventLog');
+      if (!d.events || d.events.length === 0) {
+        log.innerHTML = '<span style="color:var(--muted);">No events yet.</span>';
+        return;
+      }
+      const typeStyle = {
+        check:   '#8a9cbd',
+        warn:    '#f59e0b',
+        restart: '#ef4444',
+        skip:    '#63b3ed',
+        error:   '#ef4444',
+        started: '#3ddba5',
+        stopped: '#8a9cbd',
+      };
+      log.innerHTML = d.events.map(e => {
+        const color = typeStyle[e.type] || '#8a9cbd';
+        const ts = new Date(e.at).toLocaleString();
+        const weight = (e.type === 'restart' || e.type === 'warn') ? '600' : '';
+        return `<div style="padding:1px 0;color:${color};font-weight:${weight};">[${ts}] [${e.type.toUpperCase().padEnd(7,' ')}] ${esc(e.message)}</div>`;
+      }).join('');
+    }
+
+    async function wdRefresh() {
+      const r = await fetch('/api/udm-watchdog');
+      const j = await r.json();
+      if (j.success) wdRender(j.data);
+    }
+
+    document.getElementById('wdStartBtn').onclick = async () => {
+      document.getElementById('wdStatus').textContent = 'Starting…';
+      const cfg = wdBuildCfg(); cfg.enabled = true;
+      const j = await wdPost('start', cfg);
+      document.getElementById('wdStatus').textContent = j.success ? '' : 'Error: ' + j.error;
+      if (j.success) wdRender(j.data);
+    };
+    document.getElementById('wdStopBtn').onclick = async () => {
+      const j = await wdPost('stop');
+      document.getElementById('wdStatus').textContent = j.success ? '' : 'Error: ' + j.error;
+      if (j.success) wdRender(j.data);
+    };
+    document.getElementById('wdCheckBtn').onclick = async () => {
+      document.getElementById('wdStatus').textContent = 'Checking…';
+      const j = await wdPost('check');
+      document.getElementById('wdStatus').textContent = j.success ? 'Done' : 'Error: ' + j.error;
+      if (j.success) wdRender(j.data);
+    };
+    document.getElementById('wdSaveCfg').onclick = async () => {
+      const j = await wdPost('update', wdBuildCfg());
+      document.getElementById('wdStatus').textContent = j.success ? 'Config saved' : 'Error: ' + j.error;
+      if (j.success) wdRender(j.data);
+    };
+
+    // Poll every 15 s to keep event log fresh
+    wdPollTimer = setInterval(wdRefresh, 15000);
+    wdRefresh();
+  })();
+
+  // ── system.properties Editor ─────────────────────────────────────────────────
+  (function() {
+    async function spPost(action, content) {
+      const body = { action };
+      if (content != null) body.content = content;
+      const r = await fetch('/api/udm-sysconfig', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+      return r.json();
+    }
+
+    async function spLoad() {
+      document.getElementById('spStatus').textContent = 'Loading…';
+      const r = await fetch('/api/udm-sysconfig');
+      const j = await r.json();
+      if (!j.success) { document.getElementById('spStatus').textContent = 'Error: ' + (j.error || 'unknown'); return; }
+      const d = j.data;
+      const ta = document.getElementById('spContent');
+      ta.value = d.content || '';
+      ta.style.display = '';
+      document.getElementById('spApplyBtn').style.display = '';
+      document.getElementById('spStatus').textContent = 'Loaded from UDM';
+      if (d.backups && d.backups.length) {
+        document.getElementById('spBackupsBlock').style.display = '';
+        document.getElementById('spBackupsList').innerHTML = d.backups.map(b =>
+          `<span style="margin-right:12px;"><a href="#" onclick="spRestore('${esc(b)}');return false;" style="color:var(--accent);">${esc(b.split('/').pop())}</a></span>`
+        ).join('');
+      }
+    }
+
+    window.spRestore = async function(path) {
+      if (!confirm('Restore from ' + path.split('/').pop() + '?\nCurrent file will be backed up first.')) return;
+      document.getElementById('spStatus').textContent = 'Restoring…';
+      const j = await spPost('restore', path);
+      document.getElementById('spStatus').textContent = j.success
+        ? 'Restored. ' + (j.data?.note || '') : 'Error: ' + j.error;
+      if (j.success) spLoad();
+    };
+
+    document.getElementById('spLoadBtn').onclick = spLoad;
+
+    document.getElementById('spBackupBtn').onclick = async () => {
+      document.getElementById('spStatus').textContent = 'Backing up…';
+      const j = await spPost('backup');
+      document.getElementById('spStatus').textContent = j.success
+        ? 'Backed up → ' + (j.data?.backup_path || '').split('/').pop()
+        : 'Error: ' + j.error;
+      if (j.success) spLoad();
+    };
+
+    document.getElementById('spApplyBtn').onclick = async () => {
+      const content = document.getElementById('spContent').value;
+      if (!content.trim()) return;
+      if (!confirm('Write changes to system.properties on the UDM Pro?\nCurrent file will be auto-backed up first.\nYou will need to run: systemctl restart unifi')) return;
+      document.getElementById('spStatus').textContent = 'Applying…';
+      const j = await spPost('apply', content);
+      document.getElementById('spStatus').textContent = j.success
+        ? '✓ Applied. ' + (j.data?.note || '') : 'Error: ' + j.error;
+      if (j.success) spLoad();
+    };
+  })();
+
   </script>
 
 </body>
