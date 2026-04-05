@@ -65,6 +65,15 @@ type DiskEntry struct {
 	Mounted    string `json:"mounted"`
 }
 
+// UDMFinding is a single analysis finding from the process scan.
+type UDMFinding struct {
+	Severity   string `json:"severity"`            // critical | warning | info
+	Title      string `json:"title"`
+	Detail     string `json:"detail"`
+	Suggestion string `json:"suggestion"`
+	Process    string `json:"process,omitempty"`
+}
+
 // UDMProcessScan is the full result returned by GET /api/udm-process-scan.
 type UDMProcessScan struct {
 	RunAt      time.Time    `json:"run_at"`
@@ -72,8 +81,9 @@ type UDMProcessScan struct {
 	Configured bool         `json:"configured"`
 	Mem        MemInfo      `json:"mem"`
 	Disk       []DiskEntry  `json:"disk"`
-	Processes  []UDMProcess `json:"processes"`   // top 20 by RSS
-	Binaries   []BinaryInfo `json:"binaries"`    // key executables with MD5
+	Processes  []UDMProcess `json:"processes"`  // top 20 by RSS
+	Binaries   []BinaryInfo `json:"binaries"`   // key executables with MD5
+	Findings   []UDMFinding `json:"findings"`   // automated analysis
 	Error      string       `json:"error,omitempty"`
 }
 
@@ -210,12 +220,134 @@ func RunUDMProcessScan(ctx context.Context, cfg AppConfig) (*UDMProcessScan, err
 	md5Raw, _  := udmRun(client, "md5sum "+binPaths+" 2>/dev/null")
 	linkRaw, _ := udmRun(client, "readlink -f "+binPaths+" 2>/dev/null; echo END")
 
-	scan.Mem   = parseMemInfo(memRaw)
-	scan.Disk  = parseDf(dfRaw)
+	scan.Mem      = parseMemInfo(memRaw)
+	scan.Disk     = parseDf(dfRaw)
 	scan.Processes = parsePS(psRaw, 20)
 	scan.Binaries  = parseBinaries(statRaw, md5Raw, linkRaw)
+	scan.Findings  = AnalyzeUDMScan(scan)
 
 	return scan, nil
+}
+
+// AnalyzeUDMScan inspects a completed scan and returns actionable findings.
+func AnalyzeUDMScan(scan *UDMProcessScan) []UDMFinding {
+	var findings []UDMFinding
+	add := func(sev, title, detail, suggestion, process string) {
+		findings = append(findings, UDMFinding{
+			Severity:   sev,
+			Title:      title,
+			Detail:     detail,
+			Suggestion: suggestion,
+			Process:    process,
+		})
+	}
+
+	// ── Disk ──────────────────────────────────────────────────────────────────
+	for _, d := range scan.Disk {
+		pct := 0
+		fmt.Sscanf(strings.TrimSuffix(d.UsePct, "%"), "%d", &pct)
+		// Skip read-only and loop filesystems — full by design
+		if strings.HasPrefix(d.Filesystem, "/dev/loop") || d.Mounted == "/mnt/.rofs" {
+			continue
+		}
+		// /boot/firmware (root partition) is small and typically 99% — low signal
+		if d.Mounted == "/boot/firmware" {
+			if pct >= 99 {
+				add("info", "Boot partition nearly full",
+					fmt.Sprintf("%s mounted at %s is %s used (%s/%s)", d.Filesystem, d.Mounted, d.UsePct, d.Used, d.Size),
+					"This is normal for UDM Pro — the firmware partition is read-only in normal operation. No action needed.",
+					"")
+			}
+			continue
+		}
+		if pct >= 95 {
+			sev := "critical"
+			if pct < 98 {
+				sev = "warning"
+			}
+			add(sev, fmt.Sprintf("Disk nearly full: %s", d.Mounted),
+				fmt.Sprintf("%s (%s) is %s used — only %s free of %s total", d.Filesystem, d.Mounted, d.UsePct, d.Avail, d.Size),
+				"Protect will stop recording when storage is full. Review retention settings under Protect → Storage, or add/replace the drive.",
+				"")
+		}
+	}
+
+	// ── Memory ────────────────────────────────────────────────────────────────
+	if scan.Mem.Total > 0 {
+		swapUsed := scan.Mem.SwapTotal - scan.Mem.SwapFree
+		swapUsedPct := float64(0)
+		if scan.Mem.SwapTotal > 0 {
+			swapUsedPct = float64(swapUsed) / float64(scan.Mem.SwapTotal) * 100
+		}
+
+		if scan.Mem.UsedPct >= 90 {
+			add("critical", fmt.Sprintf("Memory critically high: %.1f%% used", scan.Mem.UsedPct),
+				fmt.Sprintf("Only %d MB available of %d MB total RAM. System is likely swapping.", scan.Mem.Available/1024, scan.Mem.Total/1024),
+				"Reduce Suricata to Balanced mode (Network → Security → Threat Management). Consider capping the UniFi Network JVM heap (see suggestion below).",
+				"")
+		} else if scan.Mem.UsedPct >= 80 {
+			add("warning", fmt.Sprintf("Memory pressure: %.1f%% used", scan.Mem.UsedPct),
+				fmt.Sprintf("%d MB available of %d MB total. Performance may degrade under load.", scan.Mem.Available/1024, scan.Mem.Total/1024),
+				"Monitor trends. If sustained above 85%, reduce Suricata IPS profile or review Protect retention policy.",
+				"")
+		}
+
+		if swapUsed > 512*1024 { // > 512 MB swap in use
+			add("warning", fmt.Sprintf("Swap in use: %d MB (%.0f%% of swap)", swapUsed/1024, swapUsedPct),
+				"Active swap usage degrades router performance as memory pages are read from/written to disk under load.",
+				"Reducing the largest memory consumers (Java heap, Suricata profile) will lower swap pressure.",
+				"")
+		}
+	}
+
+	// ── Per-process analysis ───────────────────────────────────────────────────
+	for _, p := range scan.Processes {
+		switch {
+
+		case p.Command == "suricata" || strings.Contains(p.Cmdline, "suricata"):
+			if strings.Contains(p.Cmdline, "_high.yaml") {
+				add("warning", "Suricata IPS running on HIGH profile",
+					fmt.Sprintf("suricata is consuming %d MB RSS (%.1f%% of RAM) using suricata_ubios_high.yaml. "+
+						"The high profile sets large memcaps — particularly stream.reassembly.memcap (≥256 MB) — "+
+						"which is the single largest contributor to Suricata's memory footprint.", p.RSS/1024, p.MemPct),
+					"Switch to Balanced in Network → Security → Threat Management → Intrusion Prevention → Performance. "+
+						"The balanced profile reduces stream reassembly limits to ~64–128 MB, typically saving 100–150 MB RAM. "+
+						"For a home/SOHO network the detection coverage difference is negligible.",
+					"suricata")
+			}
+
+		case p.Command == "java" || strings.Contains(p.Cmdline, "ace.jar"):
+			if p.RSS > 600*1024 {
+				add("info", fmt.Sprintf("UniFi Network app (Java) using %d MB RSS", p.RSS/1024),
+					"The JVM heap grows until it hits the system limit. On a 4 GB UDM Pro running Protect, this competes for RAM.",
+					"UniFi does not expose a heap config in the UI, but you can add JAVA_EXTRA_OPTS=\"-Xmx512m\" to "+
+						"/etc/default/unifi (or via on-boot script). Use with caution — too low a heap causes frequent GC pauses.",
+					"java (ace.jar)")
+			}
+
+		case p.Command == "mongod":
+			add("info", "MongoDB (UniFi Network DB) present",
+				fmt.Sprintf("mongod using %d MB RSS. By default WiredTiger cache is set to (RAM/2).", p.RSS/1024),
+				"To cap the cache: add --wiredTigerCacheSizeGB 0.25 to mongod's startup args in its systemd unit. "+
+					"Reducing this frees RAM but may slow Network app queries. Only tune if memory pressure is severe.",
+				"mongod")
+
+		case p.Command == "ms" && p.CPUPct > 10:
+			add("warning", fmt.Sprintf("Media Server (ms) high CPU: %.1f%%", p.CPUPct),
+				"The UniFi media server (ms/mst) handles Protect video transcoding. Elevated CPU is normal during active viewing "+
+					"or motion event processing but may indicate too many concurrent streams.",
+				"Check active Protect streams/exports. Reducing camera resolution or frame rate lowers transcoding load. "+
+					"High-quality exports running in the background are a common cause.",
+				"ms")
+		}
+	}
+
+	// Order: critical first, then warning, then info
+	order := map[string]int{"critical": 0, "warning": 1, "info": 2}
+	sort.Slice(findings, func(i, j int) bool {
+		return order[findings[i].Severity] < order[findings[j].Severity]
+	})
+	return findings
 }
 
 // handleUDMProcessScan handles GET /api/udm-process-scan.

@@ -1461,7 +1461,7 @@
       </div>
 
       <!-- Binary hashes -->
-      <div id="niSSHBinBlock" style="display:none;">
+      <div id="niSSHBinBlock" style="display:none;margin-bottom:14px;">
         <h4 style="margin:0 0 6px;font-size:12px;color:var(--muted);">Key Executable Hashes (MD5)</h4>
         <div style="overflow-x:auto;">
           <table style="width:100%;border-collapse:collapse;font-size:11px;">
@@ -1476,6 +1476,12 @@
             <tbody id="niSSHBinBody"></tbody>
           </table>
         </div>
+      </div>
+
+      <!-- Analysis findings -->
+      <div id="niSSHAnalysisBlock" style="display:none;">
+        <h4 style="margin:0 0 8px;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;">Analysis &amp; Recommendations</h4>
+        <div id="niSSHAnalysisBody"></div>
       </div>
     </div>
 
@@ -5322,6 +5328,27 @@
             <td style="padding:3px 8px;color:var(--muted);font-size:10px;">${esc(modDate)}</td>
             <td style="padding:3px 8px;font-family:monospace;font-size:10px;color:${b.md5 ? 'var(--fg)' : 'var(--muted)'};">${esc(b.md5 || 'symlink')}</td>
           </tr>`;
+        }).join('');
+      }
+
+      // Analysis findings
+      if (d.findings && d.findings.length) {
+        show('niSSHAnalysisBlock');
+        const sevStyle = {
+          critical: { bg: 'rgba(239,68,68,0.1)', border: '#ef4444', icon: '🔴', label: 'CRITICAL' },
+          warning:  { bg: 'rgba(245,158,11,0.1)', border: '#f59e0b', icon: '🟡', label: 'WARNING' },
+          info:     { bg: 'rgba(99,179,237,0.08)', border: '#63b3ed', icon: '🔵', label: 'INFO' },
+        };
+        document.getElementById('niSSHAnalysisBody').innerHTML = d.findings.map(f => {
+          const s = sevStyle[f.severity] || sevStyle.info;
+          return `<div style="border-left:3px solid ${s.border};background:${s.bg};padding:10px 14px;margin-bottom:8px;border-radius:0 4px 4px 0;">
+            <div style="font-size:12px;font-weight:600;margin-bottom:4px;">${s.icon} <span style="color:${s.border};">[${s.label}]</span> ${esc(f.title)}</div>
+            ${f.process ? `<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Process: <code style="font-size:10px;">${esc(f.process)}</code></div>` : ''}
+            <div style="font-size:12px;color:var(--text);margin-bottom:6px;">${esc(f.detail)}</div>
+            <div style="font-size:11px;color:var(--muted);padding:6px 8px;background:rgba(0,0,0,0.2);border-radius:3px;">
+              <strong style="color:var(--ok);">→</strong> ${esc(f.suggestion)}
+            </div>
+          </div>`;
         }).join('');
       }
     }
