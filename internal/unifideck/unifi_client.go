@@ -371,6 +371,95 @@ func (c *UnifiClient) CameraSnapshot(ctx context.Context, cameraID string, highQ
 	return data, ct, nil
 }
 
+// WLAN represents a wireless network (SSID) configuration.
+type WLAN struct {
+	ID            string `json:"_id"`
+	Name          string `json:"name"`
+	Enabled       bool   `json:"enabled"`
+	WlanBand      string `json:"wlan_band"`
+	L2Isolation   bool   `json:"l2_isolation"`
+	McastEnhance  bool   `json:"mcastenhance_enabled"`
+	WPA3Support   bool   `json:"wpa3_support"`
+	WPAMode       string `json:"wpa_mode"`
+	EnhancedIoT   bool   `json:"enhanced_iot"`
+	NetworkConfID string `json:"networkconf_id"`
+	No2GHzOUI     bool   `json:"no2ghz_oui"`
+}
+
+// MDNSSetting represents the site-level mDNS relay configuration.
+type MDNSSetting struct {
+	Mode             string   `json:"mode"`
+	PredefinedSvcs   []string `json:"predefined_services"`
+	CustomSvcs       []string `json:"custom_services"`
+}
+
+// ListWLANs returns all SSID/wireless network configurations.
+func (c *UnifiClient) ListWLANs(ctx context.Context) ([]WLAN, error) {
+	var resp struct {
+		Data []WLAN `json:"data"`
+		Meta struct {
+			RC string `json:"rc"`
+		} `json:"meta"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("rest/wlanconf"), nil, &resp); err != nil {
+		return nil, fmt.Errorf("list wlans: %w", err)
+	}
+	return resp.Data, nil
+}
+
+// getWLANRaw fetches the full raw WLAN object (needed for safe PUT updates).
+func (c *UnifiClient) getWLANRaw(ctx context.Context, wlanID string) (map[string]any, error) {
+	var resp struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("rest/wlanconf/"+wlanID), nil, &resp); err != nil {
+		return nil, err
+	}
+	if len(resp.Data) == 0 {
+		return nil, fmt.Errorf("wlan %s not found", wlanID)
+	}
+	return resp.Data[0], nil
+}
+
+// UpdateWLANFields fetches the full WLAN object and applies the given field overrides,
+// then PUTs it back. UniFi silently ignores partial payloads, so the full object is required.
+func (c *UnifiClient) UpdateWLANFields(ctx context.Context, wlanID string, fields map[string]any) error {
+	obj, err := c.getWLANRaw(ctx, wlanID)
+	if err != nil {
+		return fmt.Errorf("get wlan for update: %w", err)
+	}
+	for k, v := range fields {
+		obj[k] = v
+	}
+	var putResp struct {
+		Meta struct {
+			RC  string `json:"rc"`
+			Msg string `json:"msg,omitempty"`
+		} `json:"meta"`
+	}
+	if err := c.doJSON(ctx, http.MethodPut, c.apiURL("rest/wlanconf/"+wlanID), obj, &putResp); err != nil {
+		return fmt.Errorf("put wlan: %w", err)
+	}
+	if putResp.Meta.RC != "" && putResp.Meta.RC != "ok" {
+		return fmt.Errorf("unifi rejected wlan update: rc=%s msg=%s", putResp.Meta.RC, putResp.Meta.Msg)
+	}
+	return nil
+}
+
+// GetMDNSSetting returns the site-level mDNS relay configuration.
+func (c *UnifiClient) GetMDNSSetting(ctx context.Context) (MDNSSetting, error) {
+	var resp struct {
+		Data []MDNSSetting `json:"data"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("get/setting/mdns"), nil, &resp); err != nil {
+		return MDNSSetting{}, fmt.Errorf("get mdns setting: %w", err)
+	}
+	if len(resp.Data) == 0 {
+		return MDNSSetting{}, nil
+	}
+	return resp.Data[0], nil
+}
+
 // IPSAlert is the nested alert block in an IPS event.
 type IPSAlert struct {
 	Signature string `json:"signature"`
@@ -457,6 +546,146 @@ func (c *UnifiClient) UnblockClient(ctx context.Context, mac string) error {
 		return fmt.Errorf("unblock client: rc=%s msg=%s", resp.Meta.RC, resp.Meta.Msg)
 	}
 	return nil
+}
+
+// v2apiURL builds a URL for the newer v2 Network API path.
+func (c *UnifiClient) v2apiURL(path string) string {
+	site := c.site
+	if site == "" {
+		site = "default"
+	}
+	return fmt.Sprintf("%s/proxy/network/v2/api/site/%s/%s", c.host, site, strings.TrimPrefix(path, "/"))
+}
+
+// ListNetworksRaw returns all networks as raw maps (used for config snapshots).
+func (c *UnifiClient) ListNetworksRaw(ctx context.Context) ([]map[string]any, error) {
+	var resp struct {
+		Data []map[string]any `json:"data"`
+		Meta struct{ RC string `json:"rc"` } `json:"meta"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("rest/networkconf"), nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// ListWLANsRaw returns all WLANs as raw maps (used for config snapshots).
+func (c *UnifiClient) ListWLANsRaw(ctx context.Context) ([]map[string]any, error) {
+	var resp struct {
+		Data []map[string]any `json:"data"`
+		Meta struct{ RC string `json:"rc"` } `json:"meta"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("rest/wlanconf"), nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// ListDevicesRaw returns all devices as raw maps (used for config snapshots).
+func (c *UnifiClient) ListDevicesRaw(ctx context.Context) ([]map[string]any, error) {
+	var resp struct {
+		Data []map[string]any `json:"data"`
+		Meta struct{ RC string `json:"rc"` } `json:"meta"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("stat/device"), nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// ListFirewallPolicies returns all zone-based firewall policies via the v2 API.
+func (c *UnifiClient) ListFirewallPolicies(ctx context.Context) ([]map[string]any, error) {
+	var policies []map[string]any
+	if err := c.doJSON(ctx, http.MethodGet, c.v2apiURL("firewall-policies"), nil, &policies); err != nil {
+		return nil, fmt.Errorf("list firewall policies: %w", err)
+	}
+	return policies, nil
+}
+
+// ListPortForwards returns all port forward rules.
+func (c *UnifiClient) ListPortForwards(ctx context.Context) ([]map[string]any, error) {
+	var resp struct {
+		Data []map[string]any `json:"data"`
+		Meta struct{ RC string `json:"rc"` } `json:"meta"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("rest/portforward"), nil, &resp); err != nil {
+		return nil, fmt.Errorf("list port forwards: %w", err)
+	}
+	return resp.Data, nil
+}
+
+// GetIPSSettings returns the site IPS/DNS filter configuration.
+func (c *UnifiClient) GetIPSSettings(ctx context.Context) (map[string]any, error) {
+	var resp struct {
+		Data []map[string]any `json:"data"`
+		Meta struct{ RC string `json:"rc"` } `json:"meta"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("get/setting/ips"), nil, &resp); err != nil {
+		return nil, fmt.Errorf("get ips settings: %w", err)
+	}
+	if len(resp.Data) == 0 {
+		return nil, nil
+	}
+	return resp.Data[0], nil
+}
+
+// AuditEvent is one entry from the UniFi stat/event endpoint.
+type AuditEvent struct {
+	ID       string `json:"_id"`
+	Datetime string `json:"datetime"`
+	Key      string `json:"key"`
+	Msg      string `json:"msg"`
+	Admin    string `json:"admin,omitempty"`
+	SSID     string `json:"ssid,omitempty"`
+	Network  string `json:"network,omitempty"`
+	SrcIP    string `json:"src_ip,omitempty"`
+	DstIP    string `json:"dst_ip,omitempty"`
+	SrcMAC   string `json:"src_mac,omitempty"`
+}
+
+// ListAuditEvents returns recent system events from the site event log.
+func (c *UnifiClient) ListAuditEvents(ctx context.Context, limit int) ([]AuditEvent, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	url := fmt.Sprintf("%s?_limit=%d", c.apiURL("stat/event"), limit)
+	var resp struct {
+		Data []AuditEvent `json:"data"`
+		Meta struct{ RC string `json:"rc"` } `json:"meta"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, url, nil, &resp); err != nil {
+		return nil, fmt.Errorf("list events: %w", err)
+	}
+	return resp.Data, nil
+}
+
+// TriggerBackup requests UniFi to generate a config backup and downloads it.
+// Returns raw backup file bytes (.unf format). Best-effort — returns error if
+// the controller does not support the backup download API via API key.
+func (c *UnifiClient) TriggerBackup(ctx context.Context) ([]byte, string, error) {
+	// Step 1: Request backup creation.
+	var cmdResp struct {
+		Data []struct {
+			URL string `json:"url"`
+		} `json:"data"`
+		Meta struct{ RC string `json:"rc"` } `json:"meta"`
+	}
+	if err := c.doJSON(ctx, http.MethodPost, c.apiURL("cmd/backup"),
+		map[string]any{"cmd": "backup"}, &cmdResp); err != nil {
+		return nil, "", fmt.Errorf("trigger backup: %w", err)
+	}
+
+	// Step 2: Download the file from the URL returned, or well-known path.
+	dlPath := "/proxy/network/dl/backup/download"
+	if len(cmdResp.Data) > 0 && cmdResp.Data[0].URL != "" {
+		dlPath = cmdResp.Data[0].URL
+	}
+	dlURL := c.host + dlPath
+	data, ct, err := c.doRaw(ctx, http.MethodGet, dlURL)
+	if err != nil {
+		return nil, "", fmt.Errorf("download backup: %w", err)
+	}
+	return data, ct, nil
 }
 
 func timeNowMS() int64 {

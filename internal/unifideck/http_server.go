@@ -29,6 +29,8 @@ type HTTPServer struct {
 	scheduler        *AutomationScheduler
 	snapStore        *SnapshotStore
 	snapScheduler    *SnapshotScheduler
+	cfgSnapStore     *ConfigSnapshotStore
+	cfgSnapScheduler *ConfigSnapshotScheduler
 	clientTracker    *ClientTracker
 	threatStore      *ThreatStore
 	threatPoller     *IPSThreatPoller
@@ -42,6 +44,7 @@ func NewHTTPServer(cfg AppConfig) *HTTPServer {
 	logPath := filepath.Join(DataDir(), "unifideck.log")
 	store := NewAutomationStore(autoPath)
 	snapStore := NewSnapshotStore(DataDir())
+	cfgSnapStore := NewConfigSnapshotStore(DataDir())
 	logger := NewAutomationLogger(logPath)
 	clientTracker := NewClientTracker(DataDir())
 	threatStore := NewThreatStore(DataDir())
@@ -57,6 +60,7 @@ func NewHTTPServer(cfg AppConfig) *HTTPServer {
 		store:          store,
 		logger:         logger,
 		snapStore:      snapStore,
+		cfgSnapStore:   cfgSnapStore,
 		clientTracker:  clientTracker,
 		threatStore:    threatStore,
 		threatPoller:   threatPoller,
@@ -65,8 +69,10 @@ func NewHTTPServer(cfg AppConfig) *HTTPServer {
 	}
 	s.scheduler = NewAutomationScheduler(s.store, s.logger, s.unifiClient)
 	s.snapScheduler = NewSnapshotScheduler(snapStore, logger, s.unifiClient)
+	s.cfgSnapScheduler = NewConfigSnapshotScheduler(cfgSnapStore, logger, s.unifiClient, s.snapshotCfg)
 	log.Printf("[unifideck] automations file: %s (%d loaded)", autoPath, store.LoadedCount())
 	log.Printf("[unifideck] snapshots dir   : %s (%d stored)", filepath.Join(DataDir(), "snapshots"), snapStore.Count())
+	log.Printf("[unifideck] config snapshots: %s (%d stored)", filepath.Join(DataDir(), "config-snapshots"), cfgSnapStore.Count())
 	log.Printf("[unifideck] activity log    : %s", logPath)
 	return s
 }
@@ -126,6 +132,16 @@ func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("/api/automations", s.handleAutomations)
 	mux.HandleFunc("/api/automations/", s.handleAutomationSubroutes)
 	mux.HandleFunc("/api/logs", s.handleLogs)
+	mux.HandleFunc("/api/iot/diagnose", s.handleIoTDiagnose)
+	mux.HandleFunc("/api/iot/wlans/", s.handleIoTWLANFix)
+	mux.HandleFunc("/api/network-health", s.handleNetworkHealth)
+	mux.HandleFunc("/api/network-health/", s.handleHealthFix)
+	mux.HandleFunc("/api/config-snapshots", s.handleConfigSnapshots)
+	mux.HandleFunc("/api/config-snapshots/", s.handleConfigSnapshotSubroutes)
+	mux.HandleFunc("/api/audit", s.handleAuditLog)
+	mux.HandleFunc("/api/firewall-audit", s.handleFirewallAudit)
+	mux.HandleFunc("/api/network-insights", s.handleNetworkInsights)
+	mux.HandleFunc("/api/udm-process-scan", s.handleUDMProcessScan)
 
 	mux.Handle("/", http.FileServer(http.FS(webFS)))
 	return mux
@@ -871,6 +887,188 @@ func (s *HTTPServer) handleAutomationSubroutes(w http.ResponseWriter, r *http.Re
 	}
 }
 
+// ── Config Snapshot handlers ───────────────────────────────────────────────────
+
+// GET  /api/config-snapshots         → list all snapshots + schedule
+// POST /api/config-snapshots         → capture a new snapshot now
+func (s *HTTPServer) handleConfigSnapshots(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		snaps := s.cfgSnapStore.List()
+		sched := s.cfgSnapStore.GetSchedule()
+		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
+			"snapshots": snaps,
+			"schedule":  sched,
+			"count":     len(snaps),
+		}})
+
+	case http.MethodPost:
+		var body struct {
+			Label string `json:"label"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+
+		c := s.unifiClient()
+		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+		defer cancel()
+
+		snap, err := s.cfgSnapStore.Capture(ctx, c, body.Label, "manual", s.snapshotCfg())
+		if err != nil {
+			s.logger.Warn("config snapshot capture failed: %v", err)
+			writeJSON(w, http.StatusBadGateway, apiResp{Success: false, Error: err.Error()})
+			return
+		}
+		s.logger.Info("config snapshot captured id=%s label=%q nets=%d policies=%d",
+			snap.ID, snap.Label, snap.Summary.Networks, snap.Summary.Policies)
+		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: snap})
+
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+	}
+}
+
+// handleConfigSnapshotSubroutes routes /api/config-snapshots/{id|verb}
+func (s *HTTPServer) handleConfigSnapshotSubroutes(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api/config-snapshots/")
+	path = strings.Trim(path, "/")
+
+	switch path {
+	case "schedule":
+		s.handleCfgSnapSchedule(w, r)
+	case "diff":
+		s.handleCfgSnapDiff(w, r)
+	case "backup":
+		s.handleCfgBackup(w, r)
+	default:
+		// /api/config-snapshots/{id}
+		if path == "" {
+			writeJSON(w, http.StatusNotFound, apiResp{Success: false, Error: "not found"})
+			return
+		}
+		id := path
+		switch r.Method {
+		case http.MethodGet:
+			data, err := s.cfgSnapStore.Get(id)
+			if err != nil {
+				writeJSON(w, http.StatusNotFound, apiResp{Success: false, Error: err.Error()})
+				return
+			}
+			writeJSON(w, http.StatusOK, apiResp{Success: true, Data: data})
+		case http.MethodDelete:
+			if err := s.cfgSnapStore.Delete(id); err != nil {
+				writeJSON(w, http.StatusNotFound, apiResp{Success: false, Error: err.Error()})
+				return
+			}
+			s.logger.Info("config snapshot deleted id=%s", id)
+			writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]bool{"deleted": true}})
+		default:
+			writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		}
+	}
+}
+
+// GET/POST /api/config-snapshots/schedule
+func (s *HTTPServer) handleCfgSnapSchedule(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: s.cfgSnapStore.GetSchedule()})
+	case http.MethodPost:
+		var sched ConfigSnapshotSchedule
+		if err := json.NewDecoder(r.Body).Decode(&sched); err != nil {
+			writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "invalid JSON"})
+			return
+		}
+		if err := s.cfgSnapStore.SaveSchedule(sched); err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: sched})
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+	}
+}
+
+// GET /api/config-snapshots/diff?a={id}&b={id}
+func (s *HTTPServer) handleCfgSnapDiff(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	idA := r.URL.Query().Get("a")
+	idB := r.URL.Query().Get("b")
+	if idA == "" || idB == "" {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "a and b snapshot IDs required"})
+		return
+	}
+	diff, err := s.cfgSnapStore.Diff(idA, idB)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: diff})
+}
+
+// POST /api/config-snapshots/backup — download a UniFi config backup file
+func (s *HTTPServer) handleCfgBackup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	c := s.unifiClient()
+	if !c.IsConfigured() {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "UniFi not configured"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+
+	data, _, err := c.TriggerBackup(ctx)
+	if err != nil {
+		s.logger.Warn("unifi backup failed: %v", err)
+		writeJSON(w, http.StatusBadGateway, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	filename := fmt.Sprintf("unifi-backup-%s.unf", time.Now().Format("20060102-150405"))
+	s.logger.Info("unifi backup downloaded size=%d", len(data))
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
+// GET /api/audit — recent UniFi system events
+func (s *HTTPServer) handleAuditLog(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	c := s.unifiClient()
+	if !c.IsConfigured() {
+		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
+			"events":    []any{},
+			"configured": false,
+		}})
+		return
+	}
+	limit := 200
+	if v := r.URL.Query().Get("limit"); v != "" {
+		fmt.Sscanf(v, "%d", &limit)
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	events, err := c.ListAuditEvents(ctx, limit)
+	if err != nil {
+		s.logger.Warn("audit log err=%v", err)
+		writeJSON(w, http.StatusBadGateway, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
+		"events":     events,
+		"configured": true,
+	}})
+}
+
 func (s *HTTPServer) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
@@ -887,11 +1085,11 @@ func (s *HTTPServer) handleLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"lines": lines}})
 }
 
-// StartScheduler starts both the automation and snapshot background schedulers,
-// and the client device tracker.
+// StartScheduler starts all background schedulers and the client device tracker.
 func (s *HTTPServer) StartScheduler() {
 	s.scheduler.Start()
 	s.snapScheduler.Start()
+	s.cfgSnapScheduler.Start()
 	s.clientTracker.Start(func(ctx context.Context) ([]Client, error) {
 		c := s.unifiClient()
 		if !c.IsConfigured() {
@@ -918,10 +1116,11 @@ func (s *HTTPServer) StartScheduler() {
 	s.sigUpdater.Start()
 }
 
-// StopScheduler stops both schedulers, the client tracker, and security components.
+// StopScheduler stops all schedulers, the client tracker, and security components.
 func (s *HTTPServer) StopScheduler() {
 	s.scheduler.Stop()
 	s.snapScheduler.Stop()
+	s.cfgSnapScheduler.Stop()
 	s.clientTracker.Stop()
 	s.threatPoller.Stop()
 	s.honeypotSrv.StopAll()

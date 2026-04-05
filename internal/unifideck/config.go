@@ -16,6 +16,13 @@ type AppConfig struct {
 	// UnifiUser/UnifiPass kept for reading old settings files and migrating.
 	UnifiUser string `json:"unifi_user,omitempty"`
 	UnifiPass string `json:"unifi_pass,omitempty"`
+	// SSH access to the UDM Pro OS (uses UNIFICERT_SSH_* env vars, shared with unifi-cert-smash-deck)
+	SSHHost       string `json:"ssh_host,omitempty"`
+	SSHUser       string `json:"ssh_user,omitempty"`
+	SSHPort       string `json:"ssh_port,omitempty"`
+	SSHKeyPath    string `json:"ssh_key_path,omitempty"`
+	SSHPassword   string `json:"ssh_password,omitempty"`
+	SSHKnownHosts string `json:"ssh_known_hosts,omitempty"`
 	// Security
 	HoneypotPorts      []int  `json:"honeypot_ports,omitempty"`
 	SecurityWebhookURL string `json:"security_webhook_url,omitempty"`
@@ -80,6 +87,13 @@ func LoadAppConfig(path string) AppConfig {
 	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {
 		cfg.Port = p
 	}
+	// SSH credentials (from UNIFICERT_SSH_* env vars, shared with unifi-cert-smash-deck)
+	cfg.SSHHost       = getenv("UNIFICERT_SSH_HOST", "")
+	cfg.SSHUser       = getenv("UNIFICERT_SSH_USER", "root")
+	cfg.SSHPort       = getenv("UNIFICERT_SSH_PORT", "22")
+	cfg.SSHKeyPath    = getenv("UNIFICERT_SSH_KEY", "")
+	cfg.SSHPassword   = getenv("UNIFICERT_SSH_PASSWORD", "")
+	cfg.SSHKnownHosts = getenv("UNIFICERT_SSH_KNOWN_HOSTS", "")
 	return cfg
 }
 

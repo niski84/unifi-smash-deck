@@ -821,6 +821,11 @@
     <button type="button" class="tab-btn" data-tab="cameras" data-testid="tab-cameras">📷 Cameras</button>
     <button type="button" class="tab-btn" data-tab="automations" data-testid="tab-automations">Automations</button>
     <button type="button" class="tab-btn" data-tab="security" data-testid="tab-security">🔒 Security <span id="securityBadge" style="display:none;background:var(--danger,#e53935);color:#fff;border-radius:999px;font-size:11px;padding:1px 6px;margin-left:4px;vertical-align:middle;"></span></button>
+    <button type="button" class="tab-btn" data-tab="health" data-testid="tab-health">📊 Health Report</button>
+    <button type="button" class="tab-btn" data-tab="iot" data-testid="tab-iot">🔌 IoT Diagnostics</button>
+    <button type="button" class="tab-btn" data-tab="config-snap" data-testid="tab-config-snap">🗄️ Config &amp; Audit</button>
+    <button type="button" class="tab-btn" data-tab="fw-audit" data-testid="tab-fw-audit">🔍 FW Audit</button>
+    <button type="button" class="tab-btn" data-tab="net-insights" data-testid="tab-net-insights">📡 Net Insights</button>
     <button type="button" class="tab-btn" data-tab="settings" data-testid="tab-settings">Settings &amp; Logs</button>
   </div>
 
@@ -1034,6 +1039,446 @@
         <pre id="testHarnessOutput" style="font-size:11px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;max-height:320px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;"></pre>
       </div>
     </div>
+  </section>
+
+  <!-- ── Health Report panel ── -->
+  <section id="panel-health" class="panel">
+    <div class="card">
+      <div class="toolbar" style="flex-wrap:wrap;gap:8px;">
+        <button type="button" class="primary" id="healthRunBtn">Run Health Report</button>
+        <span id="healthRunAt" class="muted" style="font-size:12px;"></span>
+        <span id="healthStatus" class="muted" style="margin-left:auto;font-size:12px;"></span>
+      </div>
+      <div id="healthSummaryRow" style="display:none;margin:10px 0 4px;display:flex;gap:8px;flex-wrap:wrap;"></div>
+    </div>
+
+    <!-- Category sections rendered dynamically -->
+    <div id="healthInfraSection" style="display:none;margin-top:14px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:8px;">Infrastructure</div>
+      <div id="healthInfraGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px;"></div>
+    </div>
+    <div id="healthWifiSection" style="display:none;margin-top:14px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:8px;">Wi-Fi</div>
+      <div id="healthWifiGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px;"></div>
+    </div>
+    <div id="healthTopoSection" style="display:none;margin-top:14px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:8px;">Network Topology</div>
+      <div id="healthTopoGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px;"></div>
+    </div>
+    <div id="healthSecSection" style="display:none;margin-top:14px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:8px;">Security</div>
+      <div id="healthSecGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px;"></div>
+    </div>
+  </section>
+
+  <!-- ── IoT Diagnostics panel ── -->
+  <section id="panel-iot" class="panel">
+    <div class="card">
+      <div class="toolbar" style="flex-wrap:wrap;gap:8px;">
+        <button type="button" class="primary" id="iotRunBtn">Run Diagnostics</button>
+        <span id="iotRunAt" class="muted" style="font-size:12px;"></span>
+        <span id="iotStatus" class="muted" style="margin-left:auto;font-size:12px;"></span>
+      </div>
+      <!-- Summary badges -->
+      <div id="iotSummaryRow" style="display:none;margin:10px 0 4px;display:flex;gap:8px;flex-wrap:wrap;"></div>
+    </div>
+
+    <!-- Check cards -->
+    <div id="iotChecksGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px;margin-top:12px;"></div>
+
+    <!-- IoT Devices table -->
+    <div class="card" id="iotDevicesCard" style="margin-top:16px;display:none;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+        <strong>IoT Devices</strong>
+        <span id="iotDevicesCount" class="muted" style="font-size:12px;"></span>
+        <input type="search" id="iotDeviceSearch" placeholder="🔍 Filter…" style="flex:1;min-width:140px;max-width:260px;margin-bottom:0;" />
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="client-table" id="iotDevicesTable">
+          <thead>
+            <tr>
+              <th>Name / Hostname</th>
+              <th>MAC</th>
+              <th>IP</th>
+              <th>SSID</th>
+              <th>Vendor</th>
+              <th>Signal</th>
+              <th>Uptime</th>
+            </tr>
+          </thead>
+          <tbody id="iotDevicesTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <!-- Config Snapshots & Audit Tab                                         -->
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <section id="panel-config-snap" class="panel">
+
+    <!-- Sub-tab nav -->
+    <div style="display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;">
+      <button type="button" class="cs-subtab active" data-cstab="snapshots" style="padding:7px 18px;border-radius:8px;border:1px solid var(--border);background:var(--accent);color:#fff;cursor:pointer;font-weight:600;font-size:13px;">📸 Snapshots</button>
+      <button type="button" class="cs-subtab" data-cstab="diff" style="padding:7px 18px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-weight:600;font-size:13px;">🔍 Diff Viewer</button>
+      <button type="button" class="cs-subtab" data-cstab="audit" style="padding:7px 18px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-weight:600;font-size:13px;">📋 Audit Log</button>
+      <button type="button" class="cs-subtab" data-cstab="backup" style="padding:7px 18px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-weight:600;font-size:13px;">💾 Backup</button>
+    </div>
+
+    <!-- ── Snapshots sub-tab ────────────────────────────────────────────── -->
+    <div id="cs-panel-snapshots" class="cs-panel">
+
+      <!-- Capture row -->
+      <div class="card" style="margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <input type="text" id="csLabelInput" placeholder="Optional label (e.g. before firewall change)" style="flex:1;min-width:200px;max-width:420px;padding:9px 12px;border-radius:8px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--input-color);font-size:13px;" />
+          <button type="button" id="csCaptureBtn" style="padding:9px 22px;border-radius:8px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-weight:700;font-size:13px;white-space:nowrap;">
+            📸 Capture Now
+          </button>
+          <span id="csCaptureStatus" class="muted" style="font-size:12px;"></span>
+        </div>
+      </div>
+
+      <!-- Auto-snapshot schedule -->
+      <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 12px 0;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Auto-Snapshot Schedule</h4>
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
+            <input type="checkbox" id="csSchedEnabled" style="width:auto;margin:0;" />
+            <span style="font-weight:600;font-size:13px;">Enabled</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin:0;">
+            <span class="muted">Every</span>
+            <input type="number" id="csSchedHours" min="1" max="168" value="24" style="width:60px;padding:6px 8px;border-radius:6px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--input-color);font-size:13px;text-align:center;" />
+            <span class="muted">hours</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin:0;">
+            <span class="muted">Retain</span>
+            <input type="number" id="csSchedRetain" min="0" max="365" value="30" style="width:60px;padding:6px 8px;border-radius:6px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--input-color);font-size:13px;text-align:center;" />
+            <span class="muted">days (0 = forever)</span>
+          </label>
+          <button type="button" id="csSchedSaveBtn" style="padding:7px 18px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-weight:600;font-size:13px;">Save</button>
+          <span id="csSchedStatus" class="muted" style="font-size:12px;"></span>
+        </div>
+      </div>
+
+      <!-- Snapshot list -->
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+          <h4 style="margin:0;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">
+            Snapshots <span id="csCount" class="muted" style="font-weight:400;font-size:12px;"></span>
+          </h4>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="csSelectHint" class="muted" style="font-size:12px;"></span>
+            <button type="button" id="csDiffBtn" disabled style="padding:7px 18px;border-radius:8px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-weight:700;font-size:13px;opacity:0.4;" onclick="csDiffSelected()">
+              🔍 Compare Selected
+            </button>
+          </div>
+        </div>
+        <div id="csSnapshotList" style="display:flex;flex-direction:column;gap:6px;">
+          <p class="muted" style="font-size:13px;">Loading…</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Diff Viewer sub-tab ──────────────────────────────────────────── -->
+    <div id="cs-panel-diff" class="cs-panel" style="display:none;">
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+          <h4 style="margin:0;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Compare Two Snapshots</h4>
+          <span class="muted" style="font-size:12px;">(or select two from the Snapshots tab)</span>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:flex-end;">
+          <div style="flex:1;min-width:180px;">
+            <label class="muted" style="font-size:11px;display:block;margin-bottom:4px;">SNAPSHOT A (older / baseline)</label>
+            <select id="csDiffSelA" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--input-color);font-size:13px;">
+              <option value="">— select —</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:180px;">
+            <label class="muted" style="font-size:11px;display:block;margin-bottom:4px;">SNAPSHOT B (newer / changed)</label>
+            <select id="csDiffSelB" style="width:100%;padding:8px 10px;border-radius:8px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--input-color);font-size:13px;">
+              <option value="">— select —</option>
+            </select>
+          </div>
+          <button type="button" id="csDiffRunBtn" style="padding:9px 22px;border-radius:8px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-weight:700;font-size:13px;white-space:nowrap;" onclick="csRunDiff()">
+            🔍 Compare
+          </button>
+        </div>
+        <div id="csDiffResult"></div>
+      </div>
+    </div>
+
+    <!-- ── Audit Log sub-tab ────────────────────────────────────────────── -->
+    <div id="cs-panel-audit" class="cs-panel" style="display:none;">
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+          <h4 style="margin:0;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">UniFi Audit Log</h4>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input type="text" id="csAuditFilter" placeholder="Filter events…" style="padding:7px 12px;border-radius:8px;border:1px solid var(--input-border);background:var(--input-bg);color:var(--input-color);font-size:13px;width:200px;" oninput="csRenderAudit()" />
+            <button type="button" onclick="csLoadAudit()" style="padding:7px 14px;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;font-size:13px;">↻ Refresh</button>
+          </div>
+        </div>
+        <div id="csAuditList" style="font-size:13px;">
+          <p class="muted">Click Refresh to load events.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Backup sub-tab ───────────────────────────────────────────────── -->
+    <div id="cs-panel-backup" class="cs-panel" style="display:none;">
+      <div class="card" style="margin-bottom:16px;">
+        <h4 style="margin:0 0 12px 0;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Download UniFi Backup</h4>
+        <p class="muted" style="font-size:13px;margin:0 0 14px 0;">
+          Triggers the UDM Pro to generate a full configuration backup (.unf file) and downloads it through this server.
+          The backup includes all settings, networks, firewall rules, and device configuration.
+        </p>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <button type="button" id="csBackupBtn" onclick="csDownloadBackup()" style="padding:10px 24px;border-radius:8px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-weight:700;font-size:14px;">
+            💾 Download Backup Now
+          </button>
+          <span id="csBackupStatus" class="muted" style="font-size:12px;"></span>
+        </div>
+        <div style="margin-top:16px;padding:12px 14px;border-radius:8px;background:var(--bg);border:1px solid var(--border);">
+          <p class="muted" style="font-size:12px;margin:0;">
+            <strong>Tip:</strong> Take a config snapshot before making major changes, then compare with a post-change snapshot to see exactly what was modified.
+            The backup file can be used to restore your UniFi controller via Settings → System → Backup.
+          </p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h4 style="margin:0 0 12px 0;font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">What Do Config Snapshots Capture?</h4>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;">
+          <div style="padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);">
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px;">🌐 Networks &amp; VLANs</div>
+            <div class="muted" style="font-size:12px;">Subnet config, DHCP settings, isolation, purpose, enabled state</div>
+          </div>
+          <div style="padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);">
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px;">📡 WiFi SSIDs</div>
+            <div class="muted" style="font-size:12px;">SSID names, security mode, band, enabled state, IoT settings</div>
+          </div>
+          <div style="padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);">
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px;">🔥 Firewall Policies</div>
+            <div class="muted" style="font-size:12px;">All zone-based firewall rules, actions, source/destination zones</div>
+          </div>
+          <div style="padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);">
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px;">🔀 Port Forwards</div>
+            <div class="muted" style="font-size:12px;">Destination NAT rules, external ports, internal IPs</div>
+          </div>
+          <div style="padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);">
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px;">📟 Devices</div>
+            <div class="muted" style="font-size:12px;">Adopted APs, switches, gateways — name, model, firmware</div>
+          </div>
+          <div style="padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--bg);">
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px;">🛡️ IPS &amp; DNS Filters</div>
+            <div class="muted" style="font-size:12px;">Threat protection settings, DNS filter assignments per network</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <!-- Firewall Audit Tab                                                   -->
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <section id="panel-fw-audit" class="panel">
+
+    <!-- Toolbar -->
+    <div class="card">
+      <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:center;">
+        <button type="button" class="primary" id="faRunBtn">Run Audit</button>
+        <span id="faRunAt" class="muted" style="font-size:12px;"></span>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+          <input type="search" id="faSearch" placeholder="🔍 Filter rules…"
+                 style="width:200px;margin-bottom:0;" />
+          <label style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;">
+            <input type="checkbox" id="faShowSystem" /> Show system rules
+          </label>
+        </div>
+      </div>
+
+      <!-- Score + summary row -->
+      <div id="faSummary" style="display:none;margin-top:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <div id="faScoreWrap" style="display:flex;align-items:center;gap:10px;">
+          <div id="faScoreCircle" style="width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;border:3px solid;">
+            <span id="faScoreVal">—</span>
+          </div>
+          <div style="font-size:12px;color:var(--muted);">Security<br>Score</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;" id="faBadges"></div>
+      </div>
+    </div>
+
+    <!-- Findings -->
+    <div class="card" id="faFindingsCard" style="margin-top:12px;display:none;">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Findings</div>
+      <div id="faFindings"></div>
+    </div>
+
+    <!-- Network / Zone overview -->
+    <div class="card" style="margin-top:12px;" id="faNetCard" style="display:none;">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Network → Zone Map</div>
+      <div style="overflow-x:auto;">
+        <table class="client-table" id="faNetTable">
+          <thead><tr><th>Network</th><th>VLAN</th><th>Subnet</th><th>Purpose</th><th>Firewall Zone</th></tr></thead>
+          <tbody id="faNetTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Policy table -->
+    <div class="card" style="margin-top:12px;">
+      <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;">Firewall Policies</div>
+      <div style="overflow-x:auto;">
+        <table class="client-table" id="faPolicyTable">
+          <thead>
+            <tr>
+              <th>Idx</th><th>Name</th><th>Action</th>
+              <th>Source</th><th>Destination</th>
+              <th>State</th><th>Type</th>
+            </tr>
+          </thead>
+          <tbody id="faPolicyTbody">
+            <p class="muted" style="padding:16px;">Click <strong>Run Audit</strong> to load firewall policies.</p>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <section id="panel-net-insights" class="panel">
+
+    <!-- Toolbar -->
+    <div class="card">
+      <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:center;">
+        <button type="button" class="primary" id="niRunBtn">Run Scan</button>
+        <span id="niRunAt" class="muted" style="font-size:12px;"></span>
+        <span id="niSummaryBadges" style="margin-left:auto;display:flex;gap:6px;"></span>
+      </div>
+    </div>
+
+    <!-- Device health table -->
+    <div class="card">
+      <h3 style="margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Device Health</h3>
+      <div style="overflow-x:auto;">
+        <table id="niDeviceTable" style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border);color:var(--muted);text-align:left;">
+              <th style="padding:6px 10px;">Device</th>
+              <th style="padding:6px 10px;">Model</th>
+              <th style="padding:6px 10px;">CPU</th>
+              <th style="padding:6px 10px;">Memory</th>
+              <th style="padding:6px 10px;">Load</th>
+              <th style="padding:6px 10px;">Clients</th>
+              <th style="padding:6px 10px;">Uptime</th>
+              <th style="padding:6px 10px;">Firmware</th>
+            </tr>
+          </thead>
+          <tbody id="niDeviceBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- VLAN summary -->
+    <div class="card">
+      <h3 style="margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Client Distribution by VLAN</h3>
+      <div id="niVlanBars"></div>
+    </div>
+
+    <!-- Top talkers -->
+    <div class="card">
+      <h3 style="margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Top Traffic Talkers (this session)</h3>
+      <div style="overflow-x:auto;">
+        <table id="niTalkersTable" style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border);color:var(--muted);text-align:left;">
+              <th style="padding:6px 10px;">Host</th>
+              <th style="padding:6px 10px;">IP</th>
+              <th style="padding:6px 10px;">VLAN</th>
+              <th style="padding:6px 10px;">TX</th>
+              <th style="padding:6px 10px;">RX</th>
+              <th style="padding:6px 10px;">Total</th>
+              <th style="padding:6px 10px;">Type</th>
+            </tr>
+          </thead>
+          <tbody id="niTalkersBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Findings -->
+    <div class="card">
+      <h3 style="margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Findings</h3>
+      <div id="niFindings"></div>
+    </div>
+
+    <!-- UDM Pro OS Process Scan (SSH) -->
+    <div class="card" id="niSSHCard">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+        <h3 style="margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">UDM Pro — OS Process Scan</h3>
+        <button type="button" class="primary" id="niSSHBtn" style="font-size:12px;padding:4px 12px;">Fetch via SSH</button>
+        <span id="niSSHStatus" style="font-size:12px;color:var(--muted);"></span>
+      </div>
+      <p id="niSSHUnconfigured" style="display:none;color:var(--muted);font-size:13px;margin:0;">
+        SSH not configured — add <code>UNIFICERT_SSH_HOST</code>, <code>UNIFICERT_SSH_KEY</code>, and <code>UNIFICERT_SSH_PASSWORD</code> to your <code>.env</code> to enable OS-level process inspection.
+      </p>
+
+      <!-- Memory detail -->
+      <div id="niSSHMemBlock" style="display:none;margin-bottom:14px;">
+        <h4 style="margin:0 0 6px;font-size:12px;color:var(--muted);">Memory (/proc/meminfo)</h4>
+        <div id="niSSHMemBar" style="margin-bottom:6px;"></div>
+        <div id="niSSHMemStats" style="font-size:12px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap;"></div>
+      </div>
+
+      <!-- Disk -->
+      <div id="niSSHDiskBlock" style="display:none;margin-bottom:14px;">
+        <h4 style="margin:0 0 6px;font-size:12px;color:var(--muted);">Disk Usage</h4>
+        <div id="niSSHDiskRows"></div>
+      </div>
+
+      <!-- Processes -->
+      <div id="niSSHProcBlock" style="display:none;margin-bottom:14px;">
+        <h4 style="margin:0 0 6px;font-size:12px;color:var(--muted);">Top Processes by Memory</h4>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border);color:var(--muted);">
+                <th style="padding:4px 8px;text-align:left;">PID</th>
+                <th style="padding:4px 8px;text-align:left;">User</th>
+                <th style="padding:4px 8px;">%CPU</th>
+                <th style="padding:4px 8px;">%MEM</th>
+                <th style="padding:4px 8px;">RSS</th>
+                <th style="padding:4px 8px;text-align:left;">Command</th>
+              </tr>
+            </thead>
+            <tbody id="niSSHProcBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Binary hashes -->
+      <div id="niSSHBinBlock" style="display:none;">
+        <h4 style="margin:0 0 6px;font-size:12px;color:var(--muted);">Key Executable Hashes (MD5)</h4>
+        <div style="overflow-x:auto;">
+          <table style="width:100%;border-collapse:collapse;font-size:11px;">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border);color:var(--muted);">
+                <th style="padding:4px 8px;text-align:left;">Path</th>
+                <th style="padding:4px 8px;">Size</th>
+                <th style="padding:4px 8px;text-align:left;">Modified</th>
+                <th style="padding:4px 8px;text-align:left;">MD5</th>
+              </tr>
+            </thead>
+            <tbody id="niSSHBinBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </section>
 
   <section id="panel-settings" class="panel">
@@ -1474,6 +1919,36 @@
           lbStopRefresh();
           loadSecurityEvents().catch(console.error);
           loadSecuritySummary().catch(console.error);
+        } else if (btn.dataset.tab === 'health') {
+          stopSnapshotPolling();
+          stopTimelineSnapshotsPoll();
+          stopClientPoll();
+          lbStopRefresh();
+          if (!healthCache) loadHealthReport().catch(console.error);
+        } else if (btn.dataset.tab === 'iot') {
+          stopSnapshotPolling();
+          stopTimelineSnapshotsPoll();
+          stopClientPoll();
+          lbStopRefresh();
+          if (!iotDiagCache) loadIoTDiagnostics().catch(console.error);
+        } else if (btn.dataset.tab === 'config-snap') {
+          stopSnapshotPolling();
+          stopTimelineSnapshotsPoll();
+          stopClientPoll();
+          lbStopRefresh();
+          csLoadSnapshots().catch(console.error);
+        } else if (btn.dataset.tab === 'fw-audit') {
+          stopSnapshotPolling();
+          stopTimelineSnapshotsPoll();
+          stopClientPoll();
+          lbStopRefresh();
+          if (!window.faAuditCache) window.faRunAudit().catch(console.error);
+        } else if (btn.dataset.tab === 'net-insights') {
+          stopSnapshotPolling();
+          stopTimelineSnapshotsPoll();
+          stopClientPoll();
+          lbStopRefresh();
+          if (!window.niInsightsCache) window.niRunScan().catch(console.error);
         } else {
           stopSnapshotPolling();
           stopTimelineSnapshotsPoll();
@@ -3743,7 +4218,259 @@
         await loadLog();
         loadSecuritySummary().catch(console.error);
 
-        // Restore the tab the user was on before the page refreshed.
+        // ── Health Report ──────────────────────────────────────────────────────────
+    let healthCache = null;
+
+    const healthSevConfig = {
+      critical: { color: 'var(--err-color)', bg: 'rgba(255,107,107,0.10)', icon: '🔴', label: 'Critical' },
+      warning:  { color: 'var(--warn)',      bg: 'rgba(245,166,35,0.10)',  icon: '🟡', label: 'Warning'  },
+      info:     { color: 'var(--accent)',    bg: 'rgba(0,111,255,0.08)',   icon: '🔵', label: 'Info'     },
+      ok:       { color: 'var(--ok)',        bg: 'rgba(61,219,165,0.08)',  icon: '🟢', label: 'OK'       },
+    };
+
+    const healthCatGrids = {
+      infrastructure: 'healthInfraGrid',
+      wifi:           'healthWifiGrid',
+      topology:       'healthTopoGrid',
+      security:       'healthSecGrid',
+    };
+    const healthCatSections = {
+      infrastructure: 'healthInfraSection',
+      wifi:           'healthWifiSection',
+      topology:       'healthTopoSection',
+      security:       'healthSecSection',
+    };
+
+    function renderHealthFindings(findings) {
+      // Clear grids
+      Object.values(healthCatGrids).forEach(id => { $(`${id}`) && ($(`${id}`).innerHTML = ''); });
+      Object.values(healthCatSections).forEach(id => { $(`${id}`) && ($(`${id}`).style.display = 'none'); });
+
+      let counts = { critical: 0, warning: 0, info: 0, ok: 0 };
+
+      findings.forEach(f => {
+        counts[f.severity] = (counts[f.severity] || 0) + 1;
+        const cfg = healthSevConfig[f.severity] || healthSevConfig.info;
+        const gridId = healthCatGrids[f.category] || 'healthTopoGrid';
+        const grid = $(gridId);
+        if (!grid) return;
+
+        // Show parent section
+        const secId = healthCatSections[f.category] || 'healthTopoSection';
+        $(`${secId}`) && ($(`${secId}`).style.display = '');
+
+        const fixBtn = f.fixable ? `
+          <button type="button" style="margin-top:10px;font-size:12px;padding:5px 12px;"
+            onclick="healthApplyFix('${escapeHtml(f.fix_endpoint)}',this)">
+            ${escapeHtml(f.fix_label || 'Fix')}
+          </button>` : '';
+
+        const card = document.createElement('div');
+        card.style.cssText = `background:var(--card);border:1px solid var(--border);border-left:4px solid ${cfg.color};border-radius:10px;padding:14px 16px;`;
+        card.innerHTML = `
+          <div style="display:flex;align-items:flex-start;gap:8px;">
+            <span style="font-size:17px;line-height:1.2;flex-shrink:0;">${cfg.icon}</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:13px;margin-bottom:5px;">${escapeHtml(f.title)}</div>
+              <div style="font-size:12px;color:var(--muted);line-height:1.55;">${escapeHtml(f.detail)}</div>
+              ${fixBtn}
+            </div>
+          </div>`;
+        grid.appendChild(card);
+      });
+
+      // Summary badges
+      const row = $('healthSummaryRow');
+      row.style.display = 'flex';
+      const parts = [];
+      if (counts.critical) parts.push(`<span style="padding:3px 10px;border-radius:999px;background:rgba(255,107,107,0.15);color:var(--err-color);font-size:12px;font-weight:600;">${counts.critical} Critical</span>`);
+      if (counts.warning)  parts.push(`<span style="padding:3px 10px;border-radius:999px;background:rgba(245,166,35,0.15);color:var(--warn);font-size:12px;font-weight:600;">${counts.warning} Warning${counts.warning>1?'s':''}</span>`);
+      if (counts.info)     parts.push(`<span style="padding:3px 10px;border-radius:999px;background:rgba(0,111,255,0.12);color:var(--accent);font-size:12px;font-weight:600;">${counts.info} Info</span>`);
+      if (counts.ok)       parts.push(`<span style="padding:3px 10px;border-radius:999px;background:rgba(61,219,165,0.15);color:var(--ok);font-size:12px;font-weight:600;">${counts.ok} OK</span>`);
+      row.innerHTML = parts.join('');
+    }
+
+    async function loadHealthReport() {
+      $('healthStatus').textContent = 'Running… (may take a few seconds)';
+      $('healthRunBtn').disabled = true;
+      try {
+        const r = await fetch('/api/network-health');
+        const j = await r.json();
+        if (!j.success) throw new Error(j.error || 'request failed');
+        healthCache = j.data;
+        $('healthRunAt').textContent = 'Last run: ' + new Date(j.data.run_at).toLocaleTimeString();
+        $('healthStatus').textContent = '';
+        renderHealthFindings(j.data.findings || []);
+      } catch (e) {
+        $('healthStatus').textContent = 'Error: ' + e.message;
+        console.error('[Health Report]', e);
+      } finally {
+        $('healthRunBtn').disabled = false;
+      }
+    }
+
+    window.healthApplyFix = async function(endpoint, btnEl) {
+      if (!endpoint) return;
+      const orig = btnEl.textContent;
+      btnEl.disabled = true;
+      btnEl.textContent = 'Applying…';
+      try {
+        const r = await fetch('/api/' + endpoint, { method: 'POST' });
+        const j = await r.json();
+        if (!j.success) throw new Error(j.error || 'fix failed');
+        btnEl.textContent = '✅ Applied';
+        btnEl.style.opacity = '0.6';
+        setTimeout(() => { healthCache = null; loadHealthReport().catch(console.error); }, 1400);
+      } catch (e) {
+        btnEl.textContent = '❌ ' + e.message;
+        btnEl.disabled = false;
+        setTimeout(() => { btnEl.textContent = orig; }, 3500);
+      }
+    };
+
+    $('healthRunBtn').onclick = () => { healthCache = null; loadHealthReport().catch(console.error); };
+
+    // ── IoT Diagnostics ────────────────────────────────────────────────────────
+    let iotDiagCache = null;
+    let iotDevicesAll = [];
+
+    const iotStatusColors = { ok: 'var(--ok)', warn: 'var(--warn)', fail: 'var(--err-color)' };
+    const iotStatusIcons  = { ok: '✅', warn: '⚠️', fail: '❌' };
+
+    function fmtUptime(secs) {
+      if (!secs) return '—';
+      const h = Math.floor(secs / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    }
+
+    function renderIoTChecks(checks) {
+      const grid = $('iotChecksGrid');
+      grid.innerHTML = '';
+      let ok = 0, warn = 0, fail = 0;
+      checks.forEach(chk => {
+        if (chk.status === 'ok') ok++;
+        else if (chk.status === 'warn') warn++;
+        else fail++;
+
+        const color = iotStatusColors[chk.status] || 'var(--muted)';
+        const icon  = iotStatusIcons[chk.status]  || '❓';
+        const fixBtn = chk.fixable ? `
+          <button type="button" style="margin-top:10px;font-size:12px;padding:5px 12px;"
+            onclick="iotApplyFix('${escapeHtml(chk.fix_wlan_id)}','${escapeHtml(chk.fix_action)}',this)">
+            ${escapeHtml(chk.fix_label || 'Fix')}
+          </button>` : '';
+
+        const card = document.createElement('div');
+        card.style.cssText = `background:var(--card);border:1px solid var(--border);border-left:4px solid ${color};border-radius:10px;padding:14px 16px;`;
+        card.innerHTML = `
+          <div style="display:flex;align-items:flex-start;gap:8px;">
+            <span style="font-size:18px;line-height:1;">${icon}</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:600;font-size:13px;margin-bottom:4px;">${escapeHtml(chk.title)}</div>
+              <div style="font-size:12px;color:var(--muted);line-height:1.5;">${escapeHtml(chk.description)}</div>
+              ${fixBtn}
+            </div>
+          </div>`;
+        grid.appendChild(card);
+      });
+
+      // Summary badges
+      const row = $('iotSummaryRow');
+      row.style.display = 'flex';
+      row.innerHTML = `
+        <span style="padding:3px 10px;border-radius:999px;background:rgba(61,219,165,0.15);color:var(--ok);font-size:12px;font-weight:600;">${ok} OK</span>
+        ${warn ? `<span style="padding:3px 10px;border-radius:999px;background:rgba(245,166,35,0.15);color:var(--warn);font-size:12px;font-weight:600;">${warn} Warning${warn>1?'s':''}</span>` : ''}
+        ${fail ? `<span style="padding:3px 10px;border-radius:999px;background:rgba(255,107,107,0.15);color:var(--err-color);font-size:12px;font-weight:600;">${fail} Issue${fail>1?'s':''}</span>` : ''}`;
+    }
+
+    function renderIoTDevices(devices) {
+      iotDevicesAll = devices || [];
+      const card = $('iotDevicesCard');
+      const tbody = $('iotDevicesTbody');
+      if (!iotDevicesAll.length) { card.style.display = 'none'; return; }
+      card.style.display = '';
+      $('iotDevicesCount').textContent = `${iotDevicesAll.length} device${iotDevicesAll.length !== 1 ? 's' : ''}`;
+      filterIoTDevices();
+    }
+
+    function filterIoTDevices() {
+      const q = ($('iotDeviceSearch').value || '').toLowerCase();
+      const tbody = $('iotDevicesTbody');
+      tbody.innerHTML = '';
+      const rows = iotDevicesAll.filter(d =>
+        !q ||
+        (d.name||'').toLowerCase().includes(q) ||
+        (d.mac||'').toLowerCase().includes(q) ||
+        (d.ip||'').toLowerCase().includes(q) ||
+        (d.essid||'').toLowerCase().includes(q) ||
+        (d.oui||'').toLowerCase().includes(q)
+      );
+      if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:16px;">No devices match filter.</td></tr>`;
+        return;
+      }
+      rows.forEach(d => {
+        const sig = d.signal ? `${d.signal} dBm` : '—';
+        const sigColor = d.signal >= -60 ? 'var(--ok)' : d.signal >= -75 ? 'var(--warn)' : 'var(--err-color)';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${escapeHtml(d.name || '—')}</td>
+          <td style="font-family:monospace;font-size:12px;">${escapeHtml(d.mac)}</td>
+          <td style="font-family:monospace;font-size:12px;">${escapeHtml(d.ip || '—')}</td>
+          <td>${escapeHtml(d.essid || '—')}</td>
+          <td style="font-size:11px;color:var(--muted);">${escapeHtml(d.oui || '—')}</td>
+          <td style="color:${sigColor};font-size:12px;">${sig}</td>
+          <td style="font-size:12px;">${fmtUptime(d.uptime)}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function loadIoTDiagnostics() {
+      $('iotStatus').textContent = 'Running…';
+      $('iotRunBtn').disabled = true;
+      try {
+        const r = await fetch('/api/iot/diagnose');
+        const j = await r.json();
+        if (!j.success) throw new Error(j.error || 'request failed');
+        iotDiagCache = j.data;
+        const runAt = new Date(j.data.run_at);
+        $('iotRunAt').textContent = 'Last run: ' + runAt.toLocaleTimeString();
+        $('iotStatus').textContent = '';
+        renderIoTChecks(j.data.checks || []);
+        renderIoTDevices(j.data.iot_devices || []);
+      } catch (e) {
+        $('iotStatus').textContent = 'Error: ' + e.message;
+        console.error('[IoT Diagnostics]', e);
+      } finally {
+        $('iotRunBtn').disabled = false;
+      }
+    }
+
+    window.iotApplyFix = async function(wlanId, action, btnEl) {
+      if (!wlanId || !action) return;
+      const orig = btnEl.textContent;
+      btnEl.disabled = true;
+      btnEl.textContent = 'Applying…';
+      try {
+        const r = await fetch(`/api/iot/wlans/${wlanId}/${action}`, { method: 'POST' });
+        const j = await r.json();
+        if (!j.success) throw new Error(j.error || 'fix failed');
+        btnEl.textContent = '✅ Applied';
+        btnEl.style.opacity = '0.6';
+        // Re-run diagnostics after a short delay to reflect the change.
+        setTimeout(() => { iotDiagCache = null; loadIoTDiagnostics().catch(console.error); }, 1200);
+      } catch (e) {
+        btnEl.textContent = '❌ ' + e.message;
+        btnEl.disabled = false;
+        setTimeout(() => { btnEl.textContent = orig; }, 3000);
+      }
+    };
+
+    $('iotRunBtn').onclick = () => { iotDiagCache = null; loadIoTDiagnostics().catch(console.error); };
+    $('iotDeviceSearch').oninput = filterIoTDevices;
+
+    // Restore the tab the user was on before the page refreshed.
         // Runs after init so the data fetch triggered by the tab click has
         // settings (host, API key) already loaded.
         const savedTab = localStorage.getItem(LS_ACTIVE_TAB);
@@ -3756,6 +4483,850 @@
         console.error('[UniFiDeck] init failed', e);
       }
     })();
+  </script>
+
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <!-- Config Snapshots JavaScript                                           -->
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <script>
+  (function() {
+    'use strict';
+
+    // ── State ─────────────────────────────────────────────────────────────
+    let csSnapshots = [];      // all loaded snapshot metadata
+    let csSelected = [];       // up to 2 selected snapshot IDs for diff
+    let csAuditEvents = [];    // loaded audit events
+
+    // ── Sub-tab switching ─────────────────────────────────────────────────
+    document.querySelectorAll('.cs-subtab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.cs-subtab').forEach(b => {
+          b.style.background = 'transparent';
+          b.style.color = 'var(--text)';
+        });
+        btn.style.background = 'var(--accent)';
+        btn.style.color = '#fff';
+
+        document.querySelectorAll('.cs-panel').forEach(p => p.style.display = 'none');
+        const panel = document.getElementById('cs-panel-' + btn.dataset.cstab);
+        if (panel) panel.style.display = '';
+
+        if (btn.dataset.cstab === 'diff') csPopulateDiffSelects();
+        if (btn.dataset.cstab === 'audit') csLoadAudit();
+      });
+    });
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+    function csEl(id) { return document.getElementById(id); }
+
+    function csFmtDate(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      return d.toLocaleDateString(undefined, {month:'short',day:'numeric',year:'numeric'})
+           + ' ' + d.toLocaleTimeString(undefined, {hour:'2-digit',minute:'2-digit'});
+    }
+
+    function csFmtSize(bytes) {
+      if (!bytes) return '';
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' KB';
+      return (bytes/(1024*1024)).toFixed(1) + ' MB';
+    }
+
+    function csStatus(id, msg, cls) {
+      const el = csEl(id);
+      if (!el) return;
+      el.textContent = msg;
+      el.style.color = cls === 'ok' ? 'var(--ok)' : cls === 'err' ? 'var(--err-color)' : 'var(--muted)';
+    }
+
+    // ── Load Snapshots ────────────────────────────────────────────────────
+    async function csLoadSnapshots() {
+      try {
+        const resp = await fetch('/api/config-snapshots');
+        const json = await resp.json();
+        if (!json.success) throw new Error(json.error || 'failed');
+        csSnapshots = json.data.snapshots || [];
+        const sched = json.data.schedule || {};
+
+        // Update schedule UI
+        csEl('csSchedEnabled').checked = !!sched.enabled;
+        csEl('csSchedHours').value = sched.interval_hours || 24;
+        csEl('csSchedRetain').value = sched.retain_days || 30;
+
+        csRenderSnapshots();
+      } catch (e) {
+        csEl('csSnapshotList').innerHTML = `<p style="color:var(--err-color);font-size:13px;">Error: ${e.message}</p>`;
+      }
+    }
+
+    function csRenderSnapshots() {
+      const list = csEl('csSnapshotList');
+      csEl('csCount').textContent = `(${csSnapshots.length})`;
+
+      if (!csSnapshots.length) {
+        list.innerHTML = '<p class="muted" style="font-size:13px;">No snapshots yet. Click "Capture Now" to take the first one.</p>';
+        return;
+      }
+
+      const rows = csSnapshots.map(snap => {
+        const isSelected = csSelected.includes(snap.id);
+        const label = snap.label ? `<span style="color:var(--accent);font-weight:600;">${esc(snap.label)}</span>` : `<span class="muted">(${snap.trigger || 'manual'})</span>`;
+        const trigger = snap.trigger === 'scheduled' ? '<span style="font-size:11px;padding:2px 7px;border-radius:999px;background:rgba(0,111,255,0.15);color:var(--accent);">auto</span>' : '';
+        const summary = snap.summary
+          ? `${snap.summary.networks} nets · ${snap.summary.wlans} SSIDs · ${snap.summary.devices} devices · ${snap.summary.firewall_policies} rules · ${snap.summary.port_forwards} fwd`
+          : '';
+        return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid ${isSelected ? 'var(--accent)' : 'var(--border)'};background:${isSelected ? 'rgba(0,111,255,0.08)' : 'var(--bg)'};cursor:pointer;transition:border-color 0.15s;" onclick="csToggleSelect('${snap.id}')">
+          <input type="checkbox" style="margin:0;width:auto;cursor:pointer;" ${isSelected ? 'checked' : ''} onchange="csToggleSelect('${snap.id}')" onclick="event.stopPropagation()" />
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span style="font-size:12px;font-family:monospace;color:var(--muted);">${snap.id}</span>
+              ${trigger}
+              ${label}
+            </div>
+            <div style="font-size:11px;color:var(--muted);margin-top:3px;">${csFmtDate(snap.taken_at)} · ${summary} · ${csFmtSize(snap.size_bytes)}</div>
+          </div>
+          <button type="button" onclick="event.stopPropagation();csDeleteSnapshot('${snap.id}')" title="Delete" style="padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--err-color);cursor:pointer;font-size:12px;flex-shrink:0;">🗑</button>
+        </div>`;
+      }).join('');
+
+      list.innerHTML = rows;
+      csUpdateDiffBtn();
+    }
+
+    function esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ── Selection for diff ─────────────────────────────────────────────────
+    window.csToggleSelect = function(id) {
+      const idx = csSelected.indexOf(id);
+      if (idx >= 0) {
+        csSelected.splice(idx, 1);
+      } else {
+        if (csSelected.length >= 2) csSelected.shift(); // drop oldest selection
+        csSelected.push(id);
+      }
+      csRenderSnapshots();
+    };
+
+    function csUpdateDiffBtn() {
+      const btn = csEl('csDiffBtn');
+      const hint = csEl('csSelectHint');
+      const ok = csSelected.length === 2;
+      btn.disabled = !ok;
+      btn.style.opacity = ok ? '1' : '0.4';
+      hint.textContent = csSelected.length === 0 ? 'Select 2 snapshots to compare'
+                       : csSelected.length === 1 ? 'Select 1 more to compare'
+                       : '2 selected — click Compare';
+    }
+
+    window.csDiffSelected = function() {
+      if (csSelected.length !== 2) return;
+      // Switch to diff sub-tab and pre-populate selects
+      const diffBtn = document.querySelector('.cs-subtab[data-cstab="diff"]');
+      if (diffBtn) diffBtn.click();
+      setTimeout(() => {
+        const selA = csEl('csDiffSelA');
+        const selB = csEl('csDiffSelB');
+        // Assign older first (A), newer second (B) based on index in csSnapshots
+        const [idA, idB] = csSelected;
+        const posA = csSnapshots.findIndex(s => s.id === idA);
+        const posB = csSnapshots.findIndex(s => s.id === idB);
+        if (posA < posB) { selA.value = idB; selB.value = idA; } // csSnapshots is newest-first
+        else              { selA.value = idA; selB.value = idB; }
+      }, 50);
+    };
+
+    // ── Capture Now ───────────────────────────────────────────────────────
+    csEl('csCaptureBtn').addEventListener('click', async () => {
+      const btn = csEl('csCaptureBtn');
+      const label = csEl('csLabelInput').value.trim();
+      btn.disabled = true;
+      btn.textContent = '⏳ Capturing…';
+      csStatus('csCaptureStatus', 'Fetching config from UniFi…', 'muted');
+      try {
+        const resp = await fetch('/api/config-snapshots', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({label})
+        });
+        const json = await resp.json();
+        if (!json.success) throw new Error(json.error || 'capture failed');
+        const snap = json.data;
+        csStatus('csCaptureStatus', `✓ Captured ${snap.id} (${snap.summary.networks} nets, ${snap.summary.firewall_policies} policies)`, 'ok');
+        csEl('csLabelInput').value = '';
+        await csLoadSnapshots();
+      } catch (e) {
+        csStatus('csCaptureStatus', `Error: ${e.message}`, 'err');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '📸 Capture Now';
+      }
+    });
+
+    // ── Schedule save ─────────────────────────────────────────────────────
+    csEl('csSchedSaveBtn').addEventListener('click', async () => {
+      const sched = {
+        enabled: csEl('csSchedEnabled').checked,
+        interval_hours: parseInt(csEl('csSchedHours').value) || 24,
+        retain_days: parseInt(csEl('csSchedRetain').value) || 30,
+      };
+      csStatus('csSchedStatus', 'Saving…', 'muted');
+      try {
+        const resp = await fetch('/api/config-snapshots/schedule', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(sched)
+        });
+        const json = await resp.json();
+        if (!json.success) throw new Error(json.error || 'save failed');
+        csStatus('csSchedStatus', '✓ Saved', 'ok');
+        setTimeout(() => csStatus('csSchedStatus', '', 'muted'), 3000);
+      } catch (e) {
+        csStatus('csSchedStatus', `Error: ${e.message}`, 'err');
+      }
+    });
+
+    // ── Delete snapshot ───────────────────────────────────────────────────
+    window.csDeleteSnapshot = async function(id) {
+      if (!confirm(`Delete snapshot ${id}?`)) return;
+      try {
+        const resp = await fetch(`/api/config-snapshots/${id}`, {method:'DELETE'});
+        const json = await resp.json();
+        if (!json.success) throw new Error(json.error || 'delete failed');
+        csSelected = csSelected.filter(s => s !== id);
+        await csLoadSnapshots();
+      } catch (e) {
+        alert('Delete failed: ' + e.message);
+      }
+    };
+
+    // ── Diff viewer ───────────────────────────────────────────────────────
+    function csPopulateDiffSelects() {
+      const selA = csEl('csDiffSelA');
+      const selB = csEl('csDiffSelB');
+      const curA = selA.value, curB = selB.value;
+      const opts = '<option value="">— select —</option>' +
+        csSnapshots.map(s => {
+          const lbl = s.label ? ` · ${s.label}` : '';
+          return `<option value="${s.id}">${csFmtDate(s.taken_at)}${lbl} (${s.id})</option>`;
+        }).join('');
+      selA.innerHTML = opts;
+      selB.innerHTML = opts;
+      if (curA) selA.value = curA;
+      if (curB) selB.value = curB;
+    }
+
+    window.csRunDiff = async function() {
+      const a = csEl('csDiffSelA').value;
+      const b = csEl('csDiffSelB').value;
+      if (!a || !b) { alert('Select both snapshots.'); return; }
+      if (a === b) { alert('Select two different snapshots.'); return; }
+      const btn = csEl('csDiffRunBtn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Comparing…';
+      const resultEl = csEl('csDiffResult');
+      resultEl.innerHTML = '<p class="muted" style="font-size:13px;">Computing diff…</p>';
+      try {
+        const resp = await fetch(`/api/config-snapshots/diff?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+        const json = await resp.json();
+        if (!json.success) throw new Error(json.error || 'diff failed');
+        csRenderDiff(json.data);
+      } catch (e) {
+        resultEl.innerHTML = `<p style="color:var(--err-color);font-size:13px;">Error: ${esc(e.message)}</p>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🔍 Compare';
+      }
+    };
+
+    function csRenderDiff(diff) {
+      const el = csEl('csDiffResult');
+      const snapA = diff.snapshot_a, snapB = diff.snapshot_b;
+
+      if (diff.identical) {
+        el.innerHTML = `
+          <div style="padding:20px;text-align:center;border-radius:10px;border:1px solid var(--border);background:var(--bg);">
+            <div style="font-size:32px;margin-bottom:8px;">✅</div>
+            <div style="font-weight:700;font-size:15px;margin-bottom:4px;">Snapshots are identical</div>
+            <div class="muted" style="font-size:13px;">No configuration changes detected between these two snapshots.</div>
+          </div>`;
+        return;
+      }
+
+      const summary = `
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+          <div style="padding:10px 16px;border-radius:8px;background:rgba(61,219,165,0.12);border:1px solid rgba(61,219,165,0.3);font-size:13px;font-weight:700;color:var(--ok);">
+            +${diff.total_added} added
+          </div>
+          <div style="padding:10px 16px;border-radius:8px;background:rgba(255,107,107,0.12);border:1px solid rgba(255,107,107,0.3);font-size:13px;font-weight:700;color:var(--err-color);">
+            −${diff.total_removed} removed
+          </div>
+          <div style="padding:10px 16px;border-radius:8px;background:rgba(245,166,35,0.12);border:1px solid rgba(245,166,35,0.3);font-size:13px;font-weight:700;color:var(--warn);">
+            ~${diff.total_changed} changed
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:16px;">
+          <strong>A:</strong> ${csFmtDate(snapA.taken_at)} ${snapA.label ? `· ${esc(snapA.label)}` : ''}
+          &nbsp;→&nbsp;
+          <strong>B:</strong> ${csFmtDate(snapB.taken_at)} ${snapB.label ? `· ${esc(snapB.label)}` : ''}
+        </div>`;
+
+      const sections = (diff.sections || []).map(sec => {
+        const added = (sec.added || []).map(item => `
+          <div style="padding:8px 12px;border-radius:6px;background:rgba(61,219,165,0.08);border-left:3px solid var(--ok);margin-bottom:6px;">
+            <span style="color:var(--ok);font-weight:700;font-size:12px;">+ ADDED</span>
+            <span style="font-size:13px;font-weight:600;margin-left:8px;">${esc(item.name)}</span>
+            <span style="font-size:11px;color:var(--muted);margin-left:6px;">${esc(item.id)}</span>
+          </div>`).join('');
+
+        const removed = (sec.removed || []).map(item => `
+          <div style="padding:8px 12px;border-radius:6px;background:rgba(255,107,107,0.08);border-left:3px solid var(--err-color);margin-bottom:6px;">
+            <span style="color:var(--err-color);font-weight:700;font-size:12px;">− REMOVED</span>
+            <span style="font-size:13px;font-weight:600;margin-left:8px;">${esc(item.name)}</span>
+            <span style="font-size:11px;color:var(--muted);margin-left:6px;">${esc(item.id)}</span>
+          </div>`).join('');
+
+        const changed = (sec.changed || []).map(item => {
+          const fields = (item.changes || []).map(ch => `
+            <div style="display:grid;grid-template-columns:180px 1fr 1fr;gap:6px;font-size:12px;padding:5px 8px;border-radius:4px;background:var(--bg);margin-bottom:3px;">
+              <span style="font-weight:600;color:var(--muted);">${esc(ch.key)}</span>
+              <span style="color:var(--err-color);word-break:break-all;">${esc(csJSONStr(ch.old))}</span>
+              <span style="color:var(--ok);word-break:break-all;">${esc(csJSONStr(ch.new))}</span>
+            </div>`).join('');
+          return `
+            <div style="padding:8px 12px;border-radius:6px;background:rgba(245,166,35,0.06);border-left:3px solid var(--warn);margin-bottom:8px;">
+              <div style="margin-bottom:6px;">
+                <span style="color:var(--warn);font-weight:700;font-size:12px;">~ CHANGED</span>
+                <span style="font-size:13px;font-weight:600;margin-left:8px;">${esc(item.name)}</span>
+                <span style="font-size:11px;color:var(--muted);margin-left:6px;">${esc(item.id)}</span>
+              </div>
+              <div style="display:grid;grid-template-columns:180px 1fr 1fr;gap:6px;font-size:11px;font-weight:700;color:var(--muted);padding:4px 8px;">
+                <span>FIELD</span><span>OLD VALUE</span><span>NEW VALUE</span>
+              </div>
+              ${fields}
+            </div>`;
+        }).join('');
+
+        return `
+          <div style="margin-bottom:20px;">
+            <h4 style="margin:0 0 10px 0;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;padding:6px 0;border-bottom:1px solid var(--border);">
+              ${esc(sec.name)}
+              <span style="font-weight:400;margin-left:8px;">
+                ${sec.added.length ? `<span style="color:var(--ok);">+${sec.added.length}</span> ` : ''}
+                ${sec.removed.length ? `<span style="color:var(--err-color);">−${sec.removed.length}</span> ` : ''}
+                ${sec.changed.length ? `<span style="color:var(--warn);">~${sec.changed.length}</span>` : ''}
+              </span>
+            </h4>
+            ${added}${removed}${changed}
+          </div>`;
+      }).join('');
+
+      el.innerHTML = summary + sections;
+    }
+
+    function csJSONStr(v) {
+      if (v === null || v === undefined) return '(none)';
+      if (typeof v === 'string') return v;
+      if (typeof v === 'boolean') return v ? 'true' : 'false';
+      if (typeof v === 'number') return String(v);
+      return JSON.stringify(v).slice(0, 120);
+    }
+
+    // ── Audit log ─────────────────────────────────────────────────────────
+    window.csLoadAudit = async function() {
+      csEl('csAuditList').innerHTML = '<p class="muted" style="font-size:13px;">Loading…</p>';
+      try {
+        const resp = await fetch('/api/audit?limit=300');
+        const json = await resp.json();
+        if (!json.success) throw new Error(json.error || 'failed');
+        csAuditEvents = json.data.events || [];
+        csRenderAudit();
+      } catch (e) {
+        csEl('csAuditList').innerHTML = `<p style="color:var(--err-color);font-size:13px;">Error: ${esc(e.message)}</p>`;
+      }
+    };
+
+    window.csRenderAudit = function() {
+      const filter = (csEl('csAuditFilter').value || '').toLowerCase();
+      let events = csAuditEvents;
+      if (filter) {
+        events = events.filter(e =>
+          (e.key||'').toLowerCase().includes(filter) ||
+          (e.msg||'').toLowerCase().includes(filter) ||
+          (e.admin||'').toLowerCase().includes(filter) ||
+          (e.ssid||'').toLowerCase().includes(filter) ||
+          (e.network||'').toLowerCase().includes(filter)
+        );
+      }
+      if (!events.length) {
+        csEl('csAuditList').innerHTML = '<p class="muted" style="font-size:13px;">No events found.</p>';
+        return;
+      }
+      const rows = events.map(ev => {
+        const time = csFmtDate(ev.datetime);
+        const key = ev.key || '';
+        const msg = ev.msg || key;
+        const meta = [ev.admin, ev.ssid, ev.network].filter(Boolean).join(' · ');
+        const color = key.includes('admin') ? 'var(--warn)' : key.includes('sta') ? 'var(--accent)' : 'var(--muted)';
+        return `<div style="display:flex;gap:10px;padding:7px 0;border-bottom:1px solid var(--border);align-items:flex-start;">
+          <span style="font-size:11px;color:var(--muted);white-space:nowrap;min-width:110px;">${time}</span>
+          <div style="flex:1;min-width:0;">
+            <span style="font-size:12px;font-weight:600;color:${color};">${esc(key)}</span>
+            <span style="font-size:13px;margin-left:8px;">${esc(msg)}</span>
+            ${meta ? `<div class="muted" style="font-size:11px;margin-top:2px;">${esc(meta)}</div>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+      csEl('csAuditList').innerHTML = `<div style="font-size:13px;">${rows}</div>`;
+    };
+
+    // ── Backup download ───────────────────────────────────────────────────
+    window.csDownloadBackup = async function() {
+      const btn = csEl('csBackupBtn');
+      btn.disabled = true;
+      btn.textContent = '⏳ Generating backup…';
+      csStatus('csBackupStatus', 'Requesting backup from UniFi controller (may take 30–60 seconds)…', 'muted');
+      try {
+        const resp = await fetch('/api/config-snapshots/backup', {method:'POST'});
+        if (!resp.ok) {
+          const json = await resp.json().catch(() => ({error:'server error'}));
+          throw new Error(json.error || `HTTP ${resp.status}`);
+        }
+        const cd = resp.headers.get('Content-Disposition') || '';
+        const match = cd.match(/filename="?([^"]+)"?/);
+        const filename = match ? match[1] : 'unifi-backup.unf';
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename; a.click();
+        URL.revokeObjectURL(url);
+        csStatus('csBackupStatus', `✓ Downloaded ${filename} (${(blob.size/1024).toFixed(0)} KB)`, 'ok');
+      } catch (e) {
+        csStatus('csBackupStatus', `Error: ${e.message}`, 'err');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '💾 Download Backup Now';
+      }
+    };
+
+  })();
+  </script>
+
+
+  <!-- ── Firewall Audit Script ─────────────────────────────────────────────── -->
+  <script>
+  (function () {
+    'use strict';
+
+    const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+    window.faAuditCache = null;
+
+    document.getElementById('faRunBtn').onclick = () => {
+      window.faAuditCache = null;
+      window.faRunAudit().catch(console.error);
+    };
+    document.getElementById('faSearch').oninput = faPoliciesRender;
+    document.getElementById('faShowSystem').onchange = faPoliciesRender;
+
+    window.faRunAudit = async function () {
+      const btn = document.getElementById('faRunBtn');
+      btn.disabled = true;
+      btn.textContent = 'Running…';
+      document.getElementById('faRunAt').textContent = '';
+      try {
+        const resp = await fetch('/api/firewall-audit');
+        const j = await resp.json();
+        if (!j.success) throw new Error(j.error || 'audit failed');
+        window.faAuditCache = j.data;
+        faRender(j.data);
+      } catch (e) {
+        document.getElementById('faFindings').innerHTML = `<p class="err">Audit failed: ${esc(e.message)}</p>`;
+        document.getElementById('faFindingsCard').style.display = '';
+        console.error('[FWAudit]', e);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Run Audit';
+      }
+    };
+
+    function faRender(d) {
+      if (!d || !d.configured) {
+        document.getElementById('faFindingsCard').style.display = '';
+        document.getElementById('faFindings').innerHTML = '<p class="muted">UniFi not configured — set credentials in Settings first.</p>';
+        return;
+      }
+
+      // Run-at timestamp
+      document.getElementById('faRunAt').textContent =
+        'Last run: ' + new Date(d.run_at).toLocaleTimeString() +
+        ' · ' + (d.policy_count || 0) + ' policies · ' + (d.network_count || 0) + ' networks';
+
+      // Score circle
+      const score = d.score ?? 100;
+      const scoreVal = document.getElementById('faScoreVal');
+      const scoreCircle = document.getElementById('faScoreCircle');
+      scoreVal.textContent = score;
+      const scoreColor = score >= 80 ? '#3ddb a5' : score >= 50 ? '#f5a623' : '#e53935';
+      const scoreColorClean = score >= 80 ? '#3ddba5' : score >= 50 ? '#f5a623' : '#e53935';
+      scoreCircle.style.borderColor = scoreColorClean;
+      scoreCircle.style.color = scoreColorClean;
+
+      // Badges
+      const badges = document.getElementById('faBadges');
+      const bc = (label, count, color) => count > 0
+        ? `<span style="padding:5px 14px;border-radius:999px;font-size:13px;font-weight:700;background:${color}22;color:${color};border:1px solid ${color}44;">${count} ${label}</span>`
+        : `<span style="padding:5px 14px;border-radius:999px;font-size:13px;font-weight:600;background:rgba(61,219,165,.12);color:#3ddba5;">✓ No ${label}</span>`;
+      badges.innerHTML =
+        bc('Critical', d.critical, '#e53935') +
+        bc('Warning', d.warning, '#f5a623') +
+        bc('Info', d.info, '#4d9fec');
+      document.getElementById('faSummary').style.display = 'flex';
+
+      // Findings
+      const findingsCard = document.getElementById('faFindingsCard');
+      const findingsEl = document.getElementById('faFindings');
+      const findings = d.findings || [];
+      if (findings.length === 0) {
+        findingsCard.style.display = 'none';
+      } else {
+        findingsCard.style.display = '';
+        const sevOrder = ['critical','warning','info'];
+        const icons = { critical: '🔴', warning: '🟡', info: '🔵' };
+        const colors = { critical: '#e53935', warning: '#f5a623', info: '#4d9fec' };
+        let html = '';
+        for (const sev of sevOrder) {
+          const items = findings.filter(f => f.severity === sev);
+          if (!items.length) continue;
+          html += items.map(f => `
+            <div style="margin-bottom:14px;padding:12px 14px;border-radius:8px;border:1px solid ${colors[sev]}44;background:${colors[sev]}0a;">
+              <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:6px;flex-wrap:wrap;">
+                <span style="font-size:13px;">${icons[sev]}</span>
+                <strong style="color:${colors[sev]};font-size:12px;text-transform:uppercase;letter-spacing:.5px;">${esc(sev)}</strong>
+                <span style="font-size:11px;color:var(--muted);border:1px solid var(--border);border-radius:4px;padding:0 5px;">${esc(f.category)}</span>
+                <span style="font-weight:700;font-size:13px;">${esc(f.title)}</span>
+              </div>
+              <div style="font-size:13px;color:var(--muted);margin-bottom:5px;">${esc(f.detail)}</div>
+              <div style="font-size:12px;"><strong>Fix:</strong> ${esc(f.recommendation)}</div>
+              ${f.rule_names && f.rule_names.length ? `<div style="margin-top:4px;font-size:11px;color:var(--muted);">Rules: ${f.rule_names.map(n=>`<code style="background:var(--surface2);padding:1px 4px;border-radius:3px;">${esc(n)}</code>`).join(', ')}</div>` : ''}
+            </div>`).join('');
+        }
+        findingsEl.innerHTML = html;
+      }
+
+      // Network/zone table
+      const netTbody = document.getElementById('faNetTbody');
+      const nets = d.networks || [];
+      if (nets.length) {
+        document.getElementById('faNetCard').style.display = '';
+        netTbody.innerHTML = nets.map(n => {
+          const zoneLabel = n.zone_id
+            ? `<span style="color:var(--ok);">${esc(n.zone_name)}</span>`
+            : `<span style="color:#e53935;font-weight:700;">⚠ UNZONED</span>`;
+          return `<tr>
+            <td style="font-weight:600;">${esc(n.name)}</td>
+            <td><code>${esc(n.vlan)}</code></td>
+            <td><code style="font-size:11px;">${esc(n.subnet||'—')}</code></td>
+            <td style="color:var(--muted);font-size:12px;">${esc(n.purpose||'—')}</td>
+            <td>${zoneLabel}</td>
+          </tr>`;
+        }).join('');
+      }
+
+      faPoliciesRender();
+    }
+
+    function faPoliciesRender() {
+      const d = window.faAuditCache;
+      if (!d) return;
+      const q = (document.getElementById('faSearch').value || '').toLowerCase();
+      const showSystem = document.getElementById('faShowSystem').checked;
+      const policies = (d.policies || []).filter(p => {
+        if (!showSystem && p.predefined) return false;
+        if (!q) return true;
+        return (p.name||'').toLowerCase().includes(q) ||
+               (p.action||'').toLowerCase().includes(q) ||
+               (p.src_zone||'').toLowerCase().includes(q) ||
+               (p.dst_zone||'').toLowerCase().includes(q) ||
+               (p.src_networks||'').toLowerCase().includes(q) ||
+               (p.dst_networks||'').toLowerCase().includes(q);
+      });
+
+      const tbody = document.getElementById('faPolicyTbody');
+      if (!policies.length) {
+        tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px;">No policies match.</td></tr>`;
+        return;
+      }
+
+      const actionColor = a => a === 'ALLOW' ? '#3ddba5' : '#e53935';
+      tbody.innerHTML = policies.map(p => {
+        const idxStr = p.index === 2147483647 ? '<span style="color:var(--muted);font-size:10px;">default</span>' : p.index;
+        const stateStyle = p.enabled ? '' : 'opacity:.45;';
+        const typeLabel = p.predefined
+          ? `<span style="font-size:10px;color:var(--muted);border:1px solid var(--border);border-radius:3px;padding:0 4px;">system</span>`
+          : p.origin_type === 'object_firewall_rule'
+            ? `<span style="font-size:10px;color:#f5a623;border:1px solid #f5a62344;border-radius:3px;padding:0 4px;">legacy</span>`
+            : `<span style="font-size:10px;color:var(--accent);border:1px solid var(--accent)44;border-radius:3px;padding:0 4px;">user</span>`;
+        return `<tr style="${stateStyle}">
+          <td style="font-size:11px;color:var(--muted);white-space:nowrap;">${idxStr}</td>
+          <td style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(p.name)}">${esc(p.name||'(unnamed)')}</td>
+          <td><span style="font-weight:800;color:${actionColor(p.action)};">${esc(p.action)}</span></td>
+          <td style="font-size:12px;"><span style="color:var(--muted);">${esc(p.src_zone)}</span>${p.src_networks && p.src_networks!=='ANY' ? `<br><code style="font-size:10px;">${esc(p.src_networks)}</code>` : ''}</td>
+          <td style="font-size:12px;"><span style="color:var(--muted);">${esc(p.dst_zone)}</span>${p.dst_networks && p.dst_networks!=='ANY' ? `<br><code style="font-size:10px;">${esc(p.dst_networks)}</code>` : ''}</td>
+          <td style="font-size:12px;color:${p.enabled?'var(--ok)':'var(--muted)'};">${p.enabled ? 'On' : 'Off'}</td>
+          <td>${typeLabel}</td>
+        </tr>`;
+      }).join('');
+    }
+
+  })();
+  </script>
+
+  <!-- ── Network Insights Script ───────────────────────────────────────────── -->
+  <script>
+  (function () {
+    'use strict';
+
+    const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+    window.niInsightsCache = null;
+
+    document.getElementById('niRunBtn').onclick = () => {
+      window.niInsightsCache = null;
+      window.niRunScan().catch(console.error);
+    };
+
+    window.niRunScan = async function () {
+      document.getElementById('niRunBtn').disabled = true;
+      document.getElementById('niRunAt').textContent = 'Scanning…';
+      try {
+        const r = await fetch('/api/network-insights');
+        const j = await r.json();
+        if (!j.success) throw new Error(j.error || 'scan failed');
+        window.niInsightsCache = j.data;
+        niRender(j.data);
+      } catch (e) {
+        document.getElementById('niRunAt').textContent = 'Error: ' + e.message;
+      } finally {
+        document.getElementById('niRunBtn').disabled = false;
+      }
+    };
+
+    function niRender(d) {
+      // Run-at timestamp
+      if (d.run_at) {
+        document.getElementById('niRunAt').textContent =
+          'Scanned ' + new Date(d.run_at).toLocaleTimeString();
+      }
+
+      // Summary badges
+      const badges = document.getElementById('niSummaryBadges');
+      const sevColor = {critical:'#ef4444', warning:'#f59e0b', info:'#3b82f6'};
+      badges.innerHTML = [
+        d.critical && `<span style="background:${sevColor.critical};color:#fff;border-radius:4px;padding:2px 8px;font-size:12px;">${d.critical} critical</span>`,
+        d.warning  && `<span style="background:${sevColor.warning};color:#fff;border-radius:4px;padding:2px 8px;font-size:12px;">${d.warning} warning</span>`,
+        d.info     && `<span style="background:${sevColor.info};color:#fff;border-radius:4px;padding:2px 8px;font-size:12px;">${d.info} info</span>`,
+        `<span style="color:var(--muted);font-size:12px;">${d.total_clients} clients</span>`,
+      ].filter(Boolean).join('');
+
+      // Device health table
+      const tbody = document.getElementById('niDeviceBody');
+      tbody.innerHTML = (d.devices || []).map(dev => {
+        const memColor = dev.mem >= 90 ? '#ef4444' : dev.mem >= 80 ? '#f59e0b' : dev.mem >= 60 ? '#eab308' : 'var(--ok)';
+        const cpuColor = dev.cpu >= 80 ? '#ef4444' : dev.cpu >= 50 ? '#f59e0b' : 'var(--muted)';
+        const bar = pct => `<span style="display:inline-block;width:${Math.round(pct)}px;height:6px;border-radius:2px;vertical-align:middle;margin-right:4px;background:${pct>=80?'#f59e0b':pct>=90?'#ef4444':'var(--ok)'};max-width:60px;"></span>`;
+        return `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:6px 10px;font-weight:500;">${esc(dev.name)}</td>
+          <td style="padding:6px 10px;color:var(--muted);font-size:12px;">${esc(dev.model)}</td>
+          <td style="padding:6px 10px;color:${cpuColor};">${dev.cpu.toFixed(1)}%</td>
+          <td style="padding:6px 10px;color:${memColor};">${bar(dev.mem)}${dev.mem.toFixed(1)}%</td>
+          <td style="padding:6px 10px;color:var(--muted);font-size:12px;">${dev.load_avg_1.toFixed(2)}</td>
+          <td style="padding:6px 10px;">${dev.clients}</td>
+          <td style="padding:6px 10px;color:var(--muted);font-size:12px;">${dev.uptime_days}d</td>
+          <td style="padding:6px 10px;color:var(--muted);font-size:11px;">${esc(dev.firmware)}</td>
+        </tr>`;
+      }).join('');
+
+      // VLAN bars
+      const vlanDiv = document.getElementById('niVlanBars');
+      const maxClients = Math.max(...(d.vlan_summary || []).map(v => v.clients), 1);
+      vlanDiv.innerHTML = (d.vlan_summary || []).map(v => {
+        const barW = Math.round(v.clients / maxClients * 200);
+        return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+          <span style="width:160px;font-size:13px;flex-shrink:0;">${esc(v.name)}</span>
+          <div style="background:var(--primary);height:18px;border-radius:3px;width:${barW}px;min-width:4px;"></div>
+          <span style="font-size:13px;font-weight:500;">${v.clients}</span>
+          <span style="font-size:11px;color:var(--muted);">TX ${v.tx_gb}GB / RX ${v.rx_gb}GB</span>
+        </div>`;
+      }).join('');
+
+      // Top talkers
+      const tBody = document.getElementById('niTalkersBody');
+      tBody.innerHTML = (d.top_talkers || []).map(t => {
+        const total = (t.tx_gb + t.rx_gb).toFixed(2);
+        const totalGB = parseFloat(total);
+        const rowColor = totalGB > 10 ? 'color:#f59e0b;font-weight:600;' : totalGB > 5 ? 'color:#eab308;' : '';
+        const name = esc(t.hostname || t.ip || t.mac);
+        return `<tr style="border-bottom:1px solid var(--border);">
+          <td style="padding:6px 10px;${rowColor}">${name}</td>
+          <td style="padding:6px 10px;color:var(--muted);font-size:12px;">${esc(t.ip)}</td>
+          <td style="padding:6px 10px;font-size:12px;">${niVlanLabel(t.vlan)}</td>
+          <td style="padding:6px 10px;">${t.tx_gb} GB</td>
+          <td style="padding:6px 10px;">${t.rx_gb} GB</td>
+          <td style="padding:6px 10px;font-weight:600;${rowColor}">${total} GB</td>
+          <td style="padding:6px 10px;color:var(--muted);font-size:11px;">${t.wired ? '🔌 wired' : '📶 wifi'}</td>
+        </tr>`;
+      }).join('');
+
+      // Findings
+      const findDiv = document.getElementById('niFindings');
+      if (!d.findings || d.findings.length === 0) {
+        findDiv.innerHTML = '<p style="color:var(--ok);margin:0;">No findings — looking good!</p>';
+        return;
+      }
+      const order = ['critical','warning','info'];
+      const findingColor = {critical:'#ef4444',warning:'#f59e0b',info:'#3b82f6'};
+      const grouped = {};
+      for (const sev of order) grouped[sev] = d.findings.filter(f => f.severity === sev);
+      findDiv.innerHTML = order.filter(s => grouped[s].length).map(sev =>
+        grouped[sev].map(f => `
+          <div style="border-left:3px solid ${findingColor[sev]};background:var(--card-bg);border-radius:0 6px 6px 0;padding:10px 14px;margin-bottom:8px;">
+            <div style="display:flex;gap:8px;align-items:baseline;">
+              <span style="color:${findingColor[sev]};font-size:11px;font-weight:700;text-transform:uppercase;min-width:56px;">${sev}</span>
+              <strong style="font-size:13px;">${esc(f.title)}</strong>
+            </div>
+            ${f.detail ? `<div style="font-size:12px;color:var(--muted);margin-top:4px;">${esc(f.detail)}</div>` : ''}
+            ${f.recommendation ? `<div style="font-size:12px;color:var(--fg);margin-top:4px;padding-top:4px;border-top:1px solid var(--border);"><strong>Fix:</strong> ${esc(f.recommendation)}</div>` : ''}
+          </div>`).join('')
+      ).join('');
+    }
+
+    function niVlanLabel(vlan) {
+      const names = {0:'Zone00',2:'IoT',10:'Work',20:'Trusted',30:'Cameras',40:'Media'};
+      return names[vlan] ?? (vlan ? `VLAN ${vlan}` : 'untagged');
+    }
+
+    // ── SSH Process Scan ────────────────────────────────────────────────────────
+    window.niSSHCache = null;
+
+    document.getElementById('niSSHBtn').onclick = () => {
+      window.niSSHCache = null;
+      niRunSSHScan().catch(console.error);
+    };
+
+    async function niRunSSHScan() {
+      const btn = document.getElementById('niSSHBtn');
+      const status = document.getElementById('niSSHStatus');
+      btn.disabled = true;
+      status.textContent = 'Connecting via SSH…';
+      try {
+        const r = await fetch('/api/udm-process-scan');
+        const j = await r.json();
+        if (!j.success) throw new Error(j.error || 'scan failed');
+        window.niSSHCache = j.data;
+        niRenderSSH(j.data);
+      } catch (e) {
+        status.textContent = 'Error: ' + e.message;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function niRenderSSH(d) {
+      const status = document.getElementById('niSSHStatus');
+      const show = id => document.getElementById(id).style.display = '';
+      const hide = id => document.getElementById(id).style.display = 'none';
+
+      if (!d.configured) {
+        show('niSSHUnconfigured'); hide('niSSHBtn');
+        status.textContent = '';
+        return;
+      }
+      hide('niSSHUnconfigured');
+      status.textContent = 'Fetched ' + new Date(d.run_at).toLocaleTimeString() + ' from ' + esc(d.host);
+
+      if (d.error) {
+        status.textContent = '⚠ SSH error: ' + esc(d.error);
+        return;
+      }
+
+      // Memory bar
+      if (d.mem && d.mem.total_kb > 0) {
+        show('niSSHMemBlock');
+        const used = d.mem.total_kb - d.mem.available_kb;
+        const usedPct = Math.round(used / d.mem.total_kb * 100);
+        const fmtMB = kb => (kb / 1024).toFixed(0) + ' MB';
+        const barColor = usedPct >= 90 ? '#ef4444' : usedPct >= 80 ? '#f59e0b' : 'var(--ok)';
+        document.getElementById('niSSHMemBar').innerHTML =
+          `<div style="background:var(--border);border-radius:4px;height:12px;overflow:hidden;">
+             <div style="background:${barColor};height:100%;width:${usedPct}%;transition:width .3s;"></div>
+           </div>
+           <div style="font-size:11px;color:var(--muted);margin-top:2px;">${usedPct}% used — ${fmtMB(used)} of ${fmtMB(d.mem.total_kb)}</div>`;
+        document.getElementById('niSSHMemStats').innerHTML =
+          `<span>Free: ${fmtMB(d.mem.free_kb)}</span>
+           <span>Available: ${fmtMB(d.mem.available_kb)}</span>
+           <span>Buffers: ${fmtMB(d.mem.buffers_kb)}</span>
+           <span>Cached: ${fmtMB(d.mem.cached_kb)}</span>
+           <span>Swap total: ${fmtMB(d.mem.swap_total_kb)}</span>
+           <span>Swap free: ${fmtMB(d.mem.swap_free_kb)}</span>`;
+      }
+
+      // Disk
+      if (d.disk && d.disk.length) {
+        show('niSSHDiskBlock');
+        document.getElementById('niSSHDiskRows').innerHTML = d.disk.map(row => {
+          const pct = parseInt(row.use_pct);
+          const diskColor = pct >= 90 ? '#ef4444' : pct >= 75 ? '#f59e0b' : 'var(--ok)';
+          return `<div style="display:flex;gap:12px;align-items:center;font-size:12px;margin-bottom:4px;">
+            <span style="width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);">${esc(row.filesystem)}</span>
+            <span style="width:60px;">${esc(row.size)}</span>
+            <span style="width:60px;">${esc(row.used)}</span>
+            <div style="flex:1;background:var(--border);border-radius:3px;height:8px;">
+              <div style="background:${diskColor};height:100%;width:${Math.min(pct,100)}%;border-radius:3px;"></div>
+            </div>
+            <span style="width:36px;color:${diskColor};">${esc(row.use_pct)}</span>
+            <span style="color:var(--muted);">${esc(row.mounted)}</span>
+          </div>`;
+        }).join('');
+      }
+
+      // Processes
+      if (d.processes && d.processes.length) {
+        show('niSSHProcBlock');
+        document.getElementById('niSSHProcBody').innerHTML = d.processes.map(p => {
+          const memColor = p.mem_pct >= 10 ? '#f59e0b' : '';
+          const fmtRSS = kb => kb >= 1024 ? (kb/1024).toFixed(0)+' MB' : kb+' KB';
+          return `<tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:3px 8px;color:var(--muted);">${p.pid}</td>
+            <td style="padding:3px 8px;color:var(--muted);">${esc(p.user)}</td>
+            <td style="padding:3px 8px;text-align:right;">${p.cpu_pct.toFixed(1)}%</td>
+            <td style="padding:3px 8px;text-align:right;color:${memColor};font-weight:${memColor?'600':''};">${p.mem_pct.toFixed(1)}%</td>
+            <td style="padding:3px 8px;text-align:right;color:var(--muted);">${fmtRSS(p.rss_kb)}</td>
+            <td style="padding:3px 8px;" title="${esc(p.cmdline)}">${esc(p.command)}</td>
+          </tr>`;
+        }).join('');
+      }
+
+      // Binaries
+      if (d.binaries && d.binaries.length) {
+        show('niSSHBinBlock');
+        document.getElementById('niSSHBinBody').innerHTML = d.binaries.map(b => {
+          const fmtSize = n => n >= 1048576 ? (n/1048576).toFixed(1)+' MB' : n >= 1024 ? (n/1024).toFixed(0)+' KB' : n+' B';
+          const modDate = b.modified ? b.modified.split('.')[0] : '—';
+          const pathDisplay = b.is_symlink ? `${esc(b.path)} → ${esc(b.link_dest||'')}` : esc(b.path);
+          return `<tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:3px 8px;font-family:monospace;font-size:10px;">${pathDisplay}</td>
+            <td style="padding:3px 8px;text-align:right;color:var(--muted);">${b.size_bytes ? fmtSize(b.size_bytes) : '—'}</td>
+            <td style="padding:3px 8px;color:var(--muted);font-size:10px;">${esc(modDate)}</td>
+            <td style="padding:3px 8px;font-family:monospace;font-size:10px;color:${b.md5 ? 'var(--fg)' : 'var(--muted)'};">${esc(b.md5 || 'symlink')}</td>
+          </tr>`;
+        }).join('');
+      }
+    }
+
+  })();
   </script>
 
 </body>
