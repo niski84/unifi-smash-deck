@@ -15,11 +15,11 @@ import (
 // ── Remote watchdog deploy/undeploy/status via SSH ────────────────────────────
 
 const (
-	watchdogRepo     = "niski84/udm-memory-watchdog"
-	watchdogBinary   = "udm-memory-watchdog-arm64"
-	watchdogRemote   = "/data/udm-memory-watchdog/udm-memory-watchdog"
-	watchdogLogPath  = "/data/udm-memory-watchdog/watchdog.log"
-	watchdogService  = "udm-memory-watchdog"
+	watchdogRepo     = "niski84/udm-pro-memory-monitor"
+	watchdogBinary   = "udm-pro-memory-monitor-arm64"
+	watchdogRemote   = "/data/udm-pro-memory-monitor/udm-pro-memory-monitor"
+	watchdogLogPath  = "/data/udm-pro-memory-monitor/watchdog.log"
+	watchdogService  = "udm-pro-memory-monitor"
 )
 
 // WatchdogDeployStatus is the state of the remote watchdog on the UDM Pro.
@@ -87,11 +87,11 @@ func getRemoteWatchdogStatus(cfg AppConfig) (*WatchdogDeployStatus, error) {
 
 // deployWatchdog cross-compiles and installs the watchdog on the UDM Pro.
 func deployWatchdog(ctx context.Context, cfg AppConfig, wdCfg WatchdogCfg) error {
-	// 1. Cross-compile the ARM64 binary from the local checkout.
-	watchdogSrcDir := "/home/nick/goprojects/udm-memory-watchdog"
-	binPath := "/tmp/udm-memory-watchdog-arm64"
+	// 1. Cross-compile the ARM64 binary from the local fork checkout.
+	watchdogSrcDir := "/home/nick/goprojects/udm-pro-memory-monitor"
+	binPath := "/tmp/udm-pro-memory-monitor-arm64"
 
-	cmd := exec.CommandContext(ctx, "go", "build", "-ldflags=-s -w", "-o", binPath, "./cmd/watchdog/")
+	cmd := exec.CommandContext(ctx, "go", "build", "-ldflags=-s -w", "-o", binPath, ".")
 	cmd.Dir = watchdogSrcDir
 	cmd.Env = append(cmd.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH=arm64")
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -100,7 +100,7 @@ func deployWatchdog(ctx context.Context, cfg AppConfig, wdCfg WatchdogCfg) error
 
 	// 2. SCP the binary to the UDM Pro.
 	sshArgs := sshBaseArgs(cfg)
-	target := fmt.Sprintf("%s@%s:/tmp/udm-memory-watchdog", cfg.SSHUser, cfg.SSHHost)
+	target := fmt.Sprintf("%s@%s:/tmp/udm-pro-memory-monitor", cfg.SSHUser, cfg.SSHHost)
 	scpCmd := exec.CommandContext(ctx, "scp", append(sshArgs, binPath, target)...)
 	if out, err := scpCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("scp failed: %s: %w", string(out), err)
@@ -113,7 +113,7 @@ func deployWatchdog(ctx context.Context, cfg AppConfig, wdCfg WatchdogCfg) error
 	}
 	defer client.Close()
 
-	installCmd := fmt.Sprintf("chmod +x /tmp/udm-memory-watchdog && /tmp/udm-memory-watchdog install --threshold %d --interval %d --max-restarts %d",
+	installCmd := fmt.Sprintf("chmod +x /tmp/udm-pro-memory-monitor && /tmp/udm-pro-memory-monitor install --threshold %d --interval %d --max-restarts %d",
 		wdCfg.ThresholdMB, wdCfg.IntervalSecs, wdCfg.MaxRestartsDay)
 	if wdCfg.DryRun {
 		installCmd += " --dry-run"
