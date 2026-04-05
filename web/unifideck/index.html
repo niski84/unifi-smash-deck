@@ -1485,55 +1485,62 @@
       </div>
     </div>
 
-    <!-- Memory Watchdog -->
+    <!-- Memory Watchdog (on-device deploy) -->
     <div class="card" id="niWatchdogCard">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
-        <h3 style="margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Memory Watchdog</h3>
-        <span id="wdBadge" style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--border);color:var(--muted);">STOPPED</span>
+        <h3 style="margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Memory Watchdog — On-Device</h3>
+        <span id="wdDeployBadge" style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;background:var(--border);color:var(--muted);">CHECKING…</span>
         <div style="flex:1;"></div>
-        <button type="button" class="primary" id="wdStartBtn" style="font-size:12px;padding:4px 12px;">Start</button>
-        <button type="button" id="wdStopBtn" style="font-size:12px;padding:4px 12px;display:none;">Stop</button>
-        <button type="button" id="wdCheckBtn" style="font-size:12px;padding:4px 12px;">Check Now</button>
-        <span id="wdStatus" style="font-size:12px;color:var(--muted);"></span>
+        <button type="button" class="primary" id="wdDeployBtn" style="font-size:12px;padding:4px 12px;">Deploy to UDM</button>
+        <button type="button" id="wdUndeployBtn" style="font-size:12px;padding:4px 12px;display:none;background:var(--danger);color:#fff;border:none;">Uninstall</button>
+        <button type="button" id="wdRefreshBtn" style="font-size:12px;padding:4px 12px;">Refresh</button>
+        <span id="wdDeployStatus" style="font-size:12px;color:var(--muted);"></span>
       </div>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">
+        Deploys <a href="https://github.com/niski84/udm-memory-watchdog" target="_blank" style="color:var(--accent);">udm-memory-watchdog</a>
+        directly onto the UDM Pro as a systemd service. Monitors <code>MemAvailable</code> and runs <code>unifi-os restart</code> when memory drops below threshold.
+        Survives firmware updates via <code>/data/on_boot.d/</code>.
+      </p>
 
       <!-- Config row -->
       <div style="display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px;padding:10px 12px;background:var(--input-bg);border:1px solid var(--border);border-radius:6px;">
         <div>
-          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Threshold (MB MemAvailable)</label>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Threshold (MB)</label>
           <input id="wdThreshMB" type="number" min="128" max="2048" value="512"
             style="width:90px;background:var(--card);border:1px solid var(--input-border);color:var(--text);border-radius:4px;padding:4px 8px;font-size:12px;">
         </div>
         <div>
-          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Poll Interval (seconds)</label>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Interval (s)</label>
           <input id="wdIntervalSecs" type="number" min="30" max="3600" value="240"
             style="width:80px;background:var(--card);border:1px solid var(--input-border);color:var(--text);border-radius:4px;padding:4px 8px;font-size:12px;">
         </div>
         <div>
-          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Max Restarts / 24 h</label>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px;">Max /24h</label>
           <input id="wdMaxDay" type="number" min="0" max="10" value="3"
             style="width:60px;background:var(--card);border:1px solid var(--input-border);color:var(--text);border-radius:4px;padding:4px 8px;font-size:12px;">
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <input id="wdDryRun" type="checkbox">
-          <label for="wdDryRun" style="font-size:12px;color:var(--text);">Dry-run (log only)</label>
+          <label for="wdDryRun" style="font-size:12px;color:var(--text);">Dry-run</label>
         </div>
-        <button type="button" id="wdSaveCfg" style="font-size:12px;padding:4px 12px;">Save Config</button>
       </div>
 
-      <!-- Stats row -->
-      <div id="wdStats" style="display:none;font-size:12px;color:var(--muted);display:flex;gap:20px;flex-wrap:wrap;margin-bottom:12px;">
-        <span>Last check: <strong id="wdLastCheck">—</strong></span>
-        <span>MemAvail: <strong id="wdLastMem">—</strong></span>
-        <span>Total restarts: <strong id="wdRestartCount" style="color:var(--warn);">0</strong></span>
-      </div>
-
-      <!-- Event log -->
-      <div>
-        <h4 style="margin:0 0 6px;font-size:12px;color:var(--muted);">Event Log</h4>
-        <div id="wdEventLog" style="font-size:11px;font-family:monospace;max-height:240px;overflow-y:auto;background:var(--input-bg);border:1px solid var(--border);border-radius:4px;padding:6px 8px;">
-          <span style="color:var(--muted);">No events yet.</span>
+      <!-- Remote status panel -->
+      <div id="wdRemoteInfo" style="display:none;margin-bottom:12px;">
+        <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:8px;">
+          <span>Service: <strong id="wdSvcStatus">—</strong></span>
+          <span>Version: <strong id="wdSvcVersion">—</strong></span>
+          <span>PID: <strong id="wdSvcPID">—</strong></span>
+          <span>Watchdog RSS: <strong id="wdSvcRSS">—</strong></span>
         </div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:8px;">
+          <span>MemAvailable: <strong id="wdRemoteMem">—</strong></span>
+          <span>MemTotal: <strong id="wdRemoteTotal">—</strong></span>
+          <span>Used: <strong id="wdRemoteUsed">—</strong></span>
+          <span>Swap: <strong id="wdRemoteSwap">—</strong></span>
+        </div>
+        <h4 style="margin:0 0 4px;font-size:11px;color:var(--muted);">Recent Watchdog Log</h4>
+        <pre id="wdRemoteLog" style="font-size:10px;color:var(--muted);max-height:200px;overflow-y:auto;background:var(--input-bg);border:1px solid var(--border);border-radius:4px;padding:6px 8px;margin:0;white-space:pre-wrap;"></pre>
       </div>
     </div>
 
@@ -5430,110 +5437,98 @@
 
   })();
 
-  // ── Memory Watchdog ──────────────────────────────────────────────────────────
+  // ── Memory Watchdog (On-Device Deploy) ─────────────────────────────────────
   (function() {
-    let wdPollTimer = null;
-
     function wdBuildCfg() {
       return {
         threshold_mb:     parseInt(document.getElementById('wdThreshMB').value)    || 512,
         interval_secs:    parseInt(document.getElementById('wdIntervalSecs').value) || 240,
         max_restarts_day: parseInt(document.getElementById('wdMaxDay').value)       || 3,
         dry_run:          document.getElementById('wdDryRun').checked,
-        enabled:          false, // updated by start/stop
       };
-    }
-
-    async function wdPost(action, cfg) {
-      const body = { action };
-      if (cfg) body.config = cfg;
-      const r = await fetch('/api/udm-watchdog', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
-      return r.json();
     }
 
     function wdRender(d) {
       if (!d) return;
-      const running = d.running;
-      const badge = document.getElementById('wdBadge');
-      badge.textContent  = running ? 'RUNNING' : 'STOPPED';
-      badge.style.background = running ? 'rgba(61,219,165,0.15)' : 'var(--border)';
-      badge.style.color      = running ? 'var(--ok)' : 'var(--muted)';
-      document.getElementById('wdStartBtn').style.display = running ? 'none' : '';
-      document.getElementById('wdStopBtn').style.display  = running ? '' : 'none';
+      const badge = document.getElementById('wdDeployBadge');
+      const installed = d.installed;
+      const active = d.service_status === 'active';
 
-      if (d.config) {
-        document.getElementById('wdThreshMB').value     = d.config.threshold_mb    || 512;
-        document.getElementById('wdIntervalSecs').value = d.config.interval_secs   || 240;
-        document.getElementById('wdMaxDay').value       = d.config.max_restarts_day != null ? d.config.max_restarts_day : 3;
-        document.getElementById('wdDryRun').checked     = !!d.config.dry_run;
+      if (installed && active) {
+        badge.textContent = 'ACTIVE'; badge.style.background = 'rgba(61,219,165,0.15)'; badge.style.color = 'var(--ok)';
+      } else if (installed) {
+        badge.textContent = d.service_status?.toUpperCase() || 'INSTALLED'; badge.style.background = 'rgba(245,166,35,0.15)'; badge.style.color = 'var(--warn)';
+      } else {
+        badge.textContent = 'NOT INSTALLED'; badge.style.background = 'var(--border)'; badge.style.color = 'var(--muted)';
       }
+      document.getElementById('wdDeployBtn').style.display = installed ? 'none' : '';
+      document.getElementById('wdUndeployBtn').style.display = installed ? '' : 'none';
 
-      document.getElementById('wdStats').style.display = '';
-      document.getElementById('wdLastCheck').textContent = d.last_check_at ? new Date(d.last_check_at).toLocaleTimeString() : '—';
-      const thresh = d.config?.threshold_mb || 512;
-      const memColor = d.last_mem_avail_mb > 0 && d.last_mem_avail_mb < thresh ? '#ef4444'
-                     : d.last_mem_avail_mb < thresh * 1.2 ? 'var(--warn)' : 'var(--ok)';
-      document.getElementById('wdLastMem').textContent = d.last_mem_avail_mb > 0 ? d.last_mem_avail_mb + ' MB' : '—';
-      document.getElementById('wdLastMem').style.color = memColor;
-      const rc = document.getElementById('wdRestartCount');
-      rc.textContent = d.restart_count_total || 0;
-      rc.style.color = d.restart_count_total > 0 ? 'var(--warn)' : 'var(--muted)';
+      // Remote info panel
+      const info = document.getElementById('wdRemoteInfo');
+      if (installed || d.mem_avail_mb > 0) {
+        info.style.display = '';
+        const sColor = active ? 'var(--ok)' : d.service_status === 'failed' ? '#ef4444' : 'var(--warn)';
+        document.getElementById('wdSvcStatus').innerHTML = `<span style="color:${sColor}">${esc(d.service_status || '—')}</span>`;
+        document.getElementById('wdSvcVersion').textContent = d.version || '—';
+        document.getElementById('wdSvcPID').textContent = d.pid || '—';
+        document.getElementById('wdSvcRSS').textContent = d.rss_kb ? (parseInt(d.rss_kb)/1024).toFixed(1)+' MB' : '—';
 
-      const log = document.getElementById('wdEventLog');
-      if (!d.events || d.events.length === 0) {
-        log.innerHTML = '<span style="color:var(--muted);">No events yet.</span>';
-        return;
+        const thresh = parseInt(document.getElementById('wdThreshMB').value) || 512;
+        const mColor = d.mem_avail_mb < thresh ? '#ef4444' : d.mem_avail_mb < thresh * 1.2 ? 'var(--warn)' : 'var(--ok)';
+        document.getElementById('wdRemoteMem').innerHTML = `<span style="color:${mColor}">${d.mem_avail_mb} MB</span>`;
+        document.getElementById('wdRemoteTotal').textContent = d.mem_total_mb ? d.mem_total_mb + ' MB' : '—';
+        document.getElementById('wdRemoteUsed').textContent = d.mem_used_pct || '—';
+        document.getElementById('wdRemoteSwap').textContent = d.swap_used_mb ? d.swap_used_mb + ' MB' : '—';
+        document.getElementById('wdRemoteLog').textContent = d.recent_log || '(no log)';
+      } else {
+        info.style.display = 'none';
       }
-      const typeStyle = {
-        check:   '#8a9cbd',
-        warn:    '#f59e0b',
-        restart: '#ef4444',
-        skip:    '#63b3ed',
-        error:   '#ef4444',
-        started: '#3ddba5',
-        stopped: '#8a9cbd',
-      };
-      log.innerHTML = d.events.map(e => {
-        const color = typeStyle[e.type] || '#8a9cbd';
-        const ts = new Date(e.at).toLocaleString();
-        const weight = (e.type === 'restart' || e.type === 'warn') ? '600' : '';
-        return `<div style="padding:1px 0;color:${color};font-weight:${weight};">[${ts}] [${e.type.toUpperCase().padEnd(7,' ')}] ${esc(e.message)}</div>`;
-      }).join('');
     }
 
     async function wdRefresh() {
-      const r = await fetch('/api/udm-watchdog');
-      const j = await r.json();
-      if (j.success) wdRender(j.data);
+      document.getElementById('wdDeployBadge').textContent = 'CHECKING…';
+      try {
+        const r = await fetch('/api/udm-deploy');
+        const j = await r.json();
+        if (j.success) wdRender(j.data);
+        else { document.getElementById('wdDeployBadge').textContent = 'ERROR'; document.getElementById('wdDeployStatus').textContent = j.error; }
+      } catch(e) { document.getElementById('wdDeployBadge').textContent = 'OFFLINE'; }
     }
 
-    document.getElementById('wdStartBtn').onclick = async () => {
-      document.getElementById('wdStatus').textContent = 'Starting…';
-      const cfg = wdBuildCfg(); cfg.enabled = true;
-      const j = await wdPost('start', cfg);
-      document.getElementById('wdStatus').textContent = j.success ? '' : 'Error: ' + j.error;
-      if (j.success) wdRender(j.data);
-    };
-    document.getElementById('wdStopBtn').onclick = async () => {
-      const j = await wdPost('stop');
-      document.getElementById('wdStatus').textContent = j.success ? '' : 'Error: ' + j.error;
-      if (j.success) wdRender(j.data);
-    };
-    document.getElementById('wdCheckBtn').onclick = async () => {
-      document.getElementById('wdStatus').textContent = 'Checking…';
-      const j = await wdPost('check');
-      document.getElementById('wdStatus').textContent = j.success ? 'Done' : 'Error: ' + j.error;
-      if (j.success) wdRender(j.data);
-    };
-    document.getElementById('wdSaveCfg').onclick = async () => {
-      const j = await wdPost('update', wdBuildCfg());
-      document.getElementById('wdStatus').textContent = j.success ? 'Config saved' : 'Error: ' + j.error;
-      if (j.success) wdRender(j.data);
+    document.getElementById('wdDeployBtn').onclick = async () => {
+      if (!confirm('Deploy memory watchdog to the UDM Pro?\nThis cross-compiles and installs via SSH.')) return;
+      document.getElementById('wdDeployStatus').textContent = 'Deploying (cross-compile + SCP + install)…';
+      document.getElementById('wdDeployBtn').disabled = true;
+      try {
+        const r = await fetch('/api/udm-deploy', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({ action:'deploy', config:wdBuildCfg() })
+        });
+        const j = await r.json();
+        document.getElementById('wdDeployStatus').textContent = j.success ? 'Deployed!' : 'Error: ' + j.error;
+        if (j.success && j.data?.status) wdRender(j.data.status);
+        else wdRefresh();
+      } finally { document.getElementById('wdDeployBtn').disabled = false; }
     };
 
-    // Poll every 15 s to keep event log fresh
-    wdPollTimer = setInterval(wdRefresh, 15000);
+    document.getElementById('wdUndeployBtn').onclick = async () => {
+      if (!confirm('Uninstall memory watchdog from the UDM Pro?\nThis stops the service and removes all files.')) return;
+      document.getElementById('wdDeployStatus').textContent = 'Uninstalling…';
+      const r = await fetch('/api/udm-deploy', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ action:'undeploy' })
+      });
+      const j = await r.json();
+      document.getElementById('wdDeployStatus').textContent = j.success ? 'Uninstalled' : 'Error: ' + j.error;
+      wdRefresh();
+    };
+
+    document.getElementById('wdRefreshBtn').onclick = wdRefresh;
+
+    // Initial load + poll every 30s
     wdRefresh();
+    setInterval(wdRefresh, 30000);
   })();
 
   // ── system.properties Editor ─────────────────────────────────────────────────

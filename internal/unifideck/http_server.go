@@ -148,6 +148,7 @@ func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("/api/udm-process-scan", s.handleUDMProcessScan)
 	mux.HandleFunc("/api/udm-watchdog", s.handleUDMWatchdog)
 	mux.HandleFunc("/api/udm-sysconfig", s.handleUDMSysConfig)
+	mux.HandleFunc("/api/udm-deploy", s.handleUDMDeploy)
 
 	// Auto-start watchdog if it was previously enabled.
 	if s.watchdog.Status().Config.Enabled {
