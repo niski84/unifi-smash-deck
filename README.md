@@ -8,6 +8,12 @@ A self-hosted web dashboard for managing and monitoring a **UniFi UDM Pro** (or 
 
 ---
 
+## Demo
+
+![UniFi Smash Deck walkthrough](docs/screenshots/smash-deck-demo.gif)
+
+---
+
 ## Screenshots
 
 ### Networks
@@ -51,7 +57,13 @@ Configure your UniFi host, API key, site, and port. The live activity log shows 
 | **Cameras → Live View** | Snapshot grid for all UniFi Protect cameras; adjustable refresh rate (5 s – 30 s); click to fullscreen; scroll to zoom/pan in the grid; always fetches highest-quality image |
 | **Cameras → Timeline** | Flexible snapshot scheduling (interval or fixed daily times, per camera or all); thumbnail strip per camera; slideshow playback at up to 30 fps with adjustable speed |
 | **Automations** | Schedule network enable/disable with days-of-week, timezone, skip-weekends, and end-date support |
-| **Settings & Logs** | Configure host, API key, site, and port; live activity log; light/dark theme; compact navigation mode |
+| **Security** | Live IDS/IPS threat log with severity, signature, and source details; test harness; Suricata signature search |
+| **Health Report** | One-click full network health scan — device status, firmware, uplink, client distribution, top talkers |
+| **IoT Diagnostics** | Detect IoT devices on the wrong VLAN; one-click migration to the correct SSID |
+| **Config & Audit** | Auto-snapshot your UniFi config on a schedule; visual diff viewer between snapshots; full audit log; backup/restore |
+| **FW Audit** | Firewall rule audit — flags shadowed, overly-broad, or unused rules |
+| **Net Insights** | UDM Pro process scan with memory analysis and tuning recommendations; SSH-based memory watchdog daemon (poll + `unifi-os restart`); one-click deploy/uninstall of [udm-pro-memory-monitor](https://github.com/niski84/udm-pro-memory-monitor); `system.properties` editor with backup/restore |
+| **Settings & Logs** | Configure host, API key, site, SSH credentials, and port; live activity log; light/dark theme; compact navigation mode |
 
 ---
 

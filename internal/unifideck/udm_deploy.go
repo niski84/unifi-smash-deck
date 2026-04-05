@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -85,17 +86,28 @@ func getRemoteWatchdogStatus(cfg AppConfig) (*WatchdogDeployStatus, error) {
 	return status, nil
 }
 
-// deployWatchdog cross-compiles and installs the watchdog on the UDM Pro.
+// watchdogReleaseURL is the GitHub releases download URL for the ARM64 binary.
+const watchdogReleaseURL = "https://github.com/niski84/udm-pro-memory-monitor/releases/latest/download/udm-pro-memory-monitor-arm64"
+
+// deployWatchdog downloads (or cross-compiles) the watchdog binary and installs it on the UDM Pro.
 func deployWatchdog(ctx context.Context, cfg AppConfig, wdCfg WatchdogCfg) error {
-	// 1. Cross-compile the ARM64 binary from the local fork checkout.
-	watchdogSrcDir := "/home/nick/goprojects/udm-pro-memory-monitor"
 	binPath := "/tmp/udm-pro-memory-monitor-arm64"
 
-	cmd := exec.CommandContext(ctx, "go", "build", "-ldflags=-s -w", "-o", binPath, ".")
-	cmd.Dir = watchdogSrcDir
-	cmd.Env = append(cmd.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH=arm64")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("cross-compile failed: %s: %w", string(out), err)
+	// 1. Obtain the ARM64 binary.
+	//    Primary:  download from GitHub releases (works on any machine).
+	//    Fallback: cross-compile from local source (dev convenience).
+	if err := downloadBinary(ctx, watchdogReleaseURL, binPath); err != nil {
+		// Fall back to local cross-compile if source checkout exists.
+		localSrc := "/home/nick/goprojects/udm-pro-memory-monitor"
+		if _, statErr := os.Stat(localSrc); statErr != nil {
+			return fmt.Errorf("binary download failed (%w) and local source not found at %s", err, localSrc)
+		}
+		cmd := exec.CommandContext(ctx, "go", "build", "-ldflags=-s -w", "-o", binPath, ".")
+		cmd.Dir = localSrc
+		cmd.Env = append(cmd.Environ(), "CGO_ENABLED=0", "GOOS=linux", "GOARCH=arm64")
+		if out, buildErr := cmd.CombinedOutput(); buildErr != nil {
+			return fmt.Errorf("cross-compile failed: %s: %w", string(out), buildErr)
+		}
 	}
 
 	// 2. SCP the binary to the UDM Pro.
@@ -149,6 +161,31 @@ func undeployWatchdog(cfg AppConfig) error {
 		udmRun(client, "systemctl daemon-reload")
 	}
 
+	return nil
+}
+
+// downloadBinary fetches a URL to a local file path, making it executable.
+func downloadBinary(ctx context.Context, url, dest string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
+	}
+	f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		return err
+	}
 	return nil
 }
 

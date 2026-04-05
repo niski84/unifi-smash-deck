@@ -145,10 +145,7 @@ func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("/api/audit", s.handleAuditLog)
 	mux.HandleFunc("/api/firewall-audit", s.handleFirewallAudit)
 	mux.HandleFunc("/api/network-insights", s.handleNetworkInsights)
-	mux.HandleFunc("/api/udm-process-scan", s.handleUDMProcessScan)
-	mux.HandleFunc("/api/udm-watchdog", s.handleUDMWatchdog)
-	mux.HandleFunc("/api/udm-sysconfig", s.handleUDMSysConfig)
-	mux.HandleFunc("/api/udm-deploy", s.handleUDMDeploy)
+	s.registerUDMRoutes(mux)
 
 	// Auto-start watchdog if it was previously enabled.
 	if s.watchdog.Status().Config.Enabled {
@@ -157,6 +154,14 @@ func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 
 	mux.Handle("/", http.FileServer(http.FS(webFS)))
 	return mux
+}
+
+// registerUDMRoutes adds all UDM Pro-specific API routes.
+func (s *HTTPServer) registerUDMRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/api/udm-process-scan", s.handleUDMProcessScan)
+	mux.HandleFunc("/api/udm-watchdog", s.handleUDMWatchdog)
+	mux.HandleFunc("/api/udm-sysconfig", s.handleUDMSysConfig)
+	mux.HandleFunc("/api/udm-deploy", s.handleUDMDeploy)
 }
 
 func (s *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
