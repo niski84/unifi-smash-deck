@@ -282,20 +282,24 @@ func AnalyzeUDMScan(scan *UDMProcessScan) []UDMFinding {
 
 		if scan.Mem.UsedPct >= 90 {
 			add("critical", fmt.Sprintf("Memory critically high: %.1f%% used", scan.Mem.UsedPct),
-				fmt.Sprintf("Only %d MB available of %d MB total RAM. System is likely swapping.", scan.Mem.Available/1024, scan.Mem.Total/1024),
-				"Reduce Suricata to Balanced mode (Network → Security → Threat Management). Consider capping the UniFi Network JVM heap (see suggestion below).",
+				fmt.Sprintf("Only %d MB available of %d MB total RAM. System is actively swapping, degrading performance.", scan.Mem.Available/1024, scan.Mem.Total/1024),
+				"Immediate actions: (1) Lower Suricata to Balanced in Network → Security → Threat Management. "+
+					"(2) Set unifi.xmx=512, unifi.xms=256, db.mongo.wt.cache_size=128 in /usr/lib/unifi/data/system.properties + restart unifi. "+
+					"(3) Consider deploying udm-pro-memory-monitor (github.com/pridkett/udm-pro-memory-monitor) as a leak backstop.",
 				"")
 		} else if scan.Mem.UsedPct >= 80 {
 			add("warning", fmt.Sprintf("Memory pressure: %.1f%% used", scan.Mem.UsedPct),
-				fmt.Sprintf("%d MB available of %d MB total. Performance may degrade under load.", scan.Mem.Available/1024, scan.Mem.Total/1024),
-				"Monitor trends. If sustained above 85%, reduce Suricata IPS profile or review Protect retention policy.",
+				fmt.Sprintf("%d MB available of %d MB total. High memory is normal on a 4 GB UDM Pro running Network + Protect + IPS, but this is in the warning zone.", scan.Mem.Available/1024, scan.Mem.Total/1024),
+				"To reclaim 300–500 MB: set db.mongo.wt.cache_size=128 and unifi.xmx=512 in /usr/lib/unifi/data/system.properties, "+
+					"and lower Suricata to Balanced in the UI.",
 				"")
 		}
 
 		if swapUsed > 512*1024 { // > 512 MB swap in use
 			add("warning", fmt.Sprintf("Swap in use: %d MB (%.0f%% of swap)", swapUsed/1024, swapUsedPct),
-				"Active swap usage degrades router performance as memory pages are read from/written to disk under load.",
-				"Reducing the largest memory consumers (Java heap, Suricata profile) will lower swap pressure.",
+				"Active swap degrades router and firewall performance. Known memory leaks in unifi-protect and ace.jar cause gradual growth over 12–24 hours.",
+				"Apply system.properties tuning (see other findings). Deploy github.com/pridkett/udm-pro-memory-monitor "+
+					"to auto-restart UniFi OS when free memory drops below 512 MB.",
 				"")
 		}
 	}
@@ -319,17 +323,21 @@ func AnalyzeUDMScan(scan *UDMProcessScan) []UDMFinding {
 		case p.Command == "java" || strings.Contains(p.Cmdline, "ace.jar"):
 			if p.RSS > 600*1024 {
 				add("info", fmt.Sprintf("UniFi Network app (Java) using %d MB RSS", p.RSS/1024),
-					"The JVM heap grows until it hits the system limit. On a 4 GB UDM Pro running Protect, this competes for RAM.",
-					"UniFi does not expose a heap config in the UI, but you can add JAVA_EXTRA_OPTS=\"-Xmx512m\" to "+
-						"/etc/default/unifi (or via on-boot script). Use with caution — too low a heap causes frequent GC pauses.",
+					fmt.Sprintf("ace.jar is using %d MB RSS. The default JVM heap is unifi.xmx=1024 (1 GB), "+
+						"which on a 4 GB UDM Pro running Protect + IPS leaves very little headroom.", p.RSS/1024),
+					"Edit /usr/lib/unifi/data/system.properties and set:\n"+
+						"  unifi.xmx=512\n  unifi.xms=256\n  db.mongo.wt.cache_size=128\n"+
+						"Then: systemctl restart unifi\n"+
+						"Use unifios-utilities (github.com/unifi-utilities/unifios-utilities) to persist these across firmware updates.",
 					"java (ace.jar)")
 			}
 
 		case p.Command == "mongod":
-			add("info", "MongoDB (UniFi Network DB) present",
-				fmt.Sprintf("mongod using %d MB RSS. By default WiredTiger cache is set to (RAM/2).", p.RSS/1024),
-				"To cap the cache: add --wiredTigerCacheSizeGB 0.25 to mongod's startup args in its systemd unit. "+
-					"Reducing this frees RAM but may slow Network app queries. Only tune if memory pressure is severe.",
+			add("info", fmt.Sprintf("MongoDB WiredTiger cache may be uncapped (%d MB RSS)", p.RSS/1024),
+				"MongoDB WiredTiger defaults to 50%% of RAM minus 1 GB (~1 GB on a 4 GB system). "+
+					"For a small home network, 128 MB is sufficient and frees significant RAM.",
+				"Add db.mongo.wt.cache_size=128 to /usr/lib/unifi/data/system.properties then: systemctl restart unifi. "+
+					"Community reports show mongod dropping from 400–800 MB to under 200 MB with this change.",
 				"mongod")
 
 		case p.Command == "ms" && p.CPUPct > 10:

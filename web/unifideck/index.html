@@ -5345,7 +5345,7 @@
             <div style="font-size:12px;font-weight:600;margin-bottom:4px;">${s.icon} <span style="color:${s.border};">[${s.label}]</span> ${esc(f.title)}</div>
             ${f.process ? `<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">Process: <code style="font-size:10px;">${esc(f.process)}</code></div>` : ''}
             <div style="font-size:12px;color:var(--text);margin-bottom:6px;">${esc(f.detail)}</div>
-            <div style="font-size:11px;color:var(--muted);padding:6px 8px;background:rgba(0,0,0,0.2);border-radius:3px;">
+            <div style="font-size:11px;color:var(--muted);padding:6px 8px;background:rgba(0,0,0,0.2);border-radius:3px;white-space:pre-wrap;">
               <strong style="color:var(--ok);">→</strong> ${esc(f.suggestion)}
             </div>
           </div>`;
