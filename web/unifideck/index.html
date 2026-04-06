@@ -5759,14 +5759,24 @@
         };
       });
 
-      // ── Recent activity ───────────────────────────────────────────────────
+      // ── Recent activity (filtered — exclude routine snapshot scheduling) ─────
       const actDiv = $id('overviewActivity');
       const actList = $id('overviewActivityList');
+      const noisePatterns = [/snapshot rule=/, /snapshot run start/, /\[INFO\] snapshot/];
+      const isNoise = line => noisePatterns.some(p => p.test(line));
       if (actDiv && actList && d.recent_activity && d.recent_activity.length) {
-        actDiv.style.display = '';
-        actList.innerHTML = d.recent_activity
-          .map(line => `<div style="padding:3px 0;border-bottom:1px solid var(--border);">${esc(line)}</div>`)
-          .join('');
+        const meaningful = d.recent_activity.filter(l => !isNoise(l));
+        if (meaningful.length) {
+          actDiv.style.display = '';
+          actList.innerHTML = meaningful
+            .map(line => {
+              const color = /ERROR|WARN/.test(line) ? 'var(--warn)' : 'var(--muted)';
+              return `<div style="padding:3px 0;border-bottom:1px solid var(--border);color:${color};">${esc(line)}</div>`;
+            })
+            .join('');
+        } else {
+          actDiv.style.display = 'none';
+        }
       }
     }
 
@@ -5787,6 +5797,149 @@
     document.querySelectorAll('.tab-btn[data-tab="overview"]').forEach(btn => {
       btn.addEventListener('click', loadDashboard);
     });
+
+  })();
+  </script>
+
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <!-- SSE real-time stream + toast notifications                            -->
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <script>
+  (function() {
+    'use strict';
+
+    // ── Toast notification system ─────────────────────────────────────────────
+    let toastContainer = null;
+    function getToastContainer() {
+      if (toastContainer) return toastContainer;
+      toastContainer = document.createElement('div');
+      toastContainer.id = 'toastContainer';
+      Object.assign(toastContainer.style, {
+        position: 'fixed', bottom: '20px', right: '20px',
+        display: 'flex', flexDirection: 'column', gap: '8px',
+        zIndex: '9999', maxWidth: '340px',
+      });
+      document.body.appendChild(toastContainer);
+      return toastContainer;
+    }
+
+    function showToast(msg, level /* 'info'|'warn'|'error' */ = 'info', durationMs = 5000) {
+      const colors = {
+        info:  { bg: 'rgba(0,111,255,0.12)',  border: 'rgba(0,111,255,0.5)',  text: '#7ab4ff' },
+        warn:  { bg: 'rgba(245,166,35,0.12)', border: 'rgba(245,166,35,0.5)', text: 'var(--warn)' },
+        error: { bg: 'rgba(229,57,53,0.14)',  border: 'rgba(229,57,53,0.5)',  text: '#ef5350' },
+      };
+      const c = colors[level] || colors.info;
+      const el = document.createElement('div');
+      Object.assign(el.style, {
+        padding: '10px 14px',
+        borderRadius: '8px',
+        border: `1px solid ${c.border}`,
+        background: c.bg,
+        color: c.text,
+        fontSize: '13px',
+        fontWeight: '600',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.35)',
+        cursor: 'pointer',
+        transition: 'opacity 0.3s',
+        backdropFilter: 'blur(6px)',
+      });
+      el.textContent = msg;
+      el.onclick = () => el.remove();
+      getToastContainer().appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 300);
+      }, durationMs);
+    }
+
+    // ── Security badge helper ─────────────────────────────────────────────────
+    function updateSecBadge(critical) {
+      const badge = document.getElementById('securityBadge');
+      if (!badge) return;
+      if (critical > 0) {
+        badge.textContent = critical;
+        badge.style.display = 'inline';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+
+    // ── Overview card live-update (lightweight, no full re-render) ────────────
+    function applyPulseToOverview(p) {
+      // Memory big number
+      const grid = document.getElementById('overviewGrid');
+      if (!grid) return;
+      const cards = grid.querySelectorAll('.card');
+      // Cards are ordered: memory, security, clients, automations
+      // We update just the big number text nodes to avoid thrashing the DOM.
+      // Easier: just trigger a full dashboard reload — it's cheap.
+      if (typeof loadDashboard === 'function') loadDashboard();
+    }
+
+    // ── SSE connection ────────────────────────────────────────────────────────
+    let prevThreats = null;
+    let prevMemAvail = null;
+    const MEMORY_WARN_MB = 400; // toast when memory drops below this
+
+    function connectSSE() {
+      const es = new EventSource('/api/stream');
+
+      es.addEventListener('pulse', (e) => {
+        try {
+          const p = JSON.parse(e.data);
+
+          // 1. Keep security badge current on every tab.
+          updateSecBadge(p.threats.critical);
+
+          // 2. Toast: new threats since last pulse.
+          if (prevThreats !== null && p.threats.total > prevThreats) {
+            const delta = p.threats.total - prevThreats;
+            showToast(`🔒 ${delta} new threat${delta > 1 ? 's' : ''} detected (${p.threats.critical} critical)`, 'error', 7000);
+          }
+          prevThreats = p.threats.total;
+
+          // 3. Toast: memory critically low.
+          if (p.mem_avail_mb > 0 && p.mem_avail_mb < MEMORY_WARN_MB) {
+            if (prevMemAvail === null || prevMemAvail >= MEMORY_WARN_MB) {
+              showToast(`⚠ UDM Pro memory low: ${p.mem_avail_mb} MB free`, 'warn', 8000);
+            }
+          }
+          prevMemAvail = p.mem_avail_mb;
+
+          // 4. Refresh overview if it's the active panel.
+          const overviewPanel = document.getElementById('panel-overview');
+          if (overviewPanel && overviewPanel.classList.contains('active')) {
+            applyPulseToOverview(p);
+          }
+
+        } catch (err) {
+          console.error('[SSE] pulse parse error', err);
+        }
+      });
+
+      es.onerror = () => {
+        // Browser will auto-retry SSE on error; reconnect after 5 s if closed.
+        if (es.readyState === EventSource.CLOSED) {
+          setTimeout(connectSSE, 5000);
+        }
+      };
+    }
+
+    // Expose loadDashboard globally so applyPulseToOverview can call it.
+    // The dashboard IIFE runs before this one, so we look it up at call time.
+    function loadDashboard() {
+      // Find and call the loadDashboard from the dashboard IIFE via the tab click,
+      // or directly re-render if we can reach it. Simplest: simulate overview tab
+      // click only when it's already active (no tab switch side-effect).
+      const btn = document.querySelector('.tab-btn[data-tab="overview"]');
+      if (btn) {
+        // Re-use the click handler the dashboard IIFE attached.
+        btn.dispatchEvent(new Event('click', { bubbles: false }));
+      }
+    }
+
+    connectSSE();
 
   })();
   </script>
