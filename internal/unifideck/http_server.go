@@ -117,6 +117,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", s.handleHealth)
+	mux.HandleFunc("/api/dashboard", s.handleDashboard)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/networks", s.handleNetworks)
 	mux.HandleFunc("/api/networks/", s.handleNetworkSubroutes)

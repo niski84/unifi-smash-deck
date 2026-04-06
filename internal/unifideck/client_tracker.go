@@ -151,6 +151,13 @@ func (ct *ClientTracker) Dismiss(macs []string) {
 	ct.save()
 }
 
+// Count returns the total number of historically known client devices.
+func (ct *ClientTracker) Count() int {
+	ct.mu.Lock()
+	defer ct.mu.Unlock()
+	return len(ct.known)
+}
+
 // LastSnapshot returns when the last successful poll completed (zero if never).
 func (ct *ClientTracker) LastSnapshot() time.Time {
 	ct.mu.Lock()

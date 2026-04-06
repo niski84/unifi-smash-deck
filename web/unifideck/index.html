@@ -837,8 +837,11 @@
   </div>
 
   <div class="tabs">
+    <!-- Overview (home) -->
+    <button type="button" class="tab-btn active" data-tab="overview" data-testid="tab-overview">🏠 Overview</button>
+    <span class="tab-sep" role="separator"></span>
     <!-- Group 1: core management -->
-    <button type="button" class="tab-btn active" data-tab="networks" data-testid="tab-networks">🌐 Networks</button>
+    <button type="button" class="tab-btn" data-tab="networks" data-testid="tab-networks">🌐 Networks</button>
     <button type="button" class="tab-btn" data-tab="clients" data-testid="tab-clients">👥 Clients</button>
     <button type="button" class="tab-btn" data-tab="cameras" data-testid="tab-cameras">📷 Cameras</button>
     <button type="button" class="tab-btn" data-tab="automations" data-testid="tab-automations">⏰ Automations</button>
@@ -857,8 +860,17 @@
     <button type="button" class="tab-btn" data-tab="settings" data-testid="tab-settings">⚙️ Settings</button>
   </div>
 
+  <!-- ── Overview panel ── -->
+  <section id="panel-overview" class="panel active">
+    <div id="overviewGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;margin-bottom:14px;"></div>
+    <div class="card" id="overviewActivity" style="display:none;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px;font-weight:700;">Recent Activity</div>
+      <div id="overviewActivityList" style="font-family:monospace;font-size:12px;line-height:1.7;color:var(--muted);"></div>
+    </div>
+  </section>
+
   <!-- ── Networks panel ── -->
-  <section id="panel-networks" class="panel active">
+  <section id="panel-networks" class="panel">
     <div class="card">
       <div class="toolbar">
         <button type="button" class="primary" id="refreshNetworksBtn" data-testid="refresh-networks">Refresh</button>
@@ -4589,7 +4601,7 @@
         // Runs after init so the data fetch triggered by the tab click has
         // settings (host, API key) already loaded.
         const savedTab = localStorage.getItem(LS_ACTIVE_TAB);
-        if (savedTab && savedTab !== 'networks') {
+        if (savedTab && savedTab !== 'overview') {
           const tabBtn = document.querySelector(`.tab-btn[data-tab="${savedTab}"]`);
           if (tabBtn) tabBtn.click();
           console.debug('[UniFiDeck] restored tab', savedTab);
@@ -5618,6 +5630,165 @@
     };
   })();
 
+  </script>
+
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <!-- Overview / Dashboard                                                  -->
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <script>
+  (function() {
+    'use strict';
+    function $id(id) { return document.getElementById(id); }
+    function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    function relTime(iso) {
+      if (!iso || iso.startsWith('0001')) return '—';
+      const d = new Date(iso), secs = Math.round((Date.now() - d) / 1000);
+      if (secs < 5)   return 'just now';
+      if (secs < 60)  return secs + 's ago';
+      if (secs < 3600) return Math.round(secs / 60) + 'm ago';
+      if (secs < 86400) return Math.round(secs / 3600) + 'h ago';
+      return d.toLocaleDateString();
+    }
+
+    function statusDot(on) {
+      const c = on ? 'var(--ok)' : 'rgba(138,156,189,0.5)';
+      const glow = on ? '0 0 6px var(--ok)' : 'none';
+      return `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c};box-shadow:${glow};flex-shrink:0;"></span>`;
+    }
+
+    function memBar(pct, safe) {
+      const fill = safe ? 'var(--ok)' : pct > 90 ? 'var(--err-color)' : 'var(--warn)';
+      return `<div style="height:5px;border-radius:3px;background:var(--border);overflow:hidden;margin:6px 0 4px;">
+        <div style="height:100%;width:${pct}%;background:${fill};border-radius:3px;transition:width .5s;"></div>
+      </div>`;
+    }
+
+    function ovCard(icon, label, body, goTab) {
+      const nav = goTab
+        ? `data-goto="${goTab}" style="cursor:pointer;" onmouseenter="this.style.borderColor='rgba(0,111,255,0.45)'" onmouseleave="this.style.borderColor=''"` : '';
+      return `<div class="card" ${nav}>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+          <span style="font-size:17px;line-height:1;">${icon}</span>
+          <span style="font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);">${label}</span>
+          ${goTab ? `<span style="margin-left:auto;font-size:11px;color:var(--muted);opacity:.7;">View →</span>` : ''}
+        </div>
+        ${body}
+      </div>`;
+    }
+
+    function bigNum(n, label, color) {
+      return `<div style="display:flex;align-items:baseline;gap:7px;margin-bottom:6px;">
+        <span style="font-size:34px;font-weight:800;line-height:1;color:${color || 'var(--text)'};">${n}</span>
+        <span style="font-size:13px;color:var(--muted);">${label}</span>
+      </div>`;
+    }
+
+    function metaRow(s) {
+      return `<div style="font-size:11px;color:var(--muted);border-top:1px solid var(--border);margin-top:10px;padding-top:8px;">${s}</div>`;
+    }
+
+    function renderDashboard(d) {
+      const grid = $id('overviewGrid');
+      if (!grid) return;
+
+      // ── Memory / Watchdog ────────────────────────────────────────────────
+      const wd = d.watchdog;
+      const avail = wd.mem_avail_mb || 0;
+      const thresh = wd.threshold_mb || 512;
+      // Assume 4 GB UDM Pro baseline for the bar (avail will be 0 until first check)
+      const udmTotalMB = 4096;
+      const usedMB = udmTotalMB - avail;
+      const usedPct = avail ? Math.min(Math.round((usedMB / udmTotalMB) * 100), 100) : 0;
+      const memSafe = avail > thresh;
+
+      const wdBody = `
+        <div style="display:flex;align-items:center;gap:7px;margin-bottom:${avail ? '4px' : '10px'};">
+          ${statusDot(wd.running)}
+          <span style="font-weight:700;font-size:13px;">${wd.running ? 'Watchdog running' : 'Watchdog stopped'}</span>
+          ${wd.dry_run ? `<span style="font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(245,166,35,0.15);color:var(--warn);margin-left:4px;">DRY RUN</span>` : ''}
+        </div>
+        ${avail ? `
+          ${bigNum(avail, 'MB free', memSafe ? 'var(--ok)' : 'var(--err-color)')}
+          ${memBar(usedPct, memSafe)}
+          <div style="font-size:11px;color:var(--muted);">~${usedPct}% used · Threshold ${thresh} MB · ${memSafe ? '✓ Safe' : '⚠ Below threshold'}</div>
+        ` : `<div style="font-size:12px;color:var(--muted);padding:4px 0;">No memory data yet — waiting for first check.</div>`}
+        ${metaRow(`Last check: ${relTime(wd.last_check_at)} &nbsp;·&nbsp; Restarts: ${wd.restart_count_total}`)}`;
+
+      // ── Security ─────────────────────────────────────────────────────────
+      const sec = d.security;
+      const hasThreat = sec.critical > 0;
+      const secBody = `
+        ${bigNum(sec.total, sec.total === 1 ? 'event' : 'events', hasThreat ? 'var(--err-color)' : 'var(--ok)')}
+        <div style="display:flex;gap:16px;font-size:12px;">
+          <div><span style="font-weight:700;color:${sec.critical ? 'var(--err-color)' : 'var(--muted)'};">${sec.critical}</span> <span style="color:var(--muted);">critical</span></div>
+          <div><span style="font-weight:700;color:var(--muted);">${sec.honeypot}</span> <span style="color:var(--muted);">honeypot</span></div>
+        </div>
+        ${sec.total === 0 ? `<div style="margin-top:8px;font-size:12px;color:var(--ok);">✓ No threats detected</div>` : ''}`;
+
+      // ── Clients ───────────────────────────────────────────────────────────
+      const cli = d.clients;
+      const cliHasData = cli.last_updated && !cli.last_updated.startsWith('0001');
+      const cliBody = `
+        ${bigNum(cli.total_known, 'devices known')}
+        ${cli.new_last_30d > 0
+          ? `<div style="font-size:12px;"><span style="font-weight:700;color:var(--accent);">${cli.new_last_30d}</span> <span style="color:var(--muted);">new in last 30 days</span></div>`
+          : `<div style="font-size:12px;color:var(--muted);">No new devices in 30 days</div>`}
+        ${metaRow('Updated: ' + (cliHasData ? relTime(cli.last_updated) : '—'))}`;
+
+      // ── Automations ───────────────────────────────────────────────────────
+      const auto = d.automations;
+      const autoBody = `
+        ${bigNum(auto.total, 'scheduled')}
+        <div style="font-size:12px;"><span style="font-weight:700;color:var(--ok);">${auto.enabled}</span> <span style="color:var(--muted);">enabled</span></div>
+        ${metaRow(auto.next_run_at
+          ? 'Next: ' + new Date(auto.next_run_at).toLocaleString()
+          : 'No upcoming runs')}`;
+
+      grid.innerHTML =
+        ovCard('🧠', 'UDM Pro Memory',  wdBody,    'net-insights') +
+        ovCard('🔒', 'Security',        secBody,   'security') +
+        ovCard('👥', 'Clients',         cliBody,   'clients') +
+        ovCard('⏰', 'Automations',     autoBody,  'automations');
+
+      // Wire card clicks to tab navigation
+      grid.querySelectorAll('[data-goto]').forEach(card => {
+        card.onclick = () => {
+          const btn = document.querySelector(`.tab-btn[data-tab="${card.dataset.goto}"]`);
+          if (btn) btn.click();
+        };
+      });
+
+      // ── Recent activity ───────────────────────────────────────────────────
+      const actDiv = $id('overviewActivity');
+      const actList = $id('overviewActivityList');
+      if (actDiv && actList && d.recent_activity && d.recent_activity.length) {
+        actDiv.style.display = '';
+        actList.innerHTML = d.recent_activity
+          .map(line => `<div style="padding:3px 0;border-bottom:1px solid var(--border);">${esc(line)}</div>`)
+          .join('');
+      }
+    }
+
+    async function loadDashboard() {
+      try {
+        const r = await fetch('/api/dashboard');
+        const body = await r.json();
+        if (body.success) renderDashboard(body.data);
+      } catch (e) {
+        console.error('[dashboard]', e);
+      }
+    }
+
+    // Load immediately (scripts are at bottom of body — DOM is ready).
+    loadDashboard();
+
+    // Reload whenever the overview tab is clicked.
+    document.querySelectorAll('.tab-btn[data-tab="overview"]').forEach(btn => {
+      btn.addEventListener('click', loadDashboard);
+    });
+
+  })();
   </script>
 
 </body>

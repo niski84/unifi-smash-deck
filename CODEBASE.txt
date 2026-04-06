@@ -1,5 +1,5 @@
 # github.com/niski84/unifi-smash-deck — Codebase Map
-# Generated: 2026-04-05T06:40:47Z
+# Generated: 2026-04-06T03:50:11Z
 # Usage: grep for a type/func name to find its file and line number.
 
 ── cmd/unifideck/main.go
@@ -56,10 +56,11 @@
     83  func (ct *ClientTracker) Snapshot(clients []Client) []TrackedClient {
    125  func (ct *ClientTracker) NewDevices(days int) []TrackedClient {
    142  func (ct *ClientTracker) Dismiss(macs []string) {
-   155  func (ct *ClientTracker) LastSnapshot() time.Time {
-   164  func (ct *ClientTracker) Start(fetchClients func(ctx context.Context) ([]Client, error)) {
-   180  func (ct *ClientTracker) poll(fetchClients func(ctx context.Context) ([]Client, error)) {
-   200  func (ct *ClientTracker) Stop() {
+   155  func (ct *ClientTracker) Count() int {
+   162  func (ct *ClientTracker) LastSnapshot() time.Time {
+   171  func (ct *ClientTracker) Start(fetchClients func(ctx context.Context) ([]Client, error)) {
+   187  func (ct *ClientTracker) poll(fetchClients func(ctx context.Context) ([]Client, error)) {
+   207  func (ct *ClientTracker) Stop() {
 
 ── internal/unifideck/config.go
     11  type AppConfig struct {
@@ -109,6 +110,14 @@
    549  func (s *ConfigSnapshotScheduler) Stop() {
    553  func (s *ConfigSnapshotScheduler) run() {
 
+── internal/unifideck/dashboard.go
+    12  type DashboardData struct {
+    21  type WatchdogSummary struct {
+    30  type SecuritySummary struct {
+    36  type ClientSummary struct {
+    42  type AutoSummary struct {
+    49  func (s *HTTPServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
+
 ── internal/unifideck/firewall_audit.go
     16  type FirewallFinding struct {
     27  type AuditPolicy struct {
@@ -153,39 +162,39 @@
    103  type apiResp struct {
    109  func writeJSON(w http.ResponseWriter, status int, v any) {
    117  func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
-   160  func (s *HTTPServer) registerUDMRoutes(mux *http.ServeMux) {
-   167  func (s *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
-   179  func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
-   266  func (s *HTTPServer) handleNetworks(w http.ResponseWriter, r *http.Request) {
-   289  func (s *HTTPServer) handleNetworkSubroutes(w http.ResponseWriter, r *http.Request) {
-   336  func (s *HTTPServer) handleClients(w http.ResponseWriter, r *http.Request) {
-   358  func (s *HTTPServer) handleClientsNew(w http.ResponseWriter, r *http.Request) {
-   379  func (s *HTTPServer) handleClientsDismiss(w http.ResponseWriter, r *http.Request) {
-   396  func (s *HTTPServer) handleClientBlock(w http.ResponseWriter, r *http.Request) {
-   439  func (s *HTTPServer) handleSecurityTest(w http.ResponseWriter, r *http.Request) {
-   512  func (s *HTTPServer) handleSecurityEvents(w http.ResponseWriter, r *http.Request) {
-   530  func (s *HTTPServer) handleSecuritySignatures(w http.ResponseWriter, r *http.Request) {
-   543  func (s *HTTPServer) handleSecuritySummary(w http.ResponseWriter, r *http.Request) {
-   556  func (s *HTTPServer) handleDevices(w http.ResponseWriter, r *http.Request) {
-   576  func (s *HTTPServer) handleCameras(w http.ResponseWriter, r *http.Request) {
-   598  func (s *HTTPServer) handleCameraSubroutes(w http.ResponseWriter, r *http.Request) {
-   647  func (s *HTTPServer) handleCameraLive(w http.ResponseWriter, r *http.Request, c *UnifiClient, cameraID string) {
-   704  func (s *HTTPServer) handleSnapshots(w http.ResponseWriter, r *http.Request) {
-   727  func (s *HTTPServer) handleSnapshotSubroutes(w http.ResponseWriter, r *http.Request) {
-   815  func (s *HTTPServer) handleAutomations(w http.ResponseWriter, r *http.Request) {
-   847  func (s *HTTPServer) handleAutomationSubroutes(w http.ResponseWriter, r *http.Request) {
-   911  func (s *HTTPServer) handleConfigSnapshots(w http.ResponseWriter, r *http.Request) {
-   948  func (s *HTTPServer) handleConfigSnapshotSubroutes(w http.ResponseWriter, r *http.Request) {
-   988  func (s *HTTPServer) handleCfgSnapSchedule(w http.ResponseWriter, r *http.Request) {
-  1009  func (s *HTTPServer) handleCfgSnapDiff(w http.ResponseWriter, r *http.Request) {
-  1029  func (s *HTTPServer) handleCfgBackup(w http.ResponseWriter, r *http.Request) {
-  1058  func (s *HTTPServer) handleAuditLog(w http.ResponseWriter, r *http.Request) {
-  1089  func (s *HTTPServer) handleLogs(w http.ResponseWriter, r *http.Request) {
-  1106  func (s *HTTPServer) StartScheduler() {
-  1137  func (s *HTTPServer) StopScheduler() {
-  1147  func maskKey(k string) string {
-  1157  func isMasked(s string) bool {
-  1163  func (s *HTTPServer) fireSecurityWebhook(e ThreatEvent) {
+   161  func (s *HTTPServer) registerUDMRoutes(mux *http.ServeMux) {
+   168  func (s *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
+   180  func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
+   267  func (s *HTTPServer) handleNetworks(w http.ResponseWriter, r *http.Request) {
+   290  func (s *HTTPServer) handleNetworkSubroutes(w http.ResponseWriter, r *http.Request) {
+   337  func (s *HTTPServer) handleClients(w http.ResponseWriter, r *http.Request) {
+   359  func (s *HTTPServer) handleClientsNew(w http.ResponseWriter, r *http.Request) {
+   380  func (s *HTTPServer) handleClientsDismiss(w http.ResponseWriter, r *http.Request) {
+   397  func (s *HTTPServer) handleClientBlock(w http.ResponseWriter, r *http.Request) {
+   440  func (s *HTTPServer) handleSecurityTest(w http.ResponseWriter, r *http.Request) {
+   513  func (s *HTTPServer) handleSecurityEvents(w http.ResponseWriter, r *http.Request) {
+   531  func (s *HTTPServer) handleSecuritySignatures(w http.ResponseWriter, r *http.Request) {
+   544  func (s *HTTPServer) handleSecuritySummary(w http.ResponseWriter, r *http.Request) {
+   557  func (s *HTTPServer) handleDevices(w http.ResponseWriter, r *http.Request) {
+   577  func (s *HTTPServer) handleCameras(w http.ResponseWriter, r *http.Request) {
+   599  func (s *HTTPServer) handleCameraSubroutes(w http.ResponseWriter, r *http.Request) {
+   648  func (s *HTTPServer) handleCameraLive(w http.ResponseWriter, r *http.Request, c *UnifiClient, cameraID string) {
+   705  func (s *HTTPServer) handleSnapshots(w http.ResponseWriter, r *http.Request) {
+   728  func (s *HTTPServer) handleSnapshotSubroutes(w http.ResponseWriter, r *http.Request) {
+   816  func (s *HTTPServer) handleAutomations(w http.ResponseWriter, r *http.Request) {
+   848  func (s *HTTPServer) handleAutomationSubroutes(w http.ResponseWriter, r *http.Request) {
+   912  func (s *HTTPServer) handleConfigSnapshots(w http.ResponseWriter, r *http.Request) {
+   949  func (s *HTTPServer) handleConfigSnapshotSubroutes(w http.ResponseWriter, r *http.Request) {
+   989  func (s *HTTPServer) handleCfgSnapSchedule(w http.ResponseWriter, r *http.Request) {
+  1010  func (s *HTTPServer) handleCfgSnapDiff(w http.ResponseWriter, r *http.Request) {
+  1030  func (s *HTTPServer) handleCfgBackup(w http.ResponseWriter, r *http.Request) {
+  1059  func (s *HTTPServer) handleAuditLog(w http.ResponseWriter, r *http.Request) {
+  1090  func (s *HTTPServer) handleLogs(w http.ResponseWriter, r *http.Request) {
+  1107  func (s *HTTPServer) StartScheduler() {
+  1138  func (s *HTTPServer) StopScheduler() {
+  1148  func maskKey(k string) string {
+  1158  func isMasked(s string) bool {
+  1164  func (s *HTTPServer) fireSecurityWebhook(e ThreatEvent) {
 
 ── internal/unifideck/iot_diagnostics.go
     15  type DiagnosticStatus string
@@ -463,6 +472,7 @@
   type AuditEvent struct {
   type AuditNetEntry struct {
   type AuditPolicy struct {
+  type AutoSummary struct {
   type Automation struct {
   type AutomationLogger struct {
   func NewAutomationLogger(path string) *AutomationLogger
@@ -491,8 +501,10 @@
   type CameraSnapshotGroup struct {
   type CameraSnapshotGroupAPI struct {
   type Client struct {
+  type ClientSummary struct {
   type ClientTracker struct {
   func NewClientTracker(dataDir string) *ClientTracker
+  func (ct *ClientTracker) Count() int
   func (ct *ClientTracker) Dismiss(macs []string)
   func (ct *ClientTracker) LastSnapshot() time.Time
   func (ct *ClientTracker) NewDevices(days int) []TrackedClient
@@ -520,6 +532,7 @@
   func (s *ConfigSnapshotStore) Prune(retainDays int) int
   func (s *ConfigSnapshotStore) SaveSchedule(sched ConfigSnapshotSchedule) error
   type ConfigSnapshotSummary struct {
+  type DashboardData struct {
   type Device struct {
   type DiagnosticCheck struct {
   type DiagnosticStatus string
@@ -573,6 +586,7 @@
   const (
   func InferRunMode(a Automation) RunMode
   type ScheduleConfig struct {
+  type SecuritySummary struct {
   type SignatureUpdater struct {
   func NewSignatureUpdater(dataDir string) *SignatureUpdater
   func (su *SignatureUpdater) IsKnownBadIP(ip string) (bool, string)
@@ -666,6 +680,7 @@
   type WatchdogEventType string
   const (
   type WatchdogStatus struct {
+  type WatchdogSummary struct {
 
 ### github.com/niski84/unifi-smash-deck/web
   var FS embed.FS
