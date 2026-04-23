@@ -1,15 +1,48 @@
 package unifideck
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+// GusConfig configures the Gus Cam pet-tracking feature.
+type GusConfig struct {
+	Enabled              bool     `json:"enabled"`
+	CameraIDs            []string `json:"camera_ids"`
+	DetectionIntervalSec int      `json:"detection_interval_sec"` // default 3
+	PetDescription       string   `json:"pet_description"`        // "a dog named Gus"
+	LogRetainDays        int      `json:"log_retain_days"`        // default 30
+	DetectorURL          string   `json:"detector_url,omitempty"` // default http://127.0.0.1:8103
+}
+
+// SiteConnection represents a single UniFi Network or UISP server connection.
+// Users can register multiple servers (e.g. home UDM Pro + Brian's UISP) and
+// switch between them. Type is "unifi" or "uisp".
+type SiteConnection struct {
+	ID       string `json:"id"`                  // stable UUID
+	Name     string `json:"name"`                // display name, e.g. "Home UDM Pro"
+	Type     string `json:"type"`                // "unifi" | "uisp"
+	Host     string `json:"host"`                // scheme + host, no trailing slash
+	Token    string `json:"token"`               // API key or bearer token
+	SiteName string `json:"site_name,omitempty"` // UniFi site (e.g. "default")
+	ISPLabel string `json:"isp_label,omitempty"` // e.g. "Comcast Business" — used for WAN grouping
+}
 
 // AppConfig holds persisted settings for the UniFi Smash Deck server.
 type AppConfig struct {
-	Port        string `json:"port"`
+	Port string `json:"port"`
+	// Multi-site: list of registered servers and the currently-active one.
+	Sites        []SiteConnection `json:"sites,omitempty"`
+	ActiveSiteID string           `json:"active_site_id,omitempty"`
+	// Legacy single-site fields (kept for backwards compat + env var overrides).
+	// When Sites is empty these are migrated into a single default Site on first
+	// load. When Sites is non-empty the active Site wins.
 	UnifiHost   string `json:"unifi_host"`
 	UnifiSite   string `json:"unifi_site"`
 	UnifiAPIKey string `json:"unifi_api_key"`
@@ -27,6 +60,13 @@ type AppConfig struct {
 	HoneypotPorts      []int  `json:"honeypot_ports,omitempty"`
 	SecurityWebhookURL string `json:"security_webhook_url,omitempty"`
 	ThreatFeedMode     string `json:"threat_feed_mode,omitempty"` // passive|balanced|aggressive
+	// UISP (Ubiquiti ISP platform — airCube, sector APs, solar sites)
+	UISPHost  string `json:"uisp_host,omitempty"`
+	UISPToken string `json:"uisp_token,omitempty"`
+	// Gus Cam pet tracking
+	GusConfig GusConfig `json:"gus_cam,omitempty"`
+	// Config drift detection
+	GoldStandard GoldStandard `json:"gold_standard,omitempty"`
 }
 
 // DataDir returns the directory used for all persistent data files.
@@ -50,6 +90,7 @@ func LoadAppConfig(path string) AppConfig {
 		UnifiHost:   getenv("UNIFI_HOST", ""),
 		UnifiSite:   getenv("UNIFI_SITE", "default"),
 		UnifiAPIKey: getenv("UNIFI_API_KEY", ""),
+		GusConfig:   GusConfig{Enabled: true},
 	}
 	raw, err := os.ReadFile(path)
 	if err == nil {
@@ -71,6 +112,16 @@ func LoadAppConfig(path string) AppConfig {
 			if cfg.UnifiAPIKey == "" && stored.UnifiPass != "" {
 				cfg.UnifiAPIKey = stored.UnifiPass
 			}
+			if stored.UISPHost != "" {
+				cfg.UISPHost = stored.UISPHost
+			}
+			if stored.UISPToken != "" {
+				cfg.UISPToken = stored.UISPToken
+			}
+			cfg.GusConfig = stored.GusConfig
+			cfg.HoneypotPorts = stored.HoneypotPorts
+			cfg.SecurityWebhookURL = stored.SecurityWebhookURL
+			cfg.ThreatFeedMode = stored.ThreatFeedMode
 		}
 	}
 	// Env vars override the file only when explicitly set (non-empty).
@@ -87,14 +138,110 @@ func LoadAppConfig(path string) AppConfig {
 	if p := strings.TrimSpace(os.Getenv("PORT")); p != "" {
 		cfg.Port = p
 	}
+	if v := strings.TrimSpace(os.Getenv("UISP_HOST")); v != "" {
+		cfg.UISPHost = v
+	}
+	if v := strings.TrimSpace(os.Getenv("UISP_TOKEN")); v != "" {
+		cfg.UISPToken = v
+	}
 	// SSH credentials (from UNIFICERT_SSH_* env vars, shared with unifi-cert-smash-deck)
-	cfg.SSHHost       = getenv("UNIFICERT_SSH_HOST", "")
-	cfg.SSHUser       = getenv("UNIFICERT_SSH_USER", "root")
-	cfg.SSHPort       = getenv("UNIFICERT_SSH_PORT", "22")
-	cfg.SSHKeyPath    = getenv("UNIFICERT_SSH_KEY", "")
-	cfg.SSHPassword   = getenv("UNIFICERT_SSH_PASSWORD", "")
+	cfg.SSHHost = getenv("UNIFICERT_SSH_HOST", "")
+	cfg.SSHUser = getenv("UNIFICERT_SSH_USER", "root")
+	cfg.SSHPort = getenv("UNIFICERT_SSH_PORT", "22")
+	cfg.SSHKeyPath = getenv("UNIFICERT_SSH_KEY", "")
+	cfg.SSHPassword = getenv("UNIFICERT_SSH_PASSWORD", "")
 	cfg.SSHKnownHosts = getenv("UNIFICERT_SSH_KNOWN_HOSTS", "")
+	// Gus Cam defaults
+	if cfg.GusConfig.DetectionIntervalSec == 0 {
+		cfg.GusConfig.DetectionIntervalSec = 3
+	}
+	if cfg.GusConfig.LogRetainDays == 0 {
+		cfg.GusConfig.LogRetainDays = 30
+	}
+	if cfg.GusConfig.PetDescription == "" {
+		cfg.GusConfig.PetDescription = "a dog"
+	}
+	// Multi-site migration: if no Sites exist yet but legacy fields are set,
+	// promote them to the first Site entry. Env-var-provided credentials win.
+	cfg.migrateLegacyToSites()
 	return cfg
+}
+
+// migrateLegacyToSites promotes legacy single-site fields (UnifiHost/UISPHost)
+// into the Sites list on first load, so every code path can treat Sites as the
+// source of truth. Idempotent — skips entries that already exist by Host.
+func (cfg *AppConfig) migrateLegacyToSites() {
+	has := func(host string) bool {
+		for _, s := range cfg.Sites {
+			if strings.EqualFold(s.Host, host) {
+				return true
+			}
+		}
+		return false
+	}
+	if cfg.UnifiHost != "" && !has(cfg.UnifiHost) {
+		cfg.Sites = append(cfg.Sites, SiteConnection{
+			ID:       newSiteID(),
+			Name:     "UniFi Controller",
+			Type:     "unifi",
+			Host:     cfg.UnifiHost,
+			Token:    cfg.UnifiAPIKey,
+			SiteName: cfg.UnifiSite,
+		})
+	}
+	if cfg.UISPHost != "" && !has(cfg.UISPHost) {
+		cfg.Sites = append(cfg.Sites, SiteConnection{
+			ID:    newSiteID(),
+			Name:  "UISP",
+			Type:  "uisp",
+			Host:  cfg.UISPHost,
+			Token: cfg.UISPToken,
+		})
+	}
+	// Ensure we have an active site selected if any exist.
+	if cfg.ActiveSiteID == "" && len(cfg.Sites) > 0 {
+		cfg.ActiveSiteID = cfg.Sites[0].ID
+	}
+	// Clear ActiveSiteID if it points to a deleted site.
+	if cfg.ActiveSiteID != "" {
+		found := false
+		for _, s := range cfg.Sites {
+			if s.ID == cfg.ActiveSiteID {
+				found = true
+				break
+			}
+		}
+		if !found && len(cfg.Sites) > 0 {
+			cfg.ActiveSiteID = cfg.Sites[0].ID
+		}
+	}
+}
+
+// ActiveSiteByType returns the active site of the requested type, or the first
+// site of that type, or nil. Callers fall back to legacy fields when nil.
+func (cfg *AppConfig) ActiveSiteByType(typ string) *SiteConnection {
+	for i := range cfg.Sites {
+		s := &cfg.Sites[i]
+		if s.ID == cfg.ActiveSiteID && s.Type == typ {
+			return s
+		}
+	}
+	for i := range cfg.Sites {
+		s := &cfg.Sites[i]
+		if s.Type == typ {
+			return s
+		}
+	}
+	return nil
+}
+
+// newSiteID generates a short stable ID for a site.
+func newSiteID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("site-%d", time.Now().UnixNano())
+	}
+	return "site-" + hex.EncodeToString(b)
 }
 
 func SaveAppConfig(path string, cfg AppConfig) error {

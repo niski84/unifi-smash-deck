@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,6 +23,7 @@ type Network struct {
 	IPSubnet     string `json:"ip_subnet,omitempty"`
 	NetworkGroup string `json:"networkgroup,omitempty"`
 	DHCPEnabled  bool   `json:"dhcpd_enabled,omitempty"`
+	IGMPSnooping bool   `json:"igmp_snooping,omitempty"`
 }
 
 // Client represents a connected client device.
@@ -76,6 +78,11 @@ type UnifiClient struct {
 	site       string
 	apiKey     string
 	httpClient *http.Client
+
+	// camera list cache — avoids repeated API calls from concurrent callers
+	camCacheMu  sync.Mutex
+	camCache    []ProtectCamera
+	camCachedAt time.Time
 }
 
 func NewUnifiClient(host, apiKey, site string) *UnifiClient {
@@ -235,6 +242,31 @@ func (c *UnifiClient) SetNetworkEnabled(ctx context.Context, networkID string, e
 	return nil
 }
 
+// UpdateNetworkFields fetches the full network object and applies the given field overrides,
+// then PUTs it back. Follows the same pattern as UpdateWLANFields.
+func (c *UnifiClient) UpdateNetworkFields(ctx context.Context, networkID string, fields map[string]any) error {
+	obj, err := c.getNetworkRaw(ctx, networkID)
+	if err != nil {
+		return fmt.Errorf("get network for update: %w", err)
+	}
+	for k, v := range fields {
+		obj[k] = v
+	}
+	var putResp struct {
+		Meta struct {
+			RC  string `json:"rc"`
+			Msg string `json:"msg,omitempty"`
+		} `json:"meta"`
+	}
+	if err := c.doJSON(ctx, http.MethodPut, c.apiURL("rest/networkconf/"+networkID), obj, &putResp); err != nil {
+		return fmt.Errorf("put network: %w", err)
+	}
+	if putResp.Meta.RC != "" && putResp.Meta.RC != "ok" {
+		return fmt.Errorf("unifi rejected network update: rc=%s msg=%s", putResp.Meta.RC, putResp.Meta.Msg)
+	}
+	return nil
+}
+
 // ListClients returns all active clients on the site.
 func (c *UnifiClient) ListClients(ctx context.Context) ([]Client, error) {
 	var resp struct {
@@ -339,12 +371,20 @@ func (c *UnifiClient) doRaw(ctx context.Context, method, url string) ([]byte, st
 	return body, resp.Header.Get("Content-Type"), nil
 }
 
-// ListCameras returns all cameras from UniFi Protect via the integration API.
+// ListCameras returns all cameras from UniFi Protect, cached for 2 minutes.
 func (c *UnifiClient) ListCameras(ctx context.Context) ([]ProtectCamera, error) {
+	const ttl = 2 * time.Minute
+	c.camCacheMu.Lock()
+	defer c.camCacheMu.Unlock()
+	if c.camCache != nil && time.Since(c.camCachedAt) < ttl {
+		return c.camCache, nil
+	}
 	var list []ProtectCamera
 	if err := c.doJSON(ctx, http.MethodGet, c.protectIntURL("cameras"), nil, &list); err != nil {
 		return nil, fmt.Errorf("list cameras: %w", err)
 	}
+	c.camCache = list
+	c.camCachedAt = time.Now()
 	return list, nil
 }
 

@@ -85,16 +85,22 @@ func isIoTOUI(oui string) bool {
 // ── Raw client fetch (extended fields not in the shared Client struct) ────────
 
 type rawSta struct {
-	MAC      string `json:"mac"`
-	IP       string `json:"ip,omitempty"`
-	Hostname string `json:"hostname,omitempty"`
-	Name     string `json:"name,omitempty"`
-	ESSID    string `json:"essid,omitempty"`
-	OUI      string `json:"oui,omitempty"`
-	Signal   int    `json:"signal,omitempty"`
-	Uptime   int64  `json:"uptime,omitempty"`
-	LastSeen int64  `json:"last_seen,omitempty"`
-	Wired    bool   `json:"is_wired"`
+	MAC                 string `json:"mac"`
+	IP                  string `json:"ip,omitempty"`
+	Hostname            string `json:"hostname,omitempty"`
+	Name                string `json:"name,omitempty"`
+	ESSID               string `json:"essid,omitempty"`
+	OUI                 string `json:"oui,omitempty"`
+	Signal              int    `json:"signal,omitempty"`
+	Uptime              int64  `json:"uptime,omitempty"`
+	LastSeen            int64  `json:"last_seen,omitempty"`
+	Wired               bool   `json:"is_wired"`
+	AssocTime           int64  `json:"assoc_time,omitempty"`
+	LatestAssocTime     int64  `json:"latest_assoc_time,omitempty"`
+	DisconnectTimestamp int64  `json:"disconnect_timestamp,omitempty"`
+	SwMac               string `json:"sw_mac,omitempty"`
+	SwPort              int    `json:"sw_port,omitempty"`
+	LastUplinkName      string `json:"last_uplink_name,omitempty"`
 }
 
 func listRawStations(ctx context.Context, c *UnifiClient) ([]rawSta, error) {

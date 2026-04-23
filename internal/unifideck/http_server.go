@@ -17,7 +17,7 @@ import (
 
 // HTTPServer wires HTTP routes to UniFi + automations + snapshots.
 type HTTPServer struct {
-	mu sync.RWMutex
+	mu  sync.RWMutex
 	cfg AppConfig
 
 	settingsPath   string
@@ -37,6 +37,7 @@ type HTTPServer struct {
 	honeypotSrv      *HoneypotServer
 	sigUpdater       *SignatureUpdater
 	watchdog         *UDMWatchdog
+	fleetDB          *FleetDB
 }
 
 func NewHTTPServer(cfg AppConfig) *HTTPServer {
@@ -69,6 +70,7 @@ func NewHTTPServer(cfg AppConfig) *HTTPServer {
 		threatPoller:   threatPoller,
 		honeypotSrv:    honeypotSrv,
 		sigUpdater:     sigUpdater,
+		fleetDB:        nil,
 	}
 	s.watchdog = NewUDMWatchdog(watchdogCfgPath, s.snapshotCfg)
 	s.scheduler = NewAutomationScheduler(s.store, s.logger, s.unifiClient)
@@ -94,6 +96,17 @@ func (s *HTTPServer) snapshotCfg() AppConfig {
 	return s.cfg
 }
 
+// SnapshotCfg is a public accessor for the current config, used by FleetPoller.
+func (s *HTTPServer) SnapshotCfg() AppConfig {
+	return s.snapshotCfg()
+}
+
+// SetFleetDB sets the fleet database for time-series storage.
+func (s *HTTPServer) SetFleetDB(db *FleetDB) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.fleetDB = db
+}
 func (s *HTTPServer) replaceCfg(c AppConfig) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -120,6 +133,7 @@ func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("/api/dashboard", s.handleDashboard)
 	mux.HandleFunc("/api/stream", s.handleStream)
 	mux.HandleFunc("/api/settings", s.handleSettings)
+	mux.HandleFunc("/api/fleet/summary", s.handleFleetSummary)
 	mux.HandleFunc("/api/networks", s.handleNetworks)
 	mux.HandleFunc("/api/networks/", s.handleNetworkSubroutes)
 	mux.HandleFunc("/api/clients", s.handleClients)
@@ -147,6 +161,15 @@ func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("/api/audit", s.handleAuditLog)
 	mux.HandleFunc("/api/firewall-audit", s.handleFirewallAudit)
 	mux.HandleFunc("/api/network-insights", s.handleNetworkInsights)
+	mux.HandleFunc("/api/drift/site", s.handleDriftSite)
+	mux.HandleFunc("/api/drift/gold", s.handleDriftGold)
+	mux.HandleFunc("/api/capacity/site", s.handleCapacitySite)
+	mux.HandleFunc("/api/capacity/eol", s.handleCapacityEOL)
+	mux.HandleFunc("/api/capacity/summary", s.handleCapacitySummary)
+	mux.HandleFunc("/api/rf/site", s.handleRFSite)
+	mux.HandleFunc("/api/isp/summary", s.handleISPSummary)
+	mux.HandleFunc("/api/isp/status", s.handleISPStatus)
+	mux.HandleFunc("/api/isp/history", s.handleISPHistory)
 	s.registerUDMRoutes(mux)
 
 	// Auto-start watchdog if it was previously enabled.
@@ -172,10 +195,27 @@ func (s *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
-		"service":    "unifi-smash-deck",
-		"data_dir":   DataDir(),
+		"service":     "unifi-smash-deck",
+		"data_dir":    DataDir(),
 		"automations": s.store.LoadedCount(),
 	}})
+}
+
+func (s *HTTPServer) handleFleetSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	if s.fleetDB == nil {
+		writeJSON(w, http.StatusServiceUnavailable, apiResp{Success: false, Error: "fleet polling not available"})
+		return
+	}
+	summary, err := s.fleetDB.QueryFleetSummary()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: summary})
 }
 
 func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -444,9 +484,9 @@ func (s *HTTPServer) handleSecurityTest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var body struct {
-		Type      string `json:"type"`      // "honeypot" | "ips" | "" = all
-		Port      int    `json:"port"`      // honeypot port to probe (0 = use temp port)
-		Payload   string `json:"payload"`   // bytes to send
+		Type      string `json:"type"`    // "honeypot" | "ips" | "" = all
+		Port      int    `json:"port"`    // honeypot port to probe (0 = use temp port)
+		Payload   string `json:"payload"` // bytes to send
 		SrcIP     string `json:"src_ip"`
 		Severity  int    `json:"severity"`
 		Signature string `json:"signature"`
@@ -1065,7 +1105,7 @@ func (s *HTTPServer) handleAuditLog(w http.ResponseWriter, r *http.Request) {
 	c := s.unifiClient()
 	if !c.IsConfigured() {
 		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
-			"events":    []any{},
+			"events":     []any{},
 			"configured": false,
 		}})
 		return
@@ -1187,4 +1227,247 @@ func (s *HTTPServer) fireSecurityWebhook(e ThreatEvent) {
 		resp.Body.Close()
 		log.Printf("[threats] webhook fired → %s (HTTP %d)", url, resp.StatusCode)
 	}()
+}
+
+// ── Config Drift Detection handlers ────────────────────────────────────────
+
+// handleDriftSite analyzes drift for a single site.
+// GET /api/drift/site?site_id=xxx
+func (s *HTTPServer) handleDriftSite(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+
+	siteID := r.URL.Query().Get("site_id")
+	if siteID == "" {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "site_id required"})
+		return
+	}
+
+	cfg := s.snapshotCfg()
+	var site *SiteConnection
+	for i := range cfg.Sites {
+		if cfg.Sites[i].ID == siteID {
+			site = &cfg.Sites[i]
+			break
+		}
+	}
+	if site == nil {
+		writeJSON(w, http.StatusNotFound, apiResp{Success: false, Error: "site not found"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	report, err := AnalyzeDrift(ctx, *site, cfg.GoldStandard)
+	if err != nil {
+		s.logger.Warn("drift analysis failed site=%s err=%v", siteID, err)
+		writeJSON(w, http.StatusBadGateway, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: report})
+}
+
+// handleDriftGold retrieves (GET) or updates (POST) the gold standard config.
+func (s *HTTPServer) handleDriftGold(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		cfg := s.snapshotCfg()
+		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: cfg.GoldStandard})
+
+	case http.MethodPost:
+		var gold GoldStandard
+		if err := json.NewDecoder(r.Body).Decode(&gold); err != nil {
+			writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "invalid JSON"})
+			return
+		}
+
+		cfg := s.snapshotCfg()
+		cfg.GoldStandard = gold
+		if err := SaveAppConfig(s.settingsPath, cfg); err != nil {
+			writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: err.Error()})
+			return
+		}
+
+		s.replaceCfg(cfg)
+		s.logger.Info("gold standard config updated")
+		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: gold})
+
+	default:
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+	}
+}
+
+// ── Capacity & Hardware Lifecycle handlers ─────────────────────────────────
+
+// handleCapacitySite analyzes PoE and RAM capacity for a single site.
+// GET /api/capacity/site?site_id=xxx
+func (s *HTTPServer) handleCapacitySite(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+
+	siteID := r.URL.Query().Get("site_id")
+	if siteID == "" {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "site_id required"})
+		return
+	}
+
+	cfg := s.snapshotCfg()
+	var site *SiteConnection
+	for i := range cfg.Sites {
+		if cfg.Sites[i].ID == siteID {
+			site = &cfg.Sites[i]
+			break
+		}
+	}
+	// Fall back to legacy single-site config if no explicit site list.
+	if site == nil && cfg.UnifiHost != "" && cfg.UnifiAPIKey != "" {
+		legacy := SiteConnection{
+			ID:       "legacy",
+			Name:     "default",
+			Type:     "unifi",
+			Host:     cfg.UnifiHost,
+			Token:    cfg.UnifiAPIKey,
+			SiteName: cfg.UnifiSite,
+		}
+		if siteID == "legacy" {
+			site = &legacy
+		}
+	}
+	if site == nil {
+		writeJSON(w, http.StatusNotFound, apiResp{Success: false, Error: "site not found"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	poeReport, memReport, err := AnalyzeCapacity(ctx, *site)
+	if err != nil {
+		log.Printf("[capacity] site=%s err=%v", siteID, err)
+		writeJSON(w, http.StatusBadGateway, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
+		"poe":    poeReport,
+		"memory": memReport,
+	}})
+}
+
+// handleCapacityEOL returns all known EOL model dates.
+// GET /api/capacity/eol
+func (s *HTTPServer) handleCapacityEOL(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: EOLList()})
+}
+
+// handleCapacitySummary returns fleet-wide capacity metrics from the fleet DB.
+// GET /api/capacity/summary
+func (s *HTTPServer) handleCapacitySummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	if s.fleetDB == nil {
+		writeJSON(w, http.StatusServiceUnavailable, apiResp{Success: false, Error: "fleet polling not available"})
+		return
+	}
+	summary, err := s.fleetDB.QueryCapacitySummary()
+	if err != nil {
+		log.Printf("[capacity] summary query err=%v", err)
+		writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: summary})
+}
+
+
+// ── ISP / WAN Health handlers ─────────────────────────────────────────────────
+
+// handleISPSummary returns per-ISP WAN health summary.
+// GET /api/isp/summary?days=7
+func (s *HTTPServer) handleISPSummary(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	if s.fleetDB == nil {
+		writeJSON(w, http.StatusServiceUnavailable, apiResp{Success: false, Error: "fleet polling not available"})
+		return
+	}
+	days := 7
+	if v := r.URL.Query().Get("days"); v != "" {
+		fmt.Sscanf(v, "%d", &days)
+	}
+	if days <= 0 || days > 90 {
+		days = 7
+	}
+	summaries, err := s.fleetDB.QueryWANByISP(days)
+	if err != nil {
+		log.Printf("[isp] summary err=%v", err)
+		writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"summaries": summaries, "days": days}})
+}
+
+// handleISPStatus returns the latest WAN status per site.
+// GET /api/isp/status
+func (s *HTTPServer) handleISPStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	if s.fleetDB == nil {
+		writeJSON(w, http.StatusServiceUnavailable, apiResp{Success: false, Error: "fleet polling not available"})
+		return
+	}
+	statuses, err := s.fleetDB.QueryLatestWANStatus()
+	if err != nil {
+		log.Printf("[isp] status err=%v", err)
+		writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"sites": statuses}})
+}
+
+// handleISPHistory returns time-series WAN data for one site.
+// GET /api/isp/history?site_id=xxx&hours=24
+func (s *HTTPServer) handleISPHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	if s.fleetDB == nil {
+		writeJSON(w, http.StatusServiceUnavailable, apiResp{Success: false, Error: "fleet polling not available"})
+		return
+	}
+	siteID := r.URL.Query().Get("site_id")
+	if siteID == "" {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "site_id required"})
+		return
+	}
+	hours := 24
+	if v := r.URL.Query().Get("hours"); v != "" {
+		fmt.Sscanf(v, "%d", &hours)
+	}
+	if hours <= 0 || hours > 720 {
+		hours = 24
+	}
+	points, err := s.fleetDB.QueryWANHistory(siteID, hours)
+	if err != nil {
+		log.Printf("[isp] history site=%s err=%v", siteID, err)
+		writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"points": points, "site_id": siteID, "hours": hours}})
 }

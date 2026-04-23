@@ -57,29 +57,40 @@ type radioStats struct {
 }
 
 type radioConfig struct {
-	Radio      string `json:"radio"`
-	TxPowerMode string `json:"tx_power_mode"`
-	Channel    int    `json:"channel"`
-	Ht         int    `json:"ht"`
+	Radio       string      `json:"radio"`
+	TxPowerMode string      `json:"tx_power_mode"`
+	Channel     interface{} `json:"channel"` // int or string depending on firmware
+	Ht          int         `json:"ht"`
 }
 
 type portEntry struct {
-	PortIdx int    `json:"port_idx"`
-	Name    string `json:"name"`
-	Up      bool   `json:"up"`
-	Speed   int    `json:"speed"`
-	RxBytes int64  `json:"rx_bytes"`
-	TxBytes int64  `json:"tx_bytes"`
-	PoeEnable bool  `json:"poe_enable"`
-	PoePower string `json:"poe_power"`
+	PortIdx   int    `json:"port_idx"`
+	Name      string `json:"name"`
+	Up        bool   `json:"up"`
+	Speed     int    `json:"speed"`
+	RxBytes   int64  `json:"rx_bytes"`
+	TxBytes   int64  `json:"tx_bytes"`
+	PoeEnable bool   `json:"poe_enable"`
+	PoePower  string `json:"poe_power,omitempty"` // API returns "4.50" as a string; empty when N/A
+	PoeMode   string `json:"poe_mode,omitempty"`
+	PoeGood   *bool  `json:"poe_good,omitempty"`
+}
+
+// poePowerWatts parses the PoePower string ("4.50") into a float64.
+func (p portEntry) poePowerWatts() float64 {
+	var w float64
+	fmt.Sscanf(p.PoePower, "%f", &w)
+	return w
 }
 
 type portOverride struct {
-	PortIdx           int      `json:"port_idx"`
-	Name              string   `json:"name"`
-	NativeNetworkID   string   `json:"native_networkconf_id"`
-	TaggedNetworkIDs  []string `json:"tagged_networkconf_ids"`
-	Forward           string   `json:"forward"`
+	PortIdx              int      `json:"port_idx"`
+	Name                 string   `json:"name"`
+	NativeNetworkID      string   `json:"native_networkconf_id"`
+	TaggedNetworkIDs     []string `json:"tagged_networkconf_ids"`
+	ExcludedNetworkIDs   []string `json:"excluded_networkconf_ids"`
+	Forward              string   `json:"forward"`
+	TaggedVLANMgmt       string   `json:"tagged_vlan_mgmt"` // "auto"|"block_all"|"custom"
 }
 
 type rawDevice struct {
@@ -94,6 +105,7 @@ type rawDevice struct {
 	Uptime         int64          `json:"uptime"`
 	State          int            `json:"state"`
 	RebootRequired bool           `json:"reboot_required"`
+	TotalMaxPower  float64        `json:"total_max_power,omitempty"`
 	SysStats       struct {
 		MemUsed  float64 `json:"mem_used"`
 		MemTotal float64 `json:"mem_total"`
@@ -414,21 +426,112 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 		}
 	}
 
-	// ── 9. Switch ports at 10 Mbps ───────────────────────────────────────────
+	// ── 9. Switch ports at degraded speeds (10 or 100 Mbps) ─────────────────
 	for _, d := range r.devices {
 		if d.Type != "usw" { continue }
 		for _, p := range d.PortTable {
-			if !p.Up || p.Speed != 10 { continue }
+			if !p.Up { continue }
+			switch p.Speed {
+			case 10:
+				findings = append(findings, HealthFinding{
+					ID: fmt.Sprintf("port10_%s_%d", d.ID, p.PortIdx), Category: "infrastructure", Severity: SevWarning,
+					Title:  fmt.Sprintf("Port at 10 Mbps: %s port %d (%s)", d.Name, p.PortIdx, p.Name),
+					Detail: fmt.Sprintf(
+						"%s port %d (%q) is negotiating at 10 Mbps. "+
+							"Almost always a damaged cable, bent RJ45 pin, or ancient NIC. Replace the patch cable first.",
+						d.Name, p.PortIdx, p.Name),
+				})
+			case 100:
+				// Only flag 100Mbps if the port has moved significant traffic (>500 MB),
+				// indicating a device that should be capable of 1 Gbps.
+				totalBytes := p.RxBytes + p.TxBytes
+				if totalBytes > 500*1024*1024 {
+					findings = append(findings, HealthFinding{
+						ID: fmt.Sprintf("port100_%s_%d", d.ID, p.PortIdx), Category: "infrastructure", Severity: SevInfo,
+						Title:  fmt.Sprintf("Port at 100 Mbps: %s port %d (%s)", d.Name, p.PortIdx, p.Name),
+						Detail: fmt.Sprintf(
+							"%s port %d (%q) is connected at 100 Mbps and has moved %.1f GB of traffic. "+
+								"If the device supports Gigabit, try a different cable — 100 Mbps negotiation on a busy port "+
+								"often means a marginal cable with damaged pairs.",
+							d.Name, p.PortIdx, p.Name, float64(totalBytes)/1e9),
+					})
+				}
+			}
+		}
+	}
+
+	// ── 16. PoE budget per switch ─────────────────────────────────────────────
+	for _, d := range r.devices {
+		if d.Type != "usw" || d.TotalMaxPower == 0 { continue }
+		var usedWatts float64
+		for _, p := range d.PortTable {
+			usedWatts += p.poePowerWatts()
+		}
+		pct := usedWatts / d.TotalMaxPower * 100
+		switch {
+		case pct >= 90:
 			findings = append(findings, HealthFinding{
-				ID: fmt.Sprintf("port10_%s_%d", d.ID, p.PortIdx), Category: "infrastructure", Severity: SevWarning,
-				Title:  fmt.Sprintf("Port Running at 10 Mbps: %s port %d (%s)", d.Name, p.PortIdx, p.Name),
+				ID: "poe_budget_" + d.ID, Category: "infrastructure", Severity: SevCritical,
+				Title:  fmt.Sprintf("PoE Budget Critical: %s at %.0f%% (%.1f/%.0fW)", d.Name, pct, usedWatts, d.TotalMaxPower),
 				Detail: fmt.Sprintf(
-					"%s port %d (%q) is negotiating at only 10 Mbps. "+
-						"This is almost always caused by a damaged cable, a bent RJ45 pin, or a very old NIC. "+
-						"Replace the patch cable first — it's the most common cause.",
-					d.Name, p.PortIdx, p.Name),
+					"%s is consuming %.1fW of its %.0fW PoE budget (%.0f%%). "+
+						"Adding or powering on another PoE device may cause existing devices to lose power unexpectedly. "+
+						"Consider a switch with a higher PoE budget or reduce the number of PoE devices.",
+					d.Name, usedWatts, d.TotalMaxPower, pct),
+			})
+		case pct >= 70:
+			findings = append(findings, HealthFinding{
+				ID: "poe_budget_" + d.ID, Category: "infrastructure", Severity: SevWarning,
+				Title:  fmt.Sprintf("PoE Budget High: %s at %.0f%% (%.1f/%.0fW)", d.Name, pct, usedWatts, d.TotalMaxPower),
+				Detail: fmt.Sprintf(
+					"%s is consuming %.1fW of its %.0fW PoE budget (%.0f%%). "+
+						"You have %.1fW of headroom — be mindful before adding more PoE devices.",
+					d.Name, usedWatts, d.TotalMaxPower, pct, d.TotalMaxPower-usedWatts),
+			})
+		default:
+			findings = append(findings, HealthFinding{
+				ID: "poe_budget_" + d.ID, Category: "infrastructure", Severity: SevOK,
+				Title:  fmt.Sprintf("PoE Budget OK: %s at %.0f%% (%.1f/%.0fW)", d.Name, pct, usedWatts, d.TotalMaxPower),
+				Detail: fmt.Sprintf("%.1fW used of %.0fW capacity — %.1fW headroom available.", usedWatts, d.TotalMaxPower, d.TotalMaxPower-usedWatts),
 			})
 		}
+	}
+
+	// ── 17. Flaky clients (frequent reconnects) ───────────────────────────────
+	now := time.Now().Unix()
+	type flakyEntry struct{ name, uplink string; uptimeSec int64 }
+	var flakyClients []flakyEntry
+	for _, sta := range r.clients {
+		if sta.DisconnectTimestamp == 0 || sta.AssocTime == 0 { continue }
+		// Client is considered flaky if:
+		//   - it disconnected within the last 6 hours, AND
+		//   - its current uptime is under 1 hour (recently reconnected)
+		disconnectedRecently := (now - sta.DisconnectTimestamp) < 6*3600
+		shortUptime := sta.Uptime > 0 && sta.Uptime < 3600
+		if disconnectedRecently && shortUptime {
+			label := sta.Name
+			if label == "" { label = sta.Hostname }
+			if label == "" { label = sta.MAC }
+			flakyClients = append(flakyClients, flakyEntry{name: label, uplink: sta.LastUplinkName, uptimeSec: sta.Uptime})
+		}
+	}
+	if len(flakyClients) > 0 {
+		names := make([]string, 0, len(flakyClients))
+		for _, f := range flakyClients {
+			uplinkInfo := ""
+			if f.uplink != "" { uplinkInfo = " via " + f.uplink }
+			names = append(names, fmt.Sprintf("%s%s (up %dm)", f.name, uplinkInfo, f.uptimeSec/60))
+		}
+		sev := SevInfo
+		if len(flakyClients) >= 3 { sev = SevWarning }
+		findings = append(findings, HealthFinding{
+			ID: "flaky_clients", Category: "infrastructure", Severity: sev,
+			Title:  fmt.Sprintf("%d Client(s) with Recent Disconnects", len(flakyClients)),
+			Detail: fmt.Sprintf(
+				"These clients disconnected within the last 6 hours and recently reconnected — "+
+					"possible cable issues, power supply instability, or firmware loops: %s",
+				strings.Join(names, "; ")),
+		})
 	}
 
 	// ── 10. Port name vs VLAN mismatch ───────────────────────────────────────
@@ -560,7 +663,81 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 		})
 	}
 
+	// ── 15. VLAN trunk gaps on AP uplinks ────────────────────────────────────
+	if vlanResult, err := RunVLANAudit(ctx, c); err == nil {
+		for _, f := range vlanResult.Findings {
+			if f.Severity == SevOK {
+				continue // don't pollute health-check OK list with audit OK
+			}
+			findings = append(findings, f)
+		}
+	}
+
 	return &NetworkHealthResult{RunAt: time.Now(), Findings: findings}, nil
+}
+
+// ── Switch-port types & builder ───────────────────────────────────────────────
+
+type SwitchPort struct {
+	Idx       int     `json:"idx"`
+	Name      string  `json:"name"`
+	Up        bool    `json:"up"`
+	SpeedMbps int     `json:"speed_mbps"`
+	PoeMode   string  `json:"poe_mode"`
+	PoeWatts  float64 `json:"poe_watts"`
+	TxBytes   int64   `json:"tx_bytes"`
+	RxBytes   int64   `json:"rx_bytes"`
+}
+
+type SwitchStatus struct {
+	Name         string       `json:"name"`
+	MAC          string       `json:"mac"`
+	Model        string       `json:"model"`
+	PoeMaxWatts  float64      `json:"poe_max_watts"`
+	PoeUsedWatts float64      `json:"poe_used_watts"`
+	PoePct       int          `json:"poe_pct"`
+	Ports        []SwitchPort `json:"ports"`
+}
+
+type SwitchPortsResult struct {
+	Switches []SwitchStatus `json:"switches"`
+}
+
+func BuildSwitchPortsResult(devices []rawDevice) *SwitchPortsResult {
+	var switches []SwitchStatus
+	for _, d := range devices {
+		if d.Type != "usw" { continue }
+		var usedWatts float64
+		ports := make([]SwitchPort, 0, len(d.PortTable))
+		for _, p := range d.PortTable {
+			w := p.poePowerWatts()
+			usedWatts += w
+			ports = append(ports, SwitchPort{
+				Idx:       p.PortIdx,
+				Name:      p.Name,
+				Up:        p.Up,
+				SpeedMbps: p.Speed,
+				PoeMode:   p.PoeMode,
+				PoeWatts:  w,
+				TxBytes:   p.TxBytes,
+				RxBytes:   p.RxBytes,
+			})
+		}
+		pct := 0
+		if d.TotalMaxPower > 0 {
+			pct = int(usedWatts / d.TotalMaxPower * 100)
+		}
+		switches = append(switches, SwitchStatus{
+			Name:         d.Name,
+			MAC:          d.MAC,
+			Model:        d.Model,
+			PoeMaxWatts:  d.TotalMaxPower,
+			PoeUsedWatts: usedWatts,
+			PoePct:       pct,
+			Ports:        ports,
+		})
+	}
+	return &SwitchPortsResult{Switches: switches}
 }
 
 // ── HTTP handlers ─────────────────────────────────────────────────────────────
@@ -655,4 +832,24 @@ func (s *HTTPServer) handleHealthFix(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "unknown resource: " + resource})
 	}
+}
+
+func (s *HTTPServer) handleSwitchPorts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	c := s.unifiClient()
+	if !c.IsConfigured() {
+		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"configured": false}})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	devices, err := fetchDevices(ctx, c)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: BuildSwitchPortsResult(devices)})
 }

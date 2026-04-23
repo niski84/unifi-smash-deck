@@ -1,5 +1,5 @@
 # GusNet — Network Insights & API Capabilities
-_Generated 2026-04-04 · UniFi Network 10.2.105 · UDM Pro 5.0.16_
+_Updated 2026-04-07 · UniFi Network 10.2.105 · UDM Pro 5.0.16_
 
 ---
 
@@ -17,6 +17,51 @@ _Generated 2026-04-04 · UniFi Network 10.2.105 · UDM Pro 5.0.16_
 | Dining Room AP | U6-IW | 3% | 29% | 28.1d | 0 |
 
 **Total managed clients:** 49
+
+---
+
+## Physical Topology
+
+```
+Wiggerton Router (UDM-Pro)
+└── Server Rack Switch (USW-16-PoE)  — uplink on port 1
+    ├── Port 3  → Server Room AP (U6-Pro)          trunk/default
+    ├── Port 5  → unknown 82:48:2c:33:5d:5d        no VLAN assigned ⚠️
+    ├── Port 7  → Squirrel Box Switch (US-8-60W)   Zone00 native
+    └── Port 11 → unknown device                   Zone00, 10Mbps ⚠️
+```
+
+```
+Squirrel Box Switch (US-8-60W)  — uplink: Server Rack port 7
+├── Port 1  Zone00 (mgmt)  DOWN   Master Bedroom wall port
+├── Port 2  Zone00 (mgmt)  DOWN   Front Bedroom wall port
+├── Port 3  Media VLAN40   1Gbps  → Attic Switch (USM8P210)
+├── Port 4  Zone00 (mgmt)  1Gbps  → Office
+├── Port 6  Media VLAN40   1Gbps  → Garage AP (U6-Enterprise)
+├── Port 7  Zone00 (trunk) 1Gbps  → Dining Room AP (U6-IW)
+└── Port 8  Zone00 (trunk) 1Gbps  → Main TV Switch (USW-Mini)
+```
+
+```
+Attic Switch (USM8P210)  — uplink: Squirrel Box port 3
+├── Port 1  Cameras VLAN30  100Mbps  driveway (192.168.30.248)
+├── Port 2  Cameras VLAN30  100Mbps  g5-turret-ultra (192.168.30.131)
+├── Port 3  Cameras VLAN30  100Mbps  g5-turret-ultra (192.168.30.240)
+├── Port 4  Cameras VLAN30  100Mbps  side-yard (192.168.30.244)
+├── Port 5  Cameras VLAN30  100Mbps  side-yard-van (192.168.30.117)
+├── Port 6  Cameras VLAN30  100Mbps  garage (192.168.30.163)
+└── Port 8  trunk           1Gbps    uplink (PoE In)
+```
+
+```
+Main TV Switch (USW-Mini)  — uplink: Squirrel Box port 8
+├── Port 1  Zone00 (trunk)  1Gbps    uplink
+├── Port 2  Media VLAN40    100Mbps  LGwebOSTV (192.168.4.153)
+├── Port 3  Media VLAN40    100Mbps  sonyaudio (192.168.4.14)
+└── Port 5  Cameras VLAN30  100Mbps  UFP-Viewport-0896 (192.168.30.135)
+```
+
+> **Note:** Squirrel Box ports 1 & 2 (bedroom wall ports) are configured Zone00 and currently down — likely need access VLAN overrides if they're ever used.
 
 ---
 
@@ -69,13 +114,9 @@ These could be Wyze devices that don't advertise hostnames, or could be unknown 
 
 **Via API:** `GET /proxy/network/api/s/default/stat/sta` — check `mac` field and look up OUI at api.macvendors.com.
 
-### 🟡 Protect Cameras on Management VLAN
+### ✅ Protect Cameras — Now Correctly on Cameras VLAN
 
-Two Protect cameras (`g4-instant` and `backdoor`) are on VLAN null (the default/management Zone00 network) rather than the Cameras VLAN (VLAN 30). This means:
-- They're on a less-isolated network alongside management infrastructure.
-- The "Block Cameras to Internal" rule we added doesn't apply to them (they're on Zone00, not Cameras VLAN).
-
-**Recommendation:** Migrate these two cameras to VLAN 30 in UniFi Protect settings so all cameras are on the same isolated VLAN.
+`g4-instant` (192.168.30.229), `backdoor` (192.168.30.249), and `UFP-Viewport-0896` (192.168.30.135) are all now on Cameras VLAN 30. The "Block Cameras→Internal" rule applies to all of them. Previously `g4-instant` and `backdoor` were on Zone00.
 
 ### 🟢 IoT Isolation — Good
 
@@ -87,11 +128,11 @@ Two Protect cameras (`g4-instant` and `backdoor`) are on VLAN null (the default/
 
 | VLAN | Network | Clients | Notes |
 |------|---------|---------|-------|
-| null | Zone00 (management) | 3 | 2 Protect cameras should be on VLAN 30 |
-| 2 | IoT | 22 | All Wyze devices — good isolation |
-| 10 | Work/Terminal | 1 | Nicholas-s-S22 (phone) |
-| 30 | Cameras | 6 | side-yard, side-yard-van, g5-turret-ultra ×2, garage, driveway |
-| 40 | Media/Cast9 | 17 | Nebulord-7D50 + phones + tablets |
+| — | Zone00 (management) | 0 wired | g4-instant + backdoor + viewport migrated to VLAN30 ✅ |
+| 2 | IoT | ~17 | All Wyze devices via Server Room AP — good isolation |
+| 10 | Work | 1 | Nicholas-s-S22 |
+| 30 | Cameras | 9 | driveway, g5-turret-ultra ×2, side-yard, side-yard-van, garage (wired) + g4-instant, backdoor (WiFi) + UFP-Viewport-0896 |
+| 40 | Media | ~18 | LG TV, Sony audio, Nebulord-7D50, phones, tablets, Wyze media |
 
 ---
 
@@ -149,7 +190,7 @@ The UDM Pro runs Network and Protect as podman containers. `podman stats` is the
 | GusNet-Terminal AP client isolation | ✅ Already enabled (l2_isolation=true) |
 | Default allow-all between VLANs | ⚠️ Still block-list model — default-deny conversion pending |
 | Legacy "block work" rule | ⚠️ Needs manual deletion via UI |
-| g4-instant + backdoor on Zone00 | ⚠️ Should migrate to Cameras VLAN |
+| g4-instant + backdoor on Zone00 | ✅ Now on Cameras VLAN 30 |
 | Squirrel Box Switch high CPU | ⚠️ Investigate port flapping / STP |
 
 ---

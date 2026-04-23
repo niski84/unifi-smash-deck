@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>UniFi Smash Deck</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <style>
     :root {
       --bg: #0b0f1a;
@@ -840,6 +841,13 @@
     <!-- Overview (home) -->
     <button type="button" class="tab-btn active" data-tab="overview" data-testid="tab-overview">🏠 Overview</button>
     <span class="tab-sep" role="separator"></span>
+    <!-- Fleet intelligence group -->
+    <button type="button" class="tab-btn" data-tab="fleet" data-testid="tab-fleet">🌐 Fleet</button>
+    <button type="button" class="tab-btn" data-tab="drift" data-testid="tab-drift">📐 Config Drift</button>
+    <button type="button" class="tab-btn" data-tab="capacity" data-testid="tab-capacity">⚡ Capacity</button>
+    <button type="button" class="tab-btn" data-tab="rf-health" data-testid="tab-rf-health">📡 RF Health</button>
+    <button type="button" class="tab-btn" data-tab="isp-perf" data-testid="tab-isp-perf">🌍 ISP</button>
+    <span class="tab-sep" role="separator"></span>
     <!-- Group 1: core management -->
     <button type="button" class="tab-btn" data-tab="networks" data-testid="tab-networks">🌐 Networks</button>
     <button type="button" class="tab-btn" data-tab="clients" data-testid="tab-clients">👥 Clients</button>
@@ -849,12 +857,15 @@
     <!-- Group 2: monitoring & diagnostics -->
     <button type="button" class="tab-btn" data-tab="security" data-testid="tab-security">🔒 Security <span id="securityBadge" style="display:none;background:var(--danger,#e53935);color:#fff;border-radius:999px;font-size:11px;padding:1px 6px;margin-left:4px;vertical-align:middle;"></span></button>
     <button type="button" class="tab-btn" data-tab="health" data-testid="tab-health">📊 Health</button>
+    <button type="button" class="tab-btn" data-tab="switch-ports" data-testid="tab-switch-ports">🔌 Switches</button>
     <button type="button" class="tab-btn" data-tab="iot" data-testid="tab-iot">🔌 IoT</button>
     <button type="button" class="tab-btn" data-tab="fw-audit" data-testid="tab-fw-audit">🔍 FW Audit</button>
+    <button type="button" class="tab-btn" data-tab="vlan-audit" data-testid="tab-vlan-audit">🔀 VLAN Audit <span id="vlanAuditBadge" style="display:none;border-radius:999px;font-size:11px;padding:1px 6px;margin-left:4px;vertical-align:middle;"></span></button>
     <span class="tab-sep" role="separator"></span>
     <!-- Group 3: advanced / ops -->
     <button type="button" class="tab-btn" data-tab="config-snap" data-testid="tab-config-snap">🗄️ Config</button>
     <button type="button" class="tab-btn" data-tab="net-insights" data-testid="tab-net-insights">📡 Net Insights</button>
+    <button type="button" class="tab-btn" data-tab="igmp" data-testid="tab-igmp">📶 IGMP <span style="font-size:9px;background:var(--accent);color:#fff;border-radius:4px;padding:1px 5px;vertical-align:middle;margin-left:3px;">PRO</span></button>
     <span class="tab-sep" role="separator"></span>
     <!-- Settings (standalone) -->
     <button type="button" class="tab-btn" data-tab="settings" data-testid="tab-settings">⚙️ Settings</button>
@@ -942,6 +953,7 @@
     <div class="cam-inner-tabs">
       <button type="button" class="cam-inner-tab active" data-cam-tab="live" data-testid="cam-tab-live">📷 Live View</button>
       <button type="button" class="cam-inner-tab" data-cam-tab="timeline" data-testid="cam-tab-timeline">🗓 Timeline</button>
+      <button type="button" class="cam-inner-tab" data-cam-tab="guscam" data-testid="cam-tab-guscam">🐕 Gus Cam</button>
     </div>
 
     <!-- ── Live View sub-panel ── -->
@@ -1012,6 +1024,126 @@
         <p class="muted" id="snapEmptyMsg">No snapshots yet — add a rule and save, or use Capture Now.</p>
       </div>
     </div>
+
+    <!-- ── Gus Cam tab ─────────────────────────────────────────────── -->
+    <div id="cam-sub-guscam" class="cam-sub" style="display:none;">
+
+      <!-- Status bar -->
+      <div id="gusStatusBar" style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--card);border:1px solid var(--border);border-radius:10px;margin-bottom:14px;">
+        <span id="gusStatusDot" style="width:10px;height:10px;border-radius:50%;background:var(--muted);flex-shrink:0;"></span>
+        <span id="gusStatusText" style="font-size:13px;color:var(--text);">Gus Cam not configured — add camera IDs in Settings</span>
+        <span id="gusConfidence" style="margin-left:auto;font-size:12px;color:var(--muted);"></span>
+      </div>
+
+      <!-- Live feed + log layout -->
+      <div style="display:grid;grid-template-columns:1fr 320px;gap:14px;align-items:start;">
+
+        <!-- Live cropped stream -->
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+          <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
+            <span style="font-size:13px;font-weight:600;color:var(--text);">Live View</span>
+            <span id="gusCamLabel" style="font-size:12px;color:var(--muted);"></span>
+            <button id="gusCamRefreshBtn" onclick="gusCamRefresh()" style="margin-left:auto;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--muted);cursor:pointer;font-size:12px;">&#x21BA; Refresh</button>
+          </div>
+          <div id="gusCamViewport" style="position:relative;background:#000;min-height:240px;display:flex;align-items:center;justify-content:center;">
+            <img id="gusCamImg" src="" alt="Gus Cam"
+              style="max-width:100%;max-height:480px;object-fit:contain;display:none;"
+              onerror="this.style.display='none';document.getElementById('gusCamPlaceholder').style.display='flex';" />
+            <!-- X-marks-the-spot overlay — drawn by JS when status has last_box/last_motion_box -->
+            <canvas id="gusCamOverlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"></canvas>
+            <div id="gusCamPlaceholder" style="display:flex;flex-direction:column;align-items:center;gap:10px;color:var(--muted);padding:40px;">
+              <span style="font-size:40px;">🐕</span>
+              <span style="font-size:13px;">Waiting for Gus...</span>
+              <span style="font-size:11px;color:var(--muted);opacity:0.7;">Configure cameras in Settings below</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pet log sidebar -->
+        <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;max-height:520px;display:flex;flex-direction:column;">
+          <div style="padding:10px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;">
+            <span style="font-size:13px;font-weight:600;color:var(--text);">Pet Log</span>
+            <span id="gusLogCount" style="font-size:11px;color:var(--muted);margin-left:auto;"></span>
+          </div>
+          <div id="gusLogList" style="overflow-y:auto;flex:1;padding:8px;">
+            <div class="muted" style="font-size:12px;padding:12px;text-align:center;">No sightings logged yet</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Sidecar status card -->
+      <div id="gcSidecarCard" style="margin-top:14px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px;display:none;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <span id="gcSidecarDot" style="width:9px;height:9px;border-radius:50%;background:var(--muted);flex-shrink:0;"></span>
+          <span style="font-size:13px;font-weight:600;color:var(--text);">Detection Sidecar</span>
+          <span id="gcSidecarBadge" style="font-size:11px;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,0.07);color:var(--muted);">checking...</span>
+          <button id="gcSidecarStartBtn" onclick="startGusSidecar()" style="display:none;margin-left:auto;padding:5px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;">Start Sidecar</button>
+        </div>
+        <!-- Not installed: show copy-able commands -->
+        <div id="gcSidecarInstall" style="display:none;">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Run these once to install the YOLO detection engine:</div>
+          <div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-family:monospace;font-size:12px;color:var(--text);white-space:pre;line-height:1.8;position:relative;">cd ~/goprojects/unifi-smash-deck
+python3 -m venv sidecar/.venv
+source sidecar/.venv/bin/activate
+pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style="position:absolute;top:8px;right:8px;padding:3px 9px;background:var(--border);border:none;border-radius:4px;color:var(--muted);cursor:pointer;font-size:11px;">Copy</button></div>
+          <div style="font-size:12px;color:var(--muted);margin-top:8px;">Then start it with: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;color:var(--text);">./scripts/start-sidecar.sh</code></div>
+        </div>
+      </div>
+
+      <!-- Settings card -->
+      <div style="margin-top:14px;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden;">
+        <!-- Enable toggle header -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--text);">Gus Cam Settings</div>
+            <div id="gcEnabledHint" style="font-size:11px;color:var(--muted);margin-top:1px;">Toggle on to start tracking</div>
+          </div>
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+            <span id="gcEnabledLabel" style="font-size:12px;color:var(--muted);">Disabled</span>
+            <span onclick="toggleGcEnabled()" id="gcToggle" style="display:inline-flex;width:42px;height:24px;border-radius:999px;background:var(--border);cursor:pointer;transition:background .2s;align-items:center;padding:2px;flex-shrink:0;">
+              <span id="gcToggleKnob" style="width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .2s;transform:translateX(0);box-shadow:0 1px 3px rgba(0,0,0,.4);"></span>
+            </span>
+            <input type="checkbox" id="gcEnabled" style="display:none;" />
+          </label>
+        </div>
+        <!-- Fields -->
+        <div style="padding:14px 16px;display:flex;flex-direction:column;gap:12px;">
+          <!-- Cameras to Watch -->
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <span style="font-size:12px;color:var(--muted);font-weight:500;">Cameras to Watch</span>
+              <button onclick="refreshGcCameras()" id="gcCamRefreshBtn" title="Refresh camera list"
+                style="padding:2px 8px;background:transparent;border:1px solid var(--border);border-radius:5px;color:var(--muted);cursor:pointer;font-size:12px;">↺</button>
+              <span id="gcCamLoadMsg" style="font-size:11px;color:var(--muted);display:none;">Loading…</span>
+            </div>
+            <div id="gcSelectedCams" style="display:flex;flex-wrap:wrap;gap:6px;min-height:28px;margin-bottom:8px;"></div>
+            <select id="gcCamDropdown" onchange="addGcCamera(this.value);this.value='';"
+              style="background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 10px;font-size:12px;cursor:pointer;max-width:320px;">
+              <option value="">+ Add a camera…</option>
+            </select>
+            <div id="gcNoCamsMsg" style="font-size:11px;color:var(--muted);margin-top:5px;display:none;">No cameras found — check UniFi connection and click ↺</div>
+          </div>
+          <!-- Pet description + interval -->
+          <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;">
+            <label style="font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px;">Pet description
+              <input type="text" id="gcDescription" placeholder="a dog named Gus"
+                style="width:240px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:12px;" />
+            </label>
+            <label style="font-size:12px;color:var(--muted);display:flex;flex-direction:column;gap:4px;">Detection interval (sec)
+              <input type="number" id="gcInterval" min="1" max="60" value="3"
+                style="width:70px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:12px;" />
+            </label>
+          </div>
+          <!-- Save -->
+          <div style="display:flex;align-items:center;gap:10px;padding-top:2px;">
+            <button onclick="saveGusConfig()" style="padding:7px 20px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">Save</button>
+            <span id="gcSaveStatus" style="font-size:12px;color:var(--ok);display:none;">Saved!</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </section>
 
   <!-- ── Automations panel ── -->
@@ -1108,6 +1240,21 @@
     <div id="healthSecSection" style="display:none;margin-top:14px;">
       <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:8px;">Security</div>
       <div id="healthSecGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px;"></div>
+    </div>
+  </section>
+
+  <!-- ── Switch Ports panel ── -->
+  <section id="panel-switch-ports" class="panel">
+    <div class="card">
+      <div class="toolbar" style="flex-wrap:wrap;gap:8px;">
+        <strong style="font-size:15px;">Switch Port Monitor</strong>
+        <button type="button" class="primary" id="switchPortsRefreshBtn" style="margin-left:auto;">Refresh</button>
+        <span id="switchPortsRunAt" class="muted" style="font-size:12px;"></span>
+      </div>
+      <p class="muted" style="font-size:12px;margin:6px 0 0;">Per-switch port status, speeds, PoE budget, and flaky connection detection.</p>
+    </div>
+    <div id="switchPortsBody" style="margin-top:14px;">
+      <div class="muted" style="font-size:13px;padding:20px 0;">Click Refresh to load switch data.</div>
     </div>
   </section>
 
@@ -1390,6 +1537,88 @@
   </section>
 
   <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <!-- VLAN Audit panel                                                       -->
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <section id="panel-vlan-audit" class="panel">
+
+    <!-- Toolbar -->
+    <div class="card">
+      <div class="toolbar" style="flex-wrap:wrap;gap:10px;align-items:center;">
+        <button type="button" class="primary" id="vaRunBtn">Run VLAN Audit</button>
+        <span id="vaRunAt" class="muted" style="font-size:12px;"></span>
+        <span id="vaStatus" class="muted" style="margin-left:auto;font-size:12px;"></span>
+      </div>
+      <div id="vaSummaryRow" style="display:none;margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <span id="vaOverallBadge"></span>
+        <span style="font-size:12px;color:var(--muted);flex:1;">
+          Checks that every access point's uplink port carries the VLANs it needs for all its SSIDs — and that clients won't lose connectivity when they roam between APs.
+        </span>
+      </div>
+    </div>
+
+    <!-- Findings -->
+    <div id="vaFindingsSection" style="display:none;margin-top:14px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:var(--muted);text-transform:uppercase;margin-bottom:8px;">Findings</div>
+      <div id="vaFindingsGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:10px;"></div>
+    </div>
+
+    <!-- AP Topology table -->
+    <div id="vaTopoSection" style="display:none;margin-top:14px;">
+      <div class="card">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+          <h3 style="margin:0;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">AP Uplink Topology</h3>
+          <span style="font-size:12px;color:var(--muted);">Each row shows one access point, which switch port it connects to, and whether each SSID's VLAN is reachable on that port.</span>
+        </div>
+        <div style="overflow-x:auto;">
+          <table class="client-table" id="vaTopoTable">
+            <thead>
+              <tr>
+                <th style="white-space:nowrap;">Access Point</th>
+                <th style="white-space:nowrap;">Uplink Switch</th>
+                <th style="white-space:nowrap;">Port</th>
+                <th style="white-space:nowrap;">Port Mode</th>
+                <th style="white-space:nowrap;" id="vaVlanHeaders">VLANs</th>
+              </tr>
+            </thead>
+            <tbody id="vaTopBody"></tbody>
+          </table>
+        </div>
+
+        <!-- Legend -->
+        <div style="margin-top:12px;display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--muted);">
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--ok);margin-right:4px;vertical-align:middle;"></span>VLAN trunked (native)</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:rgba(61,219,165,0.45);margin-right:4px;vertical-align:middle;"></span>VLAN trunked (tagged)</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:var(--err-color);margin-right:4px;vertical-align:middle;"></span>VLAN missing — clients will drop on roam</span>
+          <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:var(--border);margin-right:4px;vertical-align:middle;"></span>SSID not broadcast on this AP</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Roaming dead-zone matrix -->
+    <div id="vaRoamSection" style="display:none;margin-top:14px;">
+      <div class="card">
+        <h3 style="margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);">Roaming Coverage Matrix</h3>
+        <p style="margin:0 0 12px;font-size:12px;color:var(--muted);">
+          For each SSID that broadcasts on more than one AP, this table shows whether the underlying VLAN is reachable at every AP.
+          A red cell means a device connected on that SSID will lose its IP/internet if it roams to that AP.
+        </p>
+        <div style="overflow-x:auto;">
+          <table class="client-table" id="vaRoamTable">
+            <thead><tr id="vaRoamHead"></tr></thead>
+            <tbody id="vaRoamBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="vaEmptyState" style="margin-top:24px;text-align:center;color:var(--muted);font-size:13px;display:none;">
+      Click <strong>Run VLAN Audit</strong> to analyse your network's VLAN configuration.
+    </div>
+
+  </section>
+
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
   <section id="panel-net-insights" class="panel">
 
     <!-- Toolbar -->
@@ -1609,6 +1838,174 @@
 
   </section>
 
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <section id="panel-igmp" class="panel">
+
+    <div class="card">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+        <h2 style="margin:0;font-size:16px;">📶 IGMP Snooping</h2>
+        <span style="font-size:11px;background:var(--accent);color:#fff;border-radius:4px;padding:2px 8px;font-weight:600;">PRO</span>
+        <span style="font-size:12px;color:var(--muted);margin-left:auto;">Reduces multicast flood; recommended for IoT, Camera, and Media VLANs.</span>
+      </div>
+
+      <!-- Step 1: Label VLANs -->
+      <div style="margin-bottom:18px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <span style="font-size:13px;font-weight:600;">Step 1 — Label your VLANs</span>
+          <button type="button" class="primary" id="igmpLoadLabelsBtn" style="font-size:11px;padding:3px 10px;">Load Networks</button>
+          <button type="button" class="primary" id="igmpSaveLabelsBtn" style="font-size:11px;padding:3px 10px;display:none;">Save Labels</button>
+          <span id="igmpLabelsSaved" style="font-size:11px;color:var(--ok,#2e7d32);display:none;">✓ Saved</span>
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin:0 0 10px;">Tell us how each VLAN is used. This information is stored locally and shared across all report features.</p>
+        <div id="igmpLabelsTable" style="display:none;">
+          <table style="width:100%;border-collapse:collapse;font-size:12px;">
+            <thead>
+              <tr style="color:var(--muted);text-align:left;">
+                <th style="padding:4px 8px;border-bottom:1px solid var(--border);">Network</th>
+                <th style="padding:4px 8px;border-bottom:1px solid var(--border);">VLAN</th>
+                <th style="padding:4px 8px;border-bottom:1px solid var(--border);">Subnet</th>
+                <th style="padding:4px 8px;border-bottom:1px solid var(--border);">Purpose / Usage</th>
+              </tr>
+            </thead>
+            <tbody id="igmpLabelsBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Step 2: Run Report -->
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <span style="font-size:13px;font-weight:600;">Step 2 — Run Report</span>
+        <button type="button" class="primary" id="igmpRunBtn">Run Report</button>
+        <span id="igmpRunning" style="display:none;font-size:12px;color:var(--muted);">Running…</span>
+      </div>
+
+      <!-- Results -->
+      <div id="igmpResults" style="display:none;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <span style="font-size:13px;font-weight:600;">Results</span>
+          <span id="igmpRunAt" style="font-size:11px;color:var(--muted);"></span>
+        </div>
+        <div id="igmpChecks" style="display:grid;gap:8px;"></div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ── Fleet panel ── -->
+  <section id="panel-fleet" class="panel">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+        <div>
+          <h3 style="margin:0 0 4px 0;">Fleet Overview</h3>
+          <p class="muted" style="font-size:12px;margin:0;">Real-time health summary across all configured sites. The background poller updates every 15 minutes. Sites are categorized as OK (no alerts), Warn (minor issues), or Critical (active problems).</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="muted" id="fleet-ts" style="font-size:11px;"></span>
+          <button type="button" class="primary" onclick="loadFleet(true)">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="fleet-stats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:14px;"></div>
+      <div id="fleet-body"></div>
+    </div>
+  </section>
+
+  <!-- ── Config Drift panel ── -->
+  <section id="panel-drift" class="panel">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+        <div>
+          <h3 style="margin:0 0 4px 0;">Config Drift</h3>
+          <p class="muted" style="font-size:12px;margin:0;">Analyzes a site's live configuration against your gold standard policy. Each check produces a score (0–100). Flagged items include plain-English suggestions for remediation.</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <select id="drift-site-sel" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px;">
+            <option value="">— select site —</option>
+          </select>
+          <button type="button" class="primary" onclick="runDrift()">Analyze</button>
+        </div>
+      </div>
+      <div id="drift-running" style="display:none;color:var(--muted);font-size:13px;margin-bottom:10px;">Fetching site config…</div>
+      <div id="drift-score-card" style="display:none;margin-bottom:14px;padding:12px 16px;border-radius:8px;background:var(--bg);border:1px solid var(--border);">
+        <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;">
+          <div>
+            <div id="drift-score" style="font-size:36px;font-weight:700;"></div>
+            <div class="muted" style="font-size:11px;">Compliance Score</div>
+          </div>
+          <div id="drift-score-meta" style="font-size:13px;color:var(--muted);"></div>
+        </div>
+      </div>
+      <div id="drift-checks" style="display:grid;gap:8px;"></div>
+      <div id="drift-gold-card" class="card" style="margin-top:14px;background:var(--bg);">
+        <h4 style="margin:0 0 10px 0;">Gold Standard Settings</h4>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;" id="drift-gold-form"></div>
+        <button type="button" class="primary" style="margin-top:12px;" onclick="saveDriftGold()">Save Gold Standard</button>
+        <span id="drift-gold-saved" style="display:none;color:var(--ok);font-size:12px;margin-left:10px;">✓ Saved</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Capacity panel ── -->
+  <section id="panel-capacity" class="panel">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+        <div>
+          <h3 style="margin:0 0 4px 0;">Capacity &amp; Lifecycle</h3>
+          <p class="muted" style="font-size:12px;margin:0;">PoE budget utilization per switch and RAM pressure per device. Flags switches above 85% PoE capacity and devices with high sustained memory usage. Also shows hardware approaching end-of-life dates.</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <select id="capacity-site-sel" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px;">
+            <option value="">— select site —</option>
+          </select>
+          <button type="button" class="primary" onclick="runCapacity()">Analyze</button>
+        </div>
+      </div>
+      <div id="capacity-running" style="display:none;color:var(--muted);font-size:13px;margin-bottom:10px;">Fetching device data…</div>
+      <div id="capacity-body"></div>
+    </div>
+  </section>
+
+  <!-- ── RF Health panel ── -->
+  <section id="panel-rf-health" class="panel">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+        <div>
+          <h3 style="margin:0 0 4px 0;">RF Health</h3>
+          <p class="muted" style="font-size:12px;margin:0;">Per-AP radio health: channel assignment, DFS exposure (channels 52–144), Tx retry rates, and client satisfaction scores. APs with retry &gt;10% or on DFS channels during high-retry periods are flagged with suggestions.</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <select id="rf-site-sel" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px;">
+            <option value="">— select site —</option>
+          </select>
+          <button type="button" class="primary" onclick="runRFHealth()">Analyze</button>
+        </div>
+      </div>
+      <div id="rf-running" style="display:none;color:var(--muted);font-size:13px;margin-bottom:10px;">Fetching AP radio data…</div>
+      <div id="rf-body"></div>
+    </div>
+  </section>
+
+  <!-- ── ISP Performance panel ── -->
+  <section id="panel-isp-perf" class="panel">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+        <div>
+          <h3 style="margin:0 0 4px 0;">ISP Performance</h3>
+          <p class="muted" style="font-size:12px;margin:0;">WAN latency and uptime grouped by ISP label across all sites. The background poller records WAN health every 15 minutes. Micro-drops (brief packet loss events) are tracked separately from full outages.</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <select id="isp-days-sel" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--text);font-size:13px;">
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+          </select>
+          <span class="muted" id="isp-ts" style="font-size:11px;"></span>
+          <button type="button" class="primary" onclick="loadISP(true)">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="isp-body"></div>
+    </div>
+  </section>
+
   <section id="panel-settings" class="panel">
     <div class="card">
       <h3>Appearance</h3>
@@ -1649,37 +2046,64 @@
       </div>
     </div>
     <div class="card">
-      <h3>UniFi Controller</h3>
+      <h3>Sites</h3>
       <p class="muted" style="font-size:12px;margin:0 0 12px 0;">
-        Connect to your UDM Pro. The host should include the scheme, e.g. <code>https://192.168.1.1</code>.
-        Leave password blank to keep the existing value.
+        Register one or more UniFi Network controllers or UISP instances, then switch between them.
+        The <strong>active</strong> site is the one used by all reports and automations.
       </p>
-      <div class="row">
-        <div>
-          <label for="cfgHost">Controller Host</label>
-          <input id="cfgHost" data-testid="settings-host" placeholder="https://192.168.1.1" autocomplete="off" />
+
+      <!-- Sites table -->
+      <div id="sitesTableWrap" style="margin-bottom:14px;"></div>
+
+      <!-- Add site form -->
+      <div style="border-top:1px solid var(--border);padding-top:14px;">
+        <h4 style="margin:0 0 10px 0;font-size:14px;">Add a site</h4>
+        <div class="row">
+          <div>
+            <label for="cfgSiteName">Name</label>
+            <input id="cfgSiteName" placeholder="Home UDM Pro" autocomplete="off" />
+          </div>
+          <div>
+            <label for="cfgSiteType">Type</label>
+            <select id="cfgSiteType" style="padding:8px 10px;border-radius:6px;background:var(--bg);color:var(--text);border:1px solid var(--border);">
+              <option value="unifi">UniFi Network</option>
+              <option value="uisp">UISP NMS</option>
+            </select>
+          </div>
         </div>
-        <div>
-          <label for="cfgSite">Site name</label>
-          <input id="cfgSite" data-testid="settings-site" placeholder="default" autocomplete="off" />
+        <div class="row">
+          <div>
+            <label for="cfgSiteHost">Host</label>
+            <input id="cfgSiteHost" placeholder="https://192.168.1.1" autocomplete="off" />
+          </div>
+          <div>
+            <label for="cfgSiteToken">API Token / Key</label>
+            <input id="cfgSiteToken" type="password" placeholder="paste token" autocomplete="off" />
+          </div>
+        </div>
+        <div class="row" id="cfgSiteNameRow">
+          <div>
+            <label for="cfgSiteSiteName">UniFi site (usually "default")</label>
+            <input id="cfgSiteSiteName" placeholder="default" autocomplete="off" />
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+          <button type="button" class="primary" id="addSiteBtn">Add Site</button>
+          <span id="sitesMsg" style="font-size:13px;"></span>
         </div>
       </div>
+    </div>
+
+    <div class="card">
+      <h3>Server Port</h3>
       <div class="row">
         <div>
-          <label for="cfgApiKey">API Key</label>
-          <input id="cfgApiKey" type="password" data-testid="settings-api-key" placeholder="leave blank to keep saved" autocomplete="off" />
-          <p class="muted" style="font-size:11px;margin:0 0 10px 0;">Generate in UniFi Network → Settings → Control Plane → Integrations</p>
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label for="cfgPort">Server port (requires restart)</label>
+          <label for="cfgPort">Port (requires restart)</label>
           <input id="cfgPort" data-testid="settings-port" placeholder="8099" style="max-width:120px;" />
         </div>
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-        <button type="button" class="primary" id="saveSettingsBtn" data-testid="save-settings">Save Settings</button>
-        <button type="button" class="secondary" id="testConnBtn" data-testid="test-connection">Test Connection</button>
+        <button type="button" class="primary" id="saveSettingsBtn" data-testid="save-settings">Save</button>
         <span id="settingsMsg" style="font-size:13px;"></span>
       </div>
     </div>
@@ -2021,6 +2445,7 @@
         $('panel-' + btn.dataset.tab).classList.add('active');
         lsSave(LS_ACTIVE_TAB, btn.dataset.tab); // persist for next reload
         console.debug('[UniFiDeck] tab', btn.dataset.tab);
+        document.dispatchEvent(new CustomEvent('tab-changed', { detail: btn.dataset.tab }));
         if (btn.dataset.tab === 'cameras') {
           stopClientPoll();
           // Restore to whichever camera sub-tab was last active (default: live).
@@ -2053,6 +2478,12 @@
           stopClientPoll();
           lbStopRefresh();
           if (!healthCache) loadHealthReport().catch(console.error);
+        } else if (btn.dataset.tab === 'switch-ports') {
+          stopSnapshotPolling();
+          stopTimelineSnapshotsPoll();
+          stopClientPoll();
+          lbStopRefresh();
+          loadSwitchPorts().catch(console.error);
         } else if (btn.dataset.tab === 'iot') {
           stopSnapshotPolling();
           stopTimelineSnapshotsPoll();
@@ -2071,12 +2502,24 @@
           stopClientPoll();
           lbStopRefresh();
           if (!window.faAuditCache) window.faRunAudit().catch(console.error);
+        } else if (btn.dataset.tab === 'vlan-audit') {
+          stopSnapshotPolling();
+          stopTimelineSnapshotsPoll();
+          stopClientPoll();
+          lbStopRefresh();
+          if (!window.vaAuditCache) window.vaRunAudit().catch(console.error);
         } else if (btn.dataset.tab === 'net-insights') {
           stopSnapshotPolling();
           stopTimelineSnapshotsPoll();
           stopClientPoll();
           lbStopRefresh();
           if (!window.niInsightsCache) window.niRunScan().catch(console.error);
+        } else if (btn.dataset.tab === 'igmp') {
+          stopSnapshotPolling();
+          stopTimelineSnapshotsPoll();
+          stopClientPoll();
+          lbStopRefresh();
+          if (!window.igmpLabelsLoaded) igmpLoadLabels().catch(console.error);
         } else {
           stopSnapshotPolling();
           stopTimelineSnapshotsPoll();
@@ -2967,20 +3410,123 @@
         category: 'Malware Command and Control Activity Detected',
       }, 'IPS Injection'));
 
+    // ── Sites (multi-server) ──────────────────────────────────────────────────
+    async function renderSites() {
+      try {
+        const d = await api('GET', '/api/sites');
+        const sites = d.sites || [];
+        const activeId = d.active_site_id || '';
+        const wrap = $('sitesTableWrap');
+        if (!sites.length) {
+          wrap.innerHTML = '<div class="muted" style="padding:12px;border:1px dashed var(--border);border-radius:8px;text-align:center;">No sites yet. Add one below to get started.</div>';
+          return;
+        }
+        let html = '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+        html += '<thead><tr style="border-bottom:1px solid var(--border);text-align:left;">';
+        html += '<th style="padding:6px;">Active</th><th style="padding:6px;">Name</th><th style="padding:6px;">Type</th><th style="padding:6px;">Host</th><th style="padding:6px;text-align:right;">Actions</th>';
+        html += '</tr></thead><tbody>';
+        for (const s of sites) {
+          const isActive = s.id === activeId;
+          const typeBadge = s.type === 'unifi'
+            ? '<span style="background:var(--accent);color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">UniFi</span>'
+            : '<span style="background:#6a4cff;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;">UISP</span>';
+          html += `<tr style="border-bottom:1px solid var(--border);">
+            <td style="padding:8px 6px;">${isActive ? '🟢' : '<span class="muted">—</span>'}</td>
+            <td style="padding:8px 6px;"><strong>${escapeHtml(s.name)}</strong></td>
+            <td style="padding:8px 6px;">${typeBadge}</td>
+            <td style="padding:8px 6px;font-family:monospace;font-size:11px;">${escapeHtml(s.host)}</td>
+            <td style="padding:8px 6px;text-align:right;">
+              ${isActive ? '' : `<button type="button" class="secondary" style="padding:4px 10px;font-size:11px;" onclick="siteActivate('${s.id}')">Activate</button>`}
+              <button type="button" class="secondary" style="padding:4px 10px;font-size:11px;" onclick="siteTest('${s.id}')">Test</button>
+              <button type="button" class="secondary" style="padding:4px 10px;font-size:11px;color:var(--err-color,#d33);" onclick="siteRemove('${s.id}','${escapeHtml(s.name)}')">Remove</button>
+            </td>
+          </tr>`;
+        }
+        html += '</tbody></table>';
+        wrap.innerHTML = html;
+      } catch (e) {
+        $('sitesTableWrap').innerHTML = '<div class="err">Failed to load sites: ' + e.message + '</div>';
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    window.siteActivate = async (id) => {
+      try {
+        await api('POST', `/api/sites/${id}/activate`);
+        await renderSites();
+        // Reload networks since active site changed
+        try { await loadNetworks(); } catch(_) {}
+      } catch (e) { alert('Activate failed: ' + e.message); }
+    };
+    window.siteTest = async (id) => {
+      const btn = event.target;
+      const old = btn.textContent;
+      btn.textContent = 'Testing…';
+      btn.disabled = true;
+      try {
+        const d = await fetch(`/api/sites/${id}/test`, {method:'POST'}).then(r => r.json());
+        if (d.success) alert('✓ ' + (d.data?.status || 'Connected'));
+        else alert('✗ ' + (d.error || 'Failed'));
+      } finally {
+        btn.textContent = old;
+        btn.disabled = false;
+      }
+    };
+    window.siteRemove = async (id, name) => {
+      if (!confirm(`Remove site "${name}"?`)) return;
+      try {
+        await api('DELETE', `/api/sites/${id}`);
+        await renderSites();
+      } catch (e) { alert('Remove failed: ' + e.message); }
+    };
+
+    // Hide/show UniFi site field based on type
+    $('cfgSiteType').onchange = () => {
+      $('cfgSiteNameRow').style.display = $('cfgSiteType').value === 'unifi' ? '' : 'none';
+    };
+
+    $('addSiteBtn').onclick = async () => {
+      $('sitesMsg').textContent = '';
+      $('sitesMsg').className = '';
+      const body = {
+        name: $('cfgSiteName').value.trim(),
+        type: $('cfgSiteType').value,
+        host: $('cfgSiteHost').value.trim(),
+        token: $('cfgSiteToken').value.trim(),
+        site_name: $('cfgSiteSiteName').value.trim(),
+      };
+      if (!body.name || !body.host || !body.token) {
+        $('sitesMsg').textContent = 'Name, host, and token are required.';
+        $('sitesMsg').className = 'err';
+        return;
+      }
+      try {
+        await api('POST', '/api/sites', body);
+        $('sitesMsg').textContent = 'Site added ✓';
+        $('sitesMsg').className = 'ok';
+        $('cfgSiteName').value = '';
+        $('cfgSiteHost').value = '';
+        $('cfgSiteToken').value = '';
+        $('cfgSiteSiteName').value = '';
+        await renderSites();
+      } catch (e) {
+        $('sitesMsg').textContent = e.message;
+        $('sitesMsg').className = 'err';
+      }
+    };
+
     // ── Settings ───────────────────────────────────────────────────────────────
     $('saveSettingsBtn').onclick = async () => {
       $('settingsMsg').textContent = '';
       $('settingsMsg').className = '';
       try {
         const body = { port: ($('cfgPort').value || '8099').trim() };
-        if ($('cfgHost').value.trim()) body.unifi_host = $('cfgHost').value.trim();
-        if ($('cfgSite').value.trim()) body.unifi_site = $('cfgSite').value.trim();
-        if ($('cfgApiKey').value.trim()) body.unifi_api_key = $('cfgApiKey').value.trim();
         await api('POST', '/api/settings', body);
         $('settingsMsg').textContent = 'Saved ✓';
         $('settingsMsg').className = 'ok';
-        $('cfgApiKey').value = '';
-        await loadNetworks();
       } catch (e) {
         $('settingsMsg').textContent = e.message;
         $('settingsMsg').className = 'err';
@@ -3045,19 +3591,6 @@
       } finally {
         $('refreshSigFeedBtn').disabled = false;
         $('refreshSigFeedBtn').textContent = 'Refresh Now';
-      }
-    };
-
-    $('testConnBtn').onclick = async () => {
-      $('settingsMsg').textContent = 'Testing…';
-      $('settingsMsg').className = 'muted';
-      try {
-        const d = await api('PUT', '/api/settings');
-        $('settingsMsg').textContent = d.status || 'OK';
-        $('settingsMsg').className = 'ok';
-      } catch (e) {
-        $('settingsMsg').textContent = 'Failed: ' + (e.message || e);
-        $('settingsMsg').className = 'err';
       }
     };
 
@@ -3701,10 +4234,16 @@
         if (sub) sub.style.display = 'block';
         lsSave(LS_CAM_TAB, btn.dataset.camTab); // persist for next reload
         if (btn.dataset.camTab === 'timeline') {
+          gusCamLeave();
           loadSnapshots().catch(console.error);
           stopSnapshotPolling();
           startTimelineSnapshotsPoll();
+        } else if (btn.dataset.camTab === 'guscam') {
+          stopTimelineSnapshotsPoll();
+          stopSnapshotPolling();
+          gusCamEnter();
         } else {
+          gusCamLeave();
           stopTimelineSnapshotsPoll();
           if (camerasCache.length === 0) loadCameras().then(() => startSnapshotPolling()).catch(console.error);
           else startSnapshotPolling();
@@ -4321,18 +4860,13 @@
     (async function init() {
       try {
         const st = await api('GET', '/api/settings');
-        $('cfgHost').value = st.unifi_host || '';
-        $('cfgSite').value = st.unifi_site || 'default';
         $('cfgPort').value = st.port || '8099';
-        $('cfgApiKey').value = '';
-        const hasKey = st.unifi_host && st.unifi_api_key;
-        if (hasKey) {
-          $('cfgApiKey').placeholder = '•••••••• (saved — leave blank to keep)';
-        }
+        const hasKey = !!(st.unifi_host && st.unifi_api_key);
         setConnStatus(
-          hasKey ? `Host: ${st.unifi_host}` : 'Not configured — add API key below',
+          hasKey ? `Host: ${st.unifi_host}` : 'Configure a site below to connect',
           hasKey ? 'muted' : 'warn'
         );
+        renderSites().catch(console.error);
         // Populate security settings fields.
         const hp = st.honeypot_ports;
         $('cfgHoneypotPorts').value = (Array.isArray(hp) && hp.length) ? hp.join(', ') : '';
@@ -4456,6 +4990,102 @@
     };
 
     $('healthRunBtn').onclick = () => { healthCache = null; loadHealthReport().catch(console.error); };
+
+    // ── Switch Ports ──────────────────────────────────────────────────────────────
+    async function loadSwitchPorts() {
+      const body = $('switchPortsBody');
+      const btn = $('switchPortsRefreshBtn');
+      btn.disabled = true;
+      body.innerHTML = '<div class="muted" style="font-size:13px;padding:20px 0;">Loading…</div>';
+      try {
+        const r = await fetch('/api/switch-ports');
+        const j = await r.json();
+        if (!j.success) throw new Error(j.error || 'request failed');
+        $('switchPortsRunAt').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+        renderSwitchPorts(j.data);
+      } catch (e) {
+        body.innerHTML = `<div style="color:var(--err-color);padding:20px 0;">Error: ${escapeHtml(e.message)}</div>`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function renderSwitchPorts(data) {
+      const body = $('switchPortsBody');
+      if (!data || !data.switches || data.switches.length === 0) {
+        body.innerHTML = '<div class="muted" style="font-size:13px;padding:20px 0;">No switches found.</div>';
+        return;
+      }
+      body.innerHTML = '';
+      data.switches.forEach(sw => {
+        const section = document.createElement('div');
+        section.style.cssText = 'margin-bottom:20px;';
+
+        // PoE budget bar (only shown if switch has PoE)
+        let poeBar = '';
+        if (sw.poe_max_watts > 0) {
+          const pct = sw.poe_pct || 0;
+          const barColor = pct >= 90 ? 'var(--err-color)' : pct >= 70 ? 'var(--warn)' : 'var(--ok)';
+          const budgetLabel = pct >= 90 ? '🔴 Critical' : pct >= 70 ? '🟡 High' : '🟢 OK';
+          poeBar = `
+            <div style="margin:8px 0 12px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:8px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <span style="font-size:12px;font-weight:600;">PoE Budget ${budgetLabel}</span>
+                <span style="font-size:12px;color:var(--muted);">${sw.poe_used_watts.toFixed(1)}W / ${sw.poe_max_watts.toFixed(0)}W (${pct}%)</span>
+              </div>
+              <div style="height:8px;background:var(--border);border-radius:4px;overflow:hidden;">
+                <div style="height:100%;width:${Math.min(pct,100)}%;background:${barColor};border-radius:4px;transition:width 0.4s;"></div>
+              </div>
+            </div>`;
+        }
+
+        // Port grid
+        const portsHtml = sw.ports.map(p => {
+          let speedColor, speedLabel;
+          if (!p.up) { speedColor = 'var(--muted)'; speedLabel = 'Down'; }
+          else if (p.speed_mbps >= 1000) { speedColor = 'var(--ok)'; speedLabel = '1G'; }
+          else if (p.speed_mbps === 100) { speedColor = 'var(--warn)'; speedLabel = '100M'; }
+          else if (p.speed_mbps === 10) { speedColor = 'var(--err-color)'; speedLabel = '10M'; }
+          else { speedColor = 'var(--muted)'; speedLabel = p.speed_mbps + 'M'; }
+
+          const poeWatts = p.poe_watts > 0 ? `<div style="font-size:10px;color:var(--muted);">${p.poe_watts.toFixed(1)}W</div>` : '';
+          const portName = p.name || `Port ${p.idx}`;
+          const trafficTip = p.up ? `tx:${fmtBytes(p.tx_bytes)} rx:${fmtBytes(p.rx_bytes)}` : '';
+
+          return `<div title="${escapeHtml(trafficTip)}" style="
+            display:flex;flex-direction:column;align-items:center;justify-content:center;
+            width:66px;min-height:66px;padding:6px 4px;
+            background:var(--bg);border:1px solid var(--border);border-radius:8px;
+            border-top:3px solid ${speedColor};
+            cursor:default;user-select:none;">
+            <div style="font-size:10px;font-weight:700;color:${speedColor};margin-bottom:2px;">${speedLabel}</div>
+            <div style="font-size:10px;text-align:center;line-height:1.3;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHtml(portName)}">${escapeHtml(portName)}</div>
+            ${poeWatts}
+          </div>`;
+        }).join('');
+
+        section.innerHTML = `
+          <div class="card">
+            <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;">
+              <strong style="font-size:14px;">${escapeHtml(sw.name)}</strong>
+              <span class="muted" style="font-size:12px;">${escapeHtml(sw.model)} · ${escapeHtml(sw.mac)}</span>
+            </div>
+            ${poeBar}
+            <div style="display:flex;flex-wrap:wrap;gap:8px;">${portsHtml}</div>
+          </div>`;
+        body.appendChild(section);
+      });
+    }
+
+    function fmtBytes(b) {
+      if (!b) return '0B';
+      if (b < 1024) return b + 'B';
+      if (b < 1024*1024) return (b/1024).toFixed(0) + 'KB';
+      if (b < 1024*1024*1024) return (b/1024/1024).toFixed(0) + 'MB';
+      return (b/1024/1024/1024).toFixed(1) + 'GB';
+    }
+
+    $('switchPortsRefreshBtn').onclick = () => loadSwitchPorts().catch(console.error);
 
     // ── IoT Diagnostics ────────────────────────────────────────────────────────
     let iotDiagCache = null;
@@ -4610,6 +5240,381 @@
         console.error('[UniFiDeck] init failed', e);
       }
     })();
+  </script>
+
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <!-- Gus Cam JavaScript                                                    -->
+  <!-- ══════════════════════════════════════════════════════════════════════ -->
+  <script>
+  // ── Gus Cam ──────────────────────────────────────────────────────────────────
+  const gcEsc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  function setGcToggle(on) {
+    const cb     = document.getElementById('gcEnabled');
+    const track  = document.getElementById('gcToggle');
+    const knob   = document.getElementById('gcToggleKnob');
+    const label  = document.getElementById('gcEnabledLabel');
+    const hint   = document.getElementById('gcEnabledHint');
+    if (!cb) return;
+    cb.checked = on;
+    if (track)  track.style.background  = on ? 'var(--accent)' : 'var(--border)';
+    if (knob)   knob.style.transform    = on ? 'translateX(18px)' : 'translateX(0)';
+    if (label)  label.textContent       = on ? 'Enabled' : 'Disabled';
+    if (label)  label.style.color       = on ? 'var(--ok)' : 'var(--muted)';
+    if (hint)   hint.textContent        = on ? 'Tracking active' : 'Toggle on to start tracking';
+  }
+
+  function toggleGcEnabled() {
+    const cb = document.getElementById('gcEnabled');
+    if (!cb) return;
+    const newState = !cb.checked;
+    setGcToggle(newState);
+    if (!gcInitialized) {
+      // Status not loaded yet — queue the intent; don't send camera_ids:[] to server
+      gcPendingEnabled = newState;
+      return;
+    }
+    saveGusConfig();
+  }
+  let gusCamActive = false;
+  let gusCamPollTimer = null;
+  let gcSelectedCameraIDs = [];
+  let gcAvailableCameras = [];
+  let gcInitialized = false;
+  let gcPendingEnabled = null;
+
+  async function gusCamEnter() {
+    gusCamActive = true;
+    // Available cameras must load BEFORE status — otherwise status's render call
+    // sees an empty available list and a later refresh can race-clobber chips.
+    await refreshGcCameras();
+    await loadGusStatus();
+    loadGusLog();
+    startGusCamStream();
+  }
+
+  function gusCamLeave() {
+    gusCamActive = false;
+    gcInitialized = false;
+    gcPendingEnabled = null;
+    if (gusCamPollTimer) { clearInterval(gusCamPollTimer); gusCamPollTimer = null; }
+    const img = document.getElementById('gusCamImg');
+    if (img) img.src = '';
+  }
+
+  function startGusCamStream() {
+    const img = document.getElementById('gusCamImg');
+    if (!img) return;
+    img.style.display = 'block';
+    document.getElementById('gusCamPlaceholder').style.display = 'none';
+    img.src = '/api/guscam/live?' + Date.now();
+    img.onload = () => loadGusStatus(); // redraw overlay once first frame renders
+    img.onerror = () => {
+      img.style.display = 'none';
+      document.getElementById('gusCamPlaceholder').style.display = 'flex';
+    };
+    // Poll status every 5 seconds
+    if (gusCamPollTimer) clearInterval(gusCamPollTimer);
+    gusCamPollTimer = setInterval(() => {
+      if (gusCamActive) { loadGusStatus(); loadGusLog(); }
+    }, 5000);
+  }
+
+  function gusCamRefresh() {
+    startGusCamStream();
+    loadGusLog();
+  }
+
+  // ── Location overlay (X marks the spot) ─────────────────────────────────────
+  function drawOverlay(box, motionBox, motionAt) {
+    const canvas = document.getElementById('gusCamOverlay');
+    const img    = document.getElementById('gusCamImg');
+    if (!canvas || !img || img.style.display === 'none') return;
+
+    // Match canvas pixels to the img's rendered size (not its natural size).
+    const rect = img.getBoundingClientRect();
+    const vp   = document.getElementById('gusCamViewport').getBoundingClientRect();
+    // img sits centered inside the viewport — compute offset of img inside viewport
+    const offX = rect.left - vp.left;
+    const offY = rect.top  - vp.top;
+    canvas.width  = vp.width;
+    canvas.height = vp.height;
+
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const toCanvasX = nx => offX + nx * rect.width;
+    const toCanvasY = ny => offY + ny * rect.height;
+
+    // Motion region — dashed amber rectangle (shows where something moved)
+    if (motionBox) {
+      const ageMs = motionAt ? Date.now() - new Date(motionAt).getTime() : 0;
+      const alpha = Math.max(0.25, 1 - ageMs / 600000); // fade over 10 min
+      const x  = toCanvasX(motionBox.x_min);
+      const y  = toCanvasY(motionBox.y_min);
+      const w  = toCanvasX(motionBox.x_max) - x;
+      const h  = toCanvasY(motionBox.y_max) - y;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth   = 2;
+      ctx.setLineDash([5, 4]);
+      ctx.strokeRect(x, y, w, h);
+      ctx.restore();
+    }
+
+    // Confirmed detection — solid X + circle at center
+    if (box) {
+      const cx = toCanvasX((box.x_min + box.x_max) / 2);
+      const cy = toCanvasY((box.y_min + box.y_max) / 2);
+      const r  = Math.max(12, Math.min(rect.width, rect.height) * 0.04);
+      const arm = r * 0.65;
+
+      // Glow halo
+      ctx.save();
+      ctx.shadowColor = '#22c55e';
+      ctx.shadowBlur  = 12;
+      ctx.strokeStyle = '#22c55e';
+      ctx.lineWidth   = 3;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+      // X arms
+      ctx.beginPath();
+      ctx.moveTo(cx - arm, cy - arm); ctx.lineTo(cx + arm, cy + arm);
+      ctx.moveTo(cx + arm, cy - arm); ctx.lineTo(cx - arm, cy + arm);
+      ctx.stroke();
+      ctx.restore();
+
+      // Label
+      ctx.save();
+      ctx.font         = 'bold 11px monospace';
+      ctx.fillStyle    = '#22c55e';
+      ctx.shadowColor  = '#000';
+      ctx.shadowBlur   = 4;
+      ctx.fillText('Gus ✓', cx + r + 4, cy + 4);
+      ctx.restore();
+    }
+  }
+
+  async function loadGusStatus() {
+    try {
+      const r = await fetch('/api/guscam/status');
+      if (!r.ok) return;
+      const d = await r.json();
+      const dot = document.getElementById('gusStatusDot');
+      const txt = document.getElementById('gusStatusText');
+      const conf = document.getElementById('gusConfidence');
+      const lbl = document.getElementById('gusCamLabel');
+      if (!d.enabled) {
+        dot.style.background = 'var(--muted)';
+        txt.textContent = 'Gus Cam disabled — enable in settings below';
+        conf.textContent = '';
+        lbl.textContent = '';
+      } else if (d.active) {
+        dot.style.background = 'var(--ok)';
+        txt.textContent = 'Gus is on ' + (d.camera_name || d.camera_id);
+        conf.textContent = Math.round(d.confidence * 100) + '% confidence';
+        lbl.textContent = '· ' + (d.camera_name || d.camera_id);
+      } else if (d.last_seen && !d.last_seen.startsWith('0001-')) {
+        dot.style.background = 'var(--warn)';
+        const seenAt = new Date(d.last_seen);
+        const ago = (typeof timeAgo === 'function') ? timeAgo(seenAt) : seenAt.toLocaleTimeString();
+        txt.textContent = 'Last seen ' + ago + ' on ' + (d.camera_name || d.camera_id || 'unknown camera');
+        conf.textContent = '';
+        lbl.textContent = '';
+      } else {
+        dot.style.background = 'var(--muted)';
+        txt.textContent = 'Gus not spotted yet — watching cameras...';
+        conf.textContent = '';
+        lbl.textContent = '';
+      }
+      gcSelectedCameraIDs = Array.isArray(d.camera_ids) ? d.camera_ids.slice() : [];
+      // Apply queued toggle intent before marking initialized
+      const enabledFromServer = !!d.enabled;
+      const resolvedEnabled = gcPendingEnabled !== null ? gcPendingEnabled : enabledFromServer;
+      gcPendingEnabled = null;
+      setGcToggle(resolvedEnabled);
+      gcInitialized = true;
+      // If the user clicked toggle before we loaded, save their intent now (with real camera_ids)
+      if (resolvedEnabled !== enabledFromServer) {
+        saveGusConfig();
+      }
+      renderGcCameraChips();
+      drawOverlay(d.last_box, d.last_motion_box, d.last_motion_at);
+      if (d.pet_description) {
+        const gcDescription = document.getElementById('gcDescription');
+        if (gcDescription) gcDescription.value = d.pet_description;
+      }
+      if (d.detection_interval_sec) {
+        const gcInterval = document.getElementById('gcInterval');
+        if (gcInterval) gcInterval.value = d.detection_interval_sec;
+      }
+      // Sidecar status panel
+      renderSidecarStatus(d.sidecar_status || 'unknown');
+    } catch(e) { console.error('[guscam] loadGusStatus error:', e); }
+  }
+
+  function renderSidecarStatus(st) {
+    const card   = document.getElementById('gcSidecarCard');
+    const dot    = document.getElementById('gcSidecarDot');
+    const badge  = document.getElementById('gcSidecarBadge');
+    const startBtn = document.getElementById('gcSidecarStartBtn');
+    const install  = document.getElementById('gcSidecarInstall');
+    if (!card) return;
+    card.style.display = 'block';
+    const cfg = {
+      running:       { dot: 'var(--ok)',   label: 'Running',       btn: false, install: false },
+      stopped:       { dot: 'var(--warn)', label: 'Stopped',       btn: true,  install: false },
+      not_installed: { dot: 'var(--err-color)', label: 'Not installed', btn: false, install: true },
+      unknown:       { dot: 'var(--muted)', label: 'Unknown',       btn: false, install: false },
+    }[st] || { dot: 'var(--muted)', label: st, btn: false, install: false };
+    dot.style.background     = cfg.dot;
+    badge.textContent        = cfg.label;
+    startBtn.style.display   = cfg.btn     ? 'inline-block' : 'none';
+    install.style.display    = cfg.install ? 'block'        : 'none';
+  }
+
+  async function startGusSidecar() {
+    const btn = document.getElementById('gcSidecarStartBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+    try {
+      const r = await fetch('/api/guscam/sidecar/start', { method: 'POST' });
+      const d = await r.json();
+      if (d.success) {
+        setTimeout(loadGusStatus, 2500); // give it a moment to come up
+      } else {
+        alert('Could not start sidecar: ' + (d.error || 'unknown error'));
+      }
+    } catch(e) {
+      alert('Request failed: ' + e);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Start Sidecar'; }
+    }
+  }
+
+  function copyInstallCmds() {
+    const cmds = `cd ~/goprojects/unifi-smash-deck\npython3 -m venv sidecar/.venv\nsource sidecar/.venv/bin/activate\npip install -r sidecar/requirements.txt`;
+    navigator.clipboard.writeText(cmds).then(() => {
+      const btn = event.target;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+    });
+  }
+
+  async function loadGusLog() {
+    try {
+      const r = await fetch('/api/guscam/log?limit=30');
+      if (!r.ok) return;
+      const entries = await r.json();
+      const list = document.getElementById('gusLogList');
+      const count = document.getElementById('gusLogCount');
+      if (!entries || entries.length === 0) {
+        list.innerHTML = '<div class="muted" style="font-size:12px;padding:12px;text-align:center;">No sightings logged yet</div>';
+        count.textContent = '';
+        return;
+      }
+      count.textContent = entries.length + ' entries';
+      list.innerHTML = entries.map(e => {
+        const t = new Date(e.at);
+        const ago = timeAgo(t);
+        const pct = Math.round(e.confidence * 100);
+        return '<div style="display:flex;gap:8px;align-items:flex-start;padding:8px 4px;border-bottom:1px solid var(--border);">'
+          + '<img src="/api/guscam/log/' + gcEsc(e.id) + '/image" alt="Gus" loading="lazy"'
+          + ' style="width:64px;height:48px;object-fit:cover;border-radius:5px;flex-shrink:0;background:var(--bg);"'
+          + ' onerror="this.style.display=\'none\';" />'
+          + '<div style="min-width:0;">'
+          + '<div style="font-size:11px;font-weight:600;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + gcEsc(e.camera_name || e.camera_id) + '</div>'
+          + '<div style="font-size:11px;color:var(--muted);">' + ago + '</div>'
+          + '<div style="font-size:11px;color:var(--ok);">' + pct + '% confidence</div>'
+          + '</div>'
+          + '</div>';
+      }).join('');
+    } catch(e) { /* ignore */ }
+  }
+
+  async function refreshGcCameras() {
+    const btn = document.getElementById('gcCamRefreshBtn');
+    const msg = document.getElementById('gcCamLoadMsg');
+    const noMsg = document.getElementById('gcNoCamsMsg');
+    if (btn) btn.disabled = true;
+    if (msg) msg.style.display = 'inline';
+    try {
+      const r = await fetch('/api/cameras');
+      if (!r.ok) throw new Error('fetch failed');
+      const d = await r.json();
+      gcAvailableCameras = (d.data?.cameras || d.data || d || []).filter(c => c.id && c.name);
+      renderGcCameraChips();
+      if (noMsg) noMsg.style.display = gcAvailableCameras.length === 0 ? 'block' : 'none';
+    } catch(e) {
+      if (noMsg) noMsg.style.display = 'block';
+    } finally {
+      if (btn) btn.disabled = false;
+      if (msg) msg.style.display = 'none';
+    }
+  }
+
+  function addGcCamera(id) {
+    if (!id || gcSelectedCameraIDs.includes(id)) return;
+    gcSelectedCameraIDs.push(id);
+    renderGcCameraChips();
+    saveGusConfig();
+  }
+
+  function removeGcCamera(id) {
+    gcSelectedCameraIDs = gcSelectedCameraIDs.filter(x => x !== id);
+    renderGcCameraChips();
+    saveGusConfig();
+  }
+
+  function renderGcCameraChips() {
+    const chips = document.getElementById('gcSelectedCams');
+    const dropdown = document.getElementById('gcCamDropdown');
+    if (!chips || !dropdown) return;
+
+    // Render chips for selected cameras
+    chips.innerHTML = gcSelectedCameraIDs.map(id => {
+      const cam = gcAvailableCameras.find(c => c.id === id);
+      const label = cam ? cam.name : id;
+      return `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px 3px 10px;background:rgba(0,111,255,0.15);border:1px solid rgba(0,111,255,0.35);border-radius:999px;font-size:12px;color:var(--text);">
+        ${gcEsc(label)}
+        <button onclick="removeGcCamera('${gcEsc(id)}')" title="Remove"
+          style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0 0 0 2px;">&times;</button>
+      </span>`;
+    }).join('');
+
+    if (gcSelectedCameraIDs.length === 0) {
+      chips.innerHTML = '<span style="font-size:11px;color:var(--muted);padding:4px 0;">No cameras selected</span>';
+    }
+
+    // Rebuild dropdown — only show cameras not already selected
+    const available = gcAvailableCameras.filter(c => !gcSelectedCameraIDs.includes(c.id));
+    dropdown.innerHTML = `<option value="">${available.length ? '+ Add a camera…' : '— all cameras added —'}</option>` +
+      available.map(c => `<option value="${gcEsc(c.id)}">${gcEsc(c.name)}${c.type ? ' · ' + gcEsc(c.type) : ''}</option>`).join('');
+    dropdown.disabled = available.length === 0;
+  }
+
+  async function saveGusConfig() {
+    if (!gcInitialized) return; // never send camera_ids:[] before server state is loaded
+    const enabled = document.getElementById('gcEnabled').checked;
+    const interval = parseInt(document.getElementById('gcInterval').value, 10) || 3;
+    const description = document.getElementById('gcDescription').value.trim() || 'a dog';
+    const camera_ids = gcSelectedCameraIDs.slice();
+
+    try {
+      const r = await fetch('/api/guscam/config', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ enabled, detection_interval_sec: interval, pet_description: description, camera_ids }),
+      });
+      if (r.ok) {
+        const st = document.getElementById('gcSaveStatus');
+        st.style.display = 'inline';
+        setTimeout(() => { st.style.display = 'none'; }, 2000);
+        loadGusStatus();
+      }
+    } catch(e) { /* ignore */ }
+  }
   </script>
 
   <!-- ══════════════════════════════════════════════════════════════════════ -->
@@ -5206,6 +6211,237 @@
           <td>${typeLabel}</td>
         </tr>`;
       }).join('');
+    }
+
+  })();
+  </script>
+
+  <!-- ── VLAN Audit Script ─────────────────────────────────────────────────── -->
+  <script>
+  (function () {
+    'use strict';
+
+    const esc = s => String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    const $ = id => document.getElementById(id);
+
+    const sev = {
+      critical: { color: 'var(--err-color)',  bg: 'rgba(255,107,107,0.10)', icon: '🔴' },
+      warning:  { color: 'var(--warn)',        bg: 'rgba(245,166,35,0.10)',  icon: '🟡' },
+      info:     { color: 'var(--accent)',      bg: 'rgba(0,111,255,0.08)',   icon: '🔵' },
+      ok:       { color: 'var(--ok)',          bg: 'rgba(61,219,165,0.08)',  icon: '🟢' },
+    };
+
+    window.vaAuditCache = null;
+
+    $('vaRunBtn').onclick = () => {
+      window.vaAuditCache = null;
+      window.vaRunAudit().catch(console.error);
+    };
+
+    window.vaRunAudit = async function () {
+      $('vaRunBtn').disabled = true;
+      $('vaStatus').textContent = 'Running…';
+      $('vaEmptyState').style.display = 'none';
+      try {
+        const r = await fetch('/api/vlan-audit');
+        const j = await r.json();
+        if (!j.success) throw new Error(j.error || 'request failed');
+        window.vaAuditCache = j.data;
+        $('vaRunAt').textContent = 'Last run: ' + new Date(j.data.run_at).toLocaleTimeString();
+        $('vaStatus').textContent = '';
+        renderVLANAudit(j.data);
+      } catch (e) {
+        $('vaStatus').textContent = 'Error: ' + e.message;
+        console.error('[VLAN Audit]', e);
+        $('vaEmptyState').style.display = '';
+      } finally {
+        $('vaRunBtn').disabled = false;
+      }
+    };
+
+    function renderVLANAudit(d) {
+      const findings  = d.findings   || [];
+      const topology  = d.ap_topology || [];
+
+      // ── Overall badge ──────────────────────────────────────────────────
+      const issueFindings = findings.filter(f => f.severity !== 'ok');
+      let overallColor, overallText;
+      if (issueFindings.some(f => f.severity === 'critical')) {
+        overallColor = 'rgba(255,107,107,0.18);color:var(--err-color)';
+        overallText = '⛔ Issues Found';
+      } else if (issueFindings.some(f => f.severity === 'warning')) {
+        overallColor = 'rgba(245,166,35,0.18);color:var(--warn)';
+        overallText = '⚠️ Warnings';
+      } else {
+        overallColor = 'rgba(61,219,165,0.18);color:var(--ok)';
+        overallText = '✅ All Clear';
+      }
+      $('vaOverallBadge').innerHTML = `<span style="padding:3px 12px;border-radius:999px;background:${overallColor};font-size:13px;font-weight:700;">${overallText}</span>`;
+      $('vaSummaryRow').style.display = 'flex';
+
+      // Update tab badge
+      const tabBadge = $('vlanAuditBadge');
+      if (issueFindings.length > 0) {
+        tabBadge.style.display = '';
+        if (issueFindings.some(f => f.severity === 'critical')) {
+          tabBadge.style.cssText += 'background:var(--err-color);color:#fff;';
+        } else {
+          tabBadge.style.cssText += 'background:var(--warn);color:#fff;';
+        }
+        tabBadge.textContent = issueFindings.length;
+      } else {
+        tabBadge.style.display = 'none';
+      }
+
+      // ── Findings cards ─────────────────────────────────────────────────
+      const fg = $('vaFindingsGrid');
+      fg.innerHTML = '';
+      if (issueFindings.length > 0) {
+        $('vaFindingsSection').style.display = '';
+        issueFindings.forEach(f => {
+          const cfg = sev[f.severity] || sev.info;
+          const card = document.createElement('div');
+          card.style.cssText = `background:var(--card);border:1px solid var(--border);border-left:4px solid ${cfg.color};border-radius:10px;padding:14px 16px;`;
+          card.innerHTML = `
+            <div style="display:flex;align-items:flex-start;gap:8px;">
+              <span style="font-size:17px;flex-shrink:0;">${cfg.icon}</span>
+              <div>
+                <div style="font-weight:600;font-size:13px;margin-bottom:5px;">${esc(f.title)}</div>
+                <div style="font-size:12px;color:var(--muted);line-height:1.55;">${esc(f.detail)}</div>
+              </div>
+            </div>`;
+          fg.appendChild(card);
+        });
+      } else {
+        $('vaFindingsSection').style.display = 'none';
+      }
+
+      // ── AP Topology table ──────────────────────────────────────────────
+      if (topology.length === 0) {
+        $('vaTopoSection').style.display = 'none';
+        $('vaEmptyState').style.display = '';
+        return;
+      }
+      $('vaTopoSection').style.display = '';
+
+      // Collect all unique VLANs (by network_id) across all APs
+      const vlanMap = new Map(); // network_id → { vlan_name, vlan_id, ssids }
+      topology.forEach(ap => {
+        (ap.vlan_checks || []).forEach(vc => {
+          if (!vlanMap.has(vc.network_id)) {
+            vlanMap.set(vc.network_id, {
+              name: vc.vlan_name,
+              id:   vc.vlan_id,
+              ssids: vc.ssids,
+            });
+          }
+        });
+      });
+      const vlanList = [...vlanMap.entries()]; // [[netId, {name,id,ssids}], ...]
+
+      // Build header row with one th per VLAN
+      const headRow = document.querySelector('#vaTopoTable thead tr');
+      // Remove any previously added VLAN columns (keep first 4 static ths)
+      while (headRow.children.length > 4) headRow.removeChild(headRow.lastChild);
+      vlanList.forEach(([, v]) => {
+        const th = document.createElement('th');
+        th.style.cssText = 'white-space:nowrap;font-size:11px;text-align:center;';
+        th.innerHTML = `<div style="font-weight:700;">${esc(v.name)}</div><div style="color:var(--muted);font-weight:400;">VLAN ${v.id || '—'}</div><div style="color:var(--muted);font-size:10px;">${esc(v.ssids)}</div>`;
+        headRow.appendChild(th);
+      });
+
+      // Build body rows
+      const tbody = $('vaTopBody');
+      tbody.innerHTML = '';
+      topology.forEach(ap => {
+        const apVlanIdx = new Map();
+        (ap.vlan_checks || []).forEach(vc => apVlanIdx.set(vc.network_id, vc));
+
+        const row = document.createElement('tr');
+        const sevCfg = sev[ap.status] || sev.ok;
+
+        // Status dot + AP name
+        row.innerHTML = `
+          <td style="white-space:nowrap;">
+            <span style="color:${sevCfg.color};margin-right:5px;" title="${esc(ap.status)}">${sevCfg.icon}</span>
+            <strong>${esc(ap.ap_name)}</strong>
+            <div style="font-size:10px;color:var(--muted);">${esc(ap.ap_mac)}</div>
+          </td>
+          <td style="white-space:nowrap;">${esc(ap.uplink_switch || '—')}</td>
+          <td style="text-align:center;">${ap.uplink_port || '—'}</td>
+          <td><span style="font-size:11px;padding:2px 7px;border-radius:4px;background:var(--card-inner,rgba(255,255,255,0.06));border:1px solid var(--border);">${esc(ap.port_mode)}</span></td>`;
+
+        vlanList.forEach(([netId]) => {
+          const vc = apVlanIdx.get(netId);
+          const td = document.createElement('td');
+          td.style.cssText = 'text-align:center;padding:6px 4px;';
+          if (!vc) {
+            // VLAN not checked for this AP (no SSID on this AP for this VLAN)
+            td.innerHTML = `<span style="display:inline-block;width:22px;height:22px;border-radius:4px;background:var(--border);opacity:0.4;" title="No SSID for this VLAN on this AP"></span>`;
+          } else if (vc.trunked && vc.is_native) {
+            td.innerHTML = `<span style="display:inline-block;width:22px;height:22px;border-radius:4px;background:var(--ok);" title="Native (untagged) — trunked ✅"></span>`;
+          } else if (vc.trunked) {
+            td.innerHTML = `<span style="display:inline-block;width:22px;height:22px;border-radius:4px;background:rgba(61,219,165,0.45);" title="Tagged — trunked ✅"></span>`;
+          } else {
+            td.innerHTML = `<span style="display:inline-block;width:22px;height:22px;border-radius:4px;background:var(--err-color);" title="${esc(vc.problem || 'VLAN not trunked — roaming dead zone')}">
+              <svg viewBox="0 0 22 22" style="width:100%;height:100%;"><line x1="5" y1="5" x2="17" y2="17" stroke="#fff" stroke-width="2.5"/><line x1="17" y1="5" x2="5" y2="17" stroke="#fff" stroke-width="2.5"/></svg>
+            </span>`;
+          }
+          row.appendChild(td);
+        });
+        tbody.appendChild(row);
+      });
+
+      // ── Roaming matrix (only for multi-AP VLANs) ──────────────────────
+      // Determine which VLANs are broadcast on 2+ APs
+      const vlanAPCount = new Map();
+      topology.forEach(ap => {
+        (ap.vlan_checks || []).forEach(vc => {
+          if (!vlanAPCount.has(vc.network_id)) vlanAPCount.set(vc.network_id, []);
+          vlanAPCount.get(vc.network_id).push(ap.ap_name);
+        });
+      });
+      const roamVlans = [...vlanAPCount.entries()].filter(([,aps]) => aps.length >= 2);
+
+      if (roamVlans.length === 0) {
+        $('vaRoamSection').style.display = 'none';
+      } else {
+        $('vaRoamSection').style.display = '';
+        // Header: VLAN name columns
+        const rhead = $('vaRoamHead');
+        rhead.innerHTML = '<th style="white-space:nowrap;">Access Point</th>';
+        roamVlans.forEach(([netId]) => {
+          const v = vlanMap.get(netId) || {};
+          const th = document.createElement('th');
+          th.style.cssText = 'text-align:center;white-space:nowrap;font-size:11px;';
+          th.innerHTML = `<div>${esc(v.name || netId)}</div><div style="color:var(--muted);font-weight:400;">${esc(v.ssids || '')}</div>`;
+          rhead.appendChild(th);
+        });
+        // Rows: one per AP
+        const rbody = $('vaRoamBody');
+        rbody.innerHTML = '';
+        topology.forEach(ap => {
+          const apVlanIdx = new Map();
+          (ap.vlan_checks || []).forEach(vc => apVlanIdx.set(vc.network_id, vc));
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td style="white-space:nowrap;"><strong>${esc(ap.ap_name)}</strong></td>`;
+          roamVlans.forEach(([netId]) => {
+            const vc = apVlanIdx.get(netId);
+            const td = document.createElement('td');
+            td.style.cssText = 'text-align:center;';
+            if (!vc) {
+              // AP doesn't broadcast this SSID — gray
+              td.innerHTML = `<span style="font-size:16px;" title="SSID not broadcast here">—</span>`;
+            } else if (vc.trunked) {
+              td.innerHTML = `<span style="color:var(--ok);font-size:16px;" title="Reachable">✓</span>`;
+            } else {
+              td.innerHTML = `<span style="color:var(--err-color);font-size:16px;font-weight:700;" title="${esc(vc.problem || 'VLAN not trunked')}">✗</span>`;
+            }
+            tr.appendChild(td);
+          });
+          rbody.appendChild(tr);
+        });
+      }
     }
 
   })();
@@ -5941,6 +7177,555 @@
 
     connectSSE();
 
+  })();
+  </script>
+
+  <!-- ── IGMP Snooping & VLAN Labels ───────────────────────────────────────── -->
+  <script>
+  (function () {
+    'use strict';
+
+    const PURPOSE_OPTIONS = [
+      { value: '',           label: '— not set —' },
+      { value: 'iot',        label: '🏠 IoT Devices' },
+      { value: 'cameras',    label: '📷 Security Cameras' },
+      { value: 'media',      label: '🎬 Media / Entertainment' },
+      { value: 'trusted',    label: '🔑 Trusted / Personal' },
+      { value: 'work',       label: '💼 Work / Productivity' },
+      { value: 'management', label: '🛠️ Management / Admin' },
+      { value: 'guest',      label: '👥 Guest Network' },
+      { value: 'other',      label: '❓ Other' },
+    ];
+
+    const PURPOSE_LABELS = Object.fromEntries(PURPOSE_OPTIONS.map(o => [o.value, o.label]));
+
+    let igmpNetworkRows = [];   // [{network_id, network_name, vlan, ip_subnet, purpose}]
+    window.igmpLabelsLoaded = false;
+
+    function purposeSelect(networkId, current) {
+      const sel = document.createElement('select');
+      sel.dataset.networkId = networkId;
+      sel.style.cssText = 'font-size:12px;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:2px 4px;width:100%;max-width:220px;';
+      PURPOSE_OPTIONS.forEach(o => {
+        const opt = document.createElement('option');
+        opt.value = o.value;
+        opt.textContent = o.label;
+        if (o.value === current) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      return sel;
+    }
+
+    function renderLabelsTable(rows) {
+      const tbody = document.getElementById('igmpLabelsBody');
+      tbody.innerHTML = '';
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td style="padding:5px 8px;border-bottom:1px solid var(--border);font-weight:500;">${escHtml(row.network_name)}</td>
+          <td style="padding:5px 8px;border-bottom:1px solid var(--border);color:var(--muted);">${row.vlan || '—'}</td>
+          <td style="padding:5px 8px;border-bottom:1px solid var(--border);color:var(--muted);font-size:11px;">${escHtml(row.ip_subnet || '—')}</td>
+          <td style="padding:5px 8px;border-bottom:1px solid var(--border);"></td>
+        `;
+        tr.querySelector('td:last-child').appendChild(purposeSelect(row.network_id, row.purpose || ''));
+        tbody.appendChild(tr);
+      });
+    }
+
+    function escHtml(s) {
+      return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    async function igmpLoadLabels() {
+      window.igmpLabelsLoaded = true;
+      const r = await fetch('/api/vlan-labels');
+      const j = await r.json();
+      if (!j.success) { console.error('[igmp] load labels failed', j.error); return; }
+      igmpNetworkRows = j.data || [];
+      renderLabelsTable(igmpNetworkRows);
+      document.getElementById('igmpLabelsTable').style.display = '';
+      document.getElementById('igmpSaveLabelsBtn').style.display = '';
+    }
+    window.igmpLoadLabels = igmpLoadLabels;
+
+    document.getElementById('igmpLoadLabelsBtn').onclick = () => {
+      window.igmpLabelsLoaded = false;
+      igmpLoadLabels().catch(console.error);
+    };
+
+    document.getElementById('igmpSaveLabelsBtn').onclick = async () => {
+      const selects = document.querySelectorAll('#igmpLabelsBody select');
+      const labels = Array.from(selects)
+        .filter(s => s.value !== '')
+        .map(s => ({ network_id: s.dataset.networkId, purpose: s.value }));
+      const r = await fetch('/api/vlan-labels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(labels),
+      });
+      const j = await r.json();
+      if (!j.success) { alert('Save failed: ' + j.error); return; }
+      const saved = document.getElementById('igmpLabelsSaved');
+      saved.style.display = '';
+      setTimeout(() => { saved.style.display = 'none'; }, 3000);
+    };
+
+    // ── Report ──────────────────────────────────────────────────────────────
+
+    function statusColor(s) {
+      if (s === 'ok')   return 'var(--ok,#2e7d32)';
+      if (s === 'fail') return 'var(--danger,#e53935)';
+      return 'var(--warn,#e65100)';
+    }
+    function statusIcon(s) {
+      if (s === 'ok')   return '✅';
+      if (s === 'fail') return '❌';
+      return '⚠️';
+    }
+
+    function renderIGMPResults(data) {
+      const networks = data.networks || [];
+      document.getElementById('igmpRunAt').textContent =
+        'as of ' + new Date(data.run_at).toLocaleTimeString();
+
+      const container = document.getElementById('igmpChecks');
+      container.innerHTML = '';
+
+      networks.forEach(n => {
+        const igmpState = n.igmp_enabled ? 'ON' : 'OFF';
+        const recState  = n.recommend    ? 'ON' : 'OFF';
+        const purposeLabel = PURPOSE_LABELS[n.purpose] || '— not set —';
+
+        const card = document.createElement('div');
+        card.style.cssText = `background:var(--card);border:1px solid var(--border);border-left:3px solid ${statusColor(n.status)};border-radius:6px;padding:10px 14px;display:flex;gap:14px;align-items:flex-start;`;
+
+        let fixBtn = '';
+        if (n.fixable) {
+          const action = n.fix_action === 'enable' ? 'enable' : 'disable';
+          const label  = action === 'enable' ? 'Enable IGMP' : 'Disable IGMP';
+          fixBtn = `<button class="primary igmp-fix-btn" data-net-id="${escHtml(n.network_id)}" data-action="${action}" style="font-size:11px;padding:3px 10px;white-space:nowrap;flex-shrink:0;">${label}</button>`;
+        }
+
+        card.innerHTML = `
+          <div style="font-size:18px;padding-top:1px;">${statusIcon(n.status)}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;">
+              <strong style="font-size:13px;">${escHtml(n.network_name)}</strong>
+              ${n.vlan ? `<span style="font-size:11px;color:var(--muted);">VLAN ${n.vlan}</span>` : ''}
+              <span style="font-size:11px;color:var(--muted);">${purposeLabel}</span>
+            </div>
+            <div style="margin-top:4px;font-size:12px;display:flex;gap:16px;flex-wrap:wrap;">
+              <span>IGMP: <strong style="color:${n.igmp_enabled ? 'var(--ok,#2e7d32)' : 'var(--muted)'}">${igmpState}</strong></span>
+              <span>Recommended: <strong>${recState}</strong></span>
+            </div>
+            <div style="margin-top:5px;font-size:12px;color:var(--muted);">${escHtml(n.note)}</div>
+          </div>
+          ${fixBtn}
+        `;
+        container.appendChild(card);
+      });
+
+      // Wire fix buttons
+      container.querySelectorAll('.igmp-fix-btn').forEach(btn => {
+        btn.onclick = async () => {
+          btn.disabled = true;
+          btn.textContent = 'Applying…';
+          const r = await fetch(`/api/igmp/networks/${btn.dataset.netId}/${btn.dataset.action}`, { method: 'POST' });
+          const j = await r.json();
+          if (!j.success) { alert('Fix failed: ' + j.error); btn.disabled = false; btn.textContent = btn.dataset.action === 'enable' ? 'Enable IGMP' : 'Disable IGMP'; return; }
+          btn.textContent = '✓ Done';
+          setTimeout(() => igmpRunReport().catch(console.error), 800);
+        };
+      });
+
+      document.getElementById('igmpResults').style.display = '';
+    }
+
+    async function igmpRunReport() {
+      document.getElementById('igmpRunBtn').disabled = true;
+      document.getElementById('igmpRunning').style.display = '';
+      try {
+        const r = await fetch('/api/igmp/diagnose');
+        const j = await r.json();
+        if (!j.success) { alert('Report failed: ' + j.error); return; }
+        renderIGMPResults(j.data);
+      } finally {
+        document.getElementById('igmpRunBtn').disabled = false;
+        document.getElementById('igmpRunning').style.display = 'none';
+      }
+    }
+
+    document.getElementById('igmpRunBtn').onclick = () => igmpRunReport().catch(console.error);
+
+  })();
+
+  // ── Fleet / Drift / Capacity / RF / ISP tabs ──────────────────────────────
+  (function() {
+    // ── helpers ──────────────────────────────────────────────────────────────
+    function statCard(val, label, color) {
+      return `<div style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px 16px;text-align:center;">
+        <div style="font-size:22px;font-weight:700;color:${color||'var(--text)'};">${val}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:2px;">${label}</div>
+      </div>`;
+    }
+    function severityColor(s) {
+      if (s === 'critical') return 'var(--err,#ff6b6b)';
+      if (s === 'warn') return 'var(--warn,#f5a623)';
+      return 'var(--ok,#3ddba5)';
+    }
+    function pctBar(pct, color) {
+      const c = color || (pct > 85 ? 'var(--err,#ff6b6b)' : pct > 70 ? 'var(--warn,#f5a623)' : 'var(--ok,#3ddba5)');
+      return `<div style="background:var(--border);border-radius:4px;height:6px;width:100%;max-width:120px;display:inline-block;vertical-align:middle;">
+        <div style="background:${c};width:${Math.min(pct,100)}%;height:100%;border-radius:4px;"></div>
+      </div> <span style="font-size:11px;color:var(--muted);">${pct.toFixed(1)}%</span>`;
+    }
+
+    // ── populate site selectors ───────────────────────────────────────────
+    function populateSiteSelectors() {
+      fetch('/api/settings').then(r=>r.json()).then(j=>{
+        if (!j.success) return;
+        const sites = j.data?.sites || [];
+        ['drift-site-sel','capacity-site-sel','rf-site-sel'].forEach(id => {
+          const sel = document.getElementById(id);
+          if (!sel) return;
+          sel.innerHTML = '<option value="">— select site —</option>';
+          sites.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.id;
+            opt.textContent = s.name || s.host || s.id;
+            sel.appendChild(opt);
+          });
+          if (sites.length === 1) sel.value = sites[0].id;
+        });
+      }).catch(console.error);
+    }
+    populateSiteSelectors();
+
+    // ── Fleet tab ────────────────────────────────────────────────────────────
+    window.loadFleet = async function(force) {
+      if (!force && document.getElementById('fleet-body').dataset.loaded) return;
+      const stats = document.getElementById('fleet-stats');
+      const body = document.getElementById('fleet-body');
+      const ts = document.getElementById('fleet-ts');
+      body.innerHTML = '<span class="muted">Loading…</span>';
+      try {
+        const r = await fetch('/api/fleet/summary');
+        const j = await r.json();
+        if (!j.success) { body.innerHTML = `<span style="color:var(--err)">${j.error}</span>`; return; }
+        const d = j.data;
+        stats.innerHTML =
+          statCard(d.total_sites ?? 0, 'Total Sites', 'var(--text)') +
+          statCard(d.sites_ok ?? 0, 'Sites OK', 'var(--ok,#3ddba5)') +
+          statCard(d.sites_warn ?? 0, 'Sites Warn', 'var(--warn,#f5a623)') +
+          statCard(d.sites_critical ?? 0, 'Sites Critical', 'var(--err,#ff6b6b)') +
+          statCard(d.total_devices ?? 0, 'Total Devices', 'var(--text)') +
+          statCard(d.total_clients ?? 0, 'Total Clients', 'var(--accent,#006FFF)');
+        ts.textContent = d.last_poll_ts ? 'Last poll: ' + new Date(d.last_poll_ts*1000).toLocaleTimeString() : '';
+        body.innerHTML = '';
+        body.dataset.loaded = '1';
+      } catch(e) { body.innerHTML = `<span style="color:var(--err)">${e.message}</span>`; }
+    };
+
+    // ── Config Drift tab ─────────────────────────────────────────────────────
+    // Load gold standard form
+    async function loadDriftGold() {
+      const r = await fetch('/api/drift/gold');
+      const j = await r.json();
+      if (!j.success) return;
+      const g = j.data || {};
+      const checks = [
+        ['disable_auto_optimize', 'Enforce Auto-Optimize OFF'],
+        ['disable_fast_roaming', 'Enforce Fast Roaming OFF'],
+        ['require_wpa3', 'Require WPA3 (warn if WPA2-only)'],
+        ['disable_ssh_password', 'Require SSH Key-only (no password)'],
+        ['require_igmp', 'Require IGMP Snooping'],
+      ];
+      const form = document.getElementById('drift-gold-form');
+      form.innerHTML = checks.map(([key, label]) => `
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px 12px;">
+          <input type="checkbox" id="gold-${key}" ${g[key] ? 'checked' : ''} style="width:auto;margin:0;" />
+          <span style="font-size:13px;">${label}</span>
+        </label>`).join('') +
+        `<div style="background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px 12px;">
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px;">Max 2.4GHz Channel Width (0=any)</label>
+          <input type="number" id="gold-max_channel_width_2g" value="${g.max_channel_width_2g||0}" min="0" max="40" step="20" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:4px 8px;" />
+        </div>`;
+    }
+    loadDriftGold().catch(console.error);
+
+    window.saveDriftGold = async function() {
+      const keys = ['disable_auto_optimize','disable_fast_roaming','require_wpa3','disable_ssh_password','require_igmp'];
+      const body = {};
+      keys.forEach(k => { body[k] = document.getElementById('gold-'+k)?.checked || false; });
+      body.max_channel_width_2g = parseInt(document.getElementById('gold-max_channel_width_2g')?.value||0, 10);
+      const r = await fetch('/api/drift/gold', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      const j = await r.json();
+      if (!j.success) { alert('Save failed: '+j.error); return; }
+      const saved = document.getElementById('drift-gold-saved');
+      saved.style.display = '';
+      setTimeout(() => { saved.style.display = 'none'; }, 3000);
+    };
+
+    window.runDrift = async function() {
+      const siteID = document.getElementById('drift-site-sel').value;
+      if (!siteID) { alert('Select a site first.'); return; }
+      const running = document.getElementById('drift-running');
+      const scoreCard = document.getElementById('drift-score-card');
+      const checksEl = document.getElementById('drift-checks');
+      running.style.display = '';
+      scoreCard.style.display = 'none';
+      checksEl.innerHTML = '';
+      try {
+        const r = await fetch(`/api/drift/site?site_id=${encodeURIComponent(siteID)}`);
+        const j = await r.json();
+        if (!j.success) { checksEl.innerHTML = `<span style="color:var(--err)">${j.error}</span>`; return; }
+        const d = j.data;
+        const score = d.score ?? 0;
+        const scoreColor = score >= 80 ? 'var(--ok,#3ddba5)' : score >= 60 ? 'var(--warn,#f5a623)' : 'var(--err,#ff6b6b)';
+        document.getElementById('drift-score').innerHTML = `<span style="color:${scoreColor};">${score}</span><span style="font-size:18px;color:var(--muted);">/100</span>`;
+        document.getElementById('drift-score-meta').innerHTML =
+          `<div>${d.site_name||siteID}</div>
+           <div class="muted" style="font-size:11px;margin-top:4px;">${d.crit_count||0} critical &nbsp; ${d.warn_count||0} warnings &nbsp; analyzed ${new Date(d.analyzed_at).toLocaleTimeString()}</div>`;
+        scoreCard.style.display = '';
+        checksEl.innerHTML = (d.checks||[]).map(c => {
+          const color = severityColor(c.severity);
+          const icon = c.passed ? '✅' : (c.severity === 'critical' ? '🔴' : '⚠️');
+          return `<div style="background:var(--bg);border:1px solid var(--border);border-left:3px solid ${color};border-radius:6px;padding:10px 14px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:${c.suggestion?'6px':'0'};">
+              <span>${icon}</span>
+              <strong style="font-size:13px;">${c.check_name.replace(/_/g,' ')}</strong>
+              ${!c.passed ? `<span style="font-size:11px;color:${color};font-weight:600;text-transform:uppercase;">${c.severity}</span>` : ''}
+            </div>
+            ${c.description ? `<div style="font-size:12px;color:var(--text);margin-left:24px;">${c.description}</div>` : ''}
+            ${c.suggestion ? `<div style="font-size:11px;color:var(--muted);margin-left:24px;margin-top:4px;">💡 ${c.suggestion}</div>` : ''}
+          </div>`;
+        }).join('');
+      } catch(e) { checksEl.innerHTML = `<span style="color:var(--err)">${e.message}</span>`; }
+      finally { running.style.display = 'none'; }
+    };
+
+    // ── Capacity tab ─────────────────────────────────────────────────────────
+    window.runCapacity = async function() {
+      const siteID = document.getElementById('capacity-site-sel').value;
+      if (!siteID) { alert('Select a site first.'); return; }
+      const running = document.getElementById('capacity-running');
+      const body = document.getElementById('capacity-body');
+      running.style.display = '';
+      body.innerHTML = '';
+      try {
+        const r = await fetch(`/api/capacity/site?site_id=${encodeURIComponent(siteID)}`);
+        const j = await r.json();
+        if (!j.success) { body.innerHTML = `<span style="color:var(--err)">${j.error}</span>`; return; }
+        const d = j.data;
+        let html = '';
+        // PoE section
+        const poe = d.poe_report || d.PoEReport;
+        if (poe && poe.switches && poe.switches.length > 0) {
+          html += `<h4 style="margin:0 0 10px 0;">PoE Budget</h4>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;">
+            <thead><tr style="border-bottom:1px solid var(--border);">
+              <th style="padding:6px 8px;text-align:left;color:var(--muted);">Switch</th>
+              <th style="padding:6px 8px;text-align:right;color:var(--muted);">Draw</th>
+              <th style="padding:6px 8px;text-align:right;color:var(--muted);">Budget</th>
+              <th style="padding:6px 8px;text-align:left;color:var(--muted);">Usage</th>
+            </tr></thead><tbody>`;
+          poe.switches.forEach(sw => {
+            const atRisk = sw.at_risk || sw.AtRisk;
+            html += `<tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:6px 8px;">${sw.name||sw.Name} ${atRisk ? '<span style="color:var(--err);font-size:11px;">⚠ At Risk</span>' : ''}</td>
+              <td style="padding:6px 8px;text-align:right;">${(sw.draw_w||sw.DrawW||0).toFixed(1)}W</td>
+              <td style="padding:6px 8px;text-align:right;">${(sw.budget_w||sw.BudgetW||0).toFixed(1)}W</td>
+              <td style="padding:6px 8px;">${pctBar(sw.pct_used||sw.PctUsed||0)}</td>
+            </tr>
+            ${(sw.suggestion||sw.Suggestion) ? `<tr><td colspan="4" style="padding:2px 8px 8px 8px;font-size:11px;color:var(--muted);">💡 ${sw.suggestion||sw.Suggestion}</td></tr>` : ''}`;
+          });
+          html += '</tbody></table>';
+        }
+        // RAM section
+        const mem = d.memory_report || d.MemoryReport;
+        if (mem && mem.devices && mem.devices.length > 0) {
+          html += `<h4 style="margin:0 0 10px 0;">Memory Pressure</h4>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;">
+            <thead><tr style="border-bottom:1px solid var(--border);">
+              <th style="padding:6px 8px;text-align:left;color:var(--muted);">Device</th>
+              <th style="padding:6px 8px;text-align:left;color:var(--muted);">Model</th>
+              <th style="padding:6px 8px;text-align:left;color:var(--muted);">RAM</th>
+              <th style="padding:6px 8px;text-align:left;color:var(--muted);">Trend</th>
+            </tr></thead><tbody>`;
+          mem.devices.forEach(dev => {
+            const ram = dev.ram_pct||dev.RAMPct||0;
+            const trend = dev.trending||dev.Trending||'unknown';
+            const trendIcon = trend === 'rising' ? '📈' : trend === 'stable' ? '→' : '?';
+            html += `<tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:6px 8px;">${dev.name||dev.Name}</td>
+              <td style="padding:6px 8px;color:var(--muted);">${dev.model||dev.Model}</td>
+              <td style="padding:6px 8px;">${pctBar(ram)}</td>
+              <td style="padding:6px 8px;">${trendIcon} ${trend}</td>
+            </tr>
+            ${(dev.suggestion||dev.Suggestion) ? `<tr><td colspan="4" style="padding:2px 8px 8px 8px;font-size:11px;color:var(--muted);">💡 ${dev.suggestion||dev.Suggestion}</td></tr>` : ''}`;
+          });
+          html += '</tbody></table>';
+        }
+        if (!html) html = '<span class="muted">No PoE or memory data returned for this site.</span>';
+        body.innerHTML = html;
+      } catch(e) { body.innerHTML = `<span style="color:var(--err)">${e.message}</span>`; }
+      finally { running.style.display = 'none'; }
+    };
+
+    // ── RF Health tab ────────────────────────────────────────────────────────
+    window.runRFHealth = async function() {
+      const siteID = document.getElementById('rf-site-sel').value;
+      if (!siteID) { alert('Select a site first.'); return; }
+      const running = document.getElementById('rf-running');
+      const body = document.getElementById('rf-body');
+      running.style.display = '';
+      body.innerHTML = '';
+      try {
+        const r = await fetch(`/api/rf/site?site_id=${encodeURIComponent(siteID)}`);
+        const j = await r.json();
+        if (!j.success) { body.innerHTML = `<span style="color:var(--err)">${j.error}</span>`; return; }
+        const d = j.data;
+        const report = d.report || d;
+        const suggestions = d.suggestions || [];
+        let html = '';
+        // Summary stats
+        html += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:16px;">
+          ${statCard(report.dfs_ap_count||0, 'APs on DFS', 'var(--warn,#f5a623)')}
+          ${statCard(report.high_retry_count||0, 'High Retry APs', 'var(--err,#ff6b6b)')}
+          ${statCard(report.avg_satisfaction||0, 'Avg Satisfaction', 'var(--ok,#3ddba5)')}
+        </div>`;
+        // Suggestions
+        if (suggestions.length > 0) {
+          html += '<h4 style="margin:0 0 8px 0;">Flagged APs</h4>';
+          html += suggestions.map(s => {
+            const color = severityColor(s.severity||s.Severity);
+            return `<div style="background:var(--bg);border:1px solid var(--border);border-left:3px solid ${color};border-radius:6px;padding:10px 14px;margin-bottom:8px;">
+              <strong style="font-size:13px;">${s.name||s.Name}</strong>
+              <div style="font-size:12px;margin-top:4px;">${s.issue||s.Issue}</div>
+              ${(s.suggestion||s.Suggestion) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px;">💡 ${s.suggestion||s.Suggestion}</div>` : ''}
+            </div>`;
+          }).join('');
+        }
+        // AP table
+        const aps = report.aps || [];
+        if (aps.length > 0) {
+          html += `<h4 style="margin:8px 0;">All APs</h4>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead><tr style="border-bottom:1px solid var(--border);">
+              <th style="padding:6px 8px;text-align:left;color:var(--muted);">AP</th>
+              <th style="padding:6px 8px;text-align:right;color:var(--muted);">5GHz Ch</th>
+              <th style="padding:6px 8px;text-align:right;color:var(--muted);">2.4GHz Ch</th>
+              <th style="padding:6px 8px;text-align:right;color:var(--muted);">Tx Retry</th>
+              <th style="padding:6px 8px;text-align:right;color:var(--muted);">Satisfaction</th>
+            </tr></thead><tbody>`;
+          aps.forEach(ap => {
+            const dfs = ap.is_dfs_channel || ap.IsDFSChannel;
+            const retry = ap.tx_retry_pct || ap.TxRetryPct || 0;
+            const sat = ap.satisfaction || ap.Satisfaction || 0;
+            const ch5 = ap.channel_5g || ap.Channel5G || 0;
+            html += `<tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:6px 8px;">${ap.name||ap.Name} <span style="font-size:11px;color:var(--muted);">${ap.model||ap.Model||''}</span></td>
+              <td style="padding:6px 8px;text-align:right;">${ch5 ? (ch5 + (dfs ? ' <span style="color:var(--warn);">DFS</span>': '')) : '—'}</td>
+              <td style="padding:6px 8px;text-align:right;">${ap.channel_2g||ap.Channel2G||'—'}</td>
+              <td style="padding:6px 8px;text-align:right;${retry>10?'color:var(--err)':retry>5?'color:var(--warn)':''}">${retry.toFixed(1)}%</td>
+              <td style="padding:6px 8px;text-align:right;${sat<50?'color:var(--err)':sat<75?'color:var(--warn)':'color:var(--ok)'}">${sat||'—'}</td>
+            </tr>`;
+          });
+          html += '</tbody></table>';
+        }
+        if (!html) html = '<span class="muted">No AP data returned for this site.</span>';
+        body.innerHTML = html;
+      } catch(e) { body.innerHTML = `<span style="color:var(--err)">${e.message}</span>`; }
+      finally { running.style.display = 'none'; }
+    };
+
+    // ── ISP Performance tab ──────────────────────────────────────────────────
+    window.loadISP = async function(force) {
+      if (!force && document.getElementById('isp-body').dataset.loaded) return;
+      const days = document.getElementById('isp-days-sel').value || '30';
+      const body = document.getElementById('isp-body');
+      const ts = document.getElementById('isp-ts');
+      body.innerHTML = '<span class="muted">Loading…</span>';
+      try {
+        const [sumResp, statusResp] = await Promise.all([
+          fetch(`/api/isp/summary?days=${days}`),
+          fetch('/api/isp/status'),
+        ]);
+        const sumJ = await sumResp.json();
+        const statusJ = await statusResp.json();
+        let html = '';
+        // ISP summary table
+        const isps = sumJ.success ? (sumJ.data || []) : [];
+        if (isps.length > 0) {
+          html += `<h4 style="margin:0 0 10px 0;">ISP Summary (last ${days} days)</h4>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px;">
+            <thead><tr style="border-bottom:1px solid var(--border);">
+              <th style="padding:6px 8px;text-align:left;color:var(--muted);">ISP</th>
+              <th style="padding:6px 8px;text-align:right;color:var(--muted);">Sites</th>
+              <th style="padding:6px 8px;text-align:right;color:var(--muted);">Uptime</th>
+              <th style="padding:6px 8px;text-align:right;color:var(--muted);">Avg Latency</th>
+              <th style="padding:6px 8px;text-align:right;color:var(--muted);">Micro-drops</th>
+            </tr></thead><tbody>`;
+          isps.forEach(isp => {
+            const up = isp.uptime_pct || isp.UptimePct || 0;
+            const lat = isp.avg_latency_ms || isp.AvgLatencyMS || 0;
+            const drops = isp.micro_drops || isp.MicroDrops || 0;
+            html += `<tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:6px 8px;font-weight:500;">${isp.isp_label||isp.ISPLabel||'Unknown'}</td>
+              <td style="padding:6px 8px;text-align:right;">${isp.site_count||isp.SiteCount||0}</td>
+              <td style="padding:6px 8px;text-align:right;${up<99?'color:var(--warn)':''}">${up.toFixed(2)}%</td>
+              <td style="padding:6px 8px;text-align:right;${lat>50?'color:var(--warn)':''}">${lat.toFixed(0)}ms</td>
+              <td style="padding:6px 8px;text-align:right;${drops>0?'color:var(--warn)':''}">${drops}</td>
+            </tr>`;
+          });
+          html += '</tbody></table>';
+        } else if (!sumJ.success) {
+          html += `<div style="color:var(--muted);font-size:13px;margin-bottom:16px;">${sumJ.error || 'No ISP data yet — the background poller needs time to collect WAN metrics.'}</div>`;
+        }
+        // Per-site status
+        const sites = statusJ.success ? (statusJ.data || []) : [];
+        if (sites.length > 0) {
+          html += `<h4 style="margin:0 0 10px 0;">Current WAN Status</h4>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <thead><tr style="border-bottom:1px solid var(--border);">
+              <th style="padding:6px 8px;text-align:left;color:var(--muted);">Site</th>
+              <th style="padding:6px 8px;text-align:left;color:var(--muted);">ISP</th>
+              <th style="padding:6px 8px;text-align:right;color:var(--muted);">Status</th>
+              <th style="padding:6px 8px;text-align:right;color:var(--muted);">Latency</th>
+              <th style="padding:6px 8px;text-align:right;color:var(--muted);">Loss</th>
+            </tr></thead><tbody>`;
+          sites.forEach(s => {
+            const up = s.is_up || s.IsUp;
+            const lat = s.latency_ms || s.LatencyMS || 0;
+            const loss = s.loss_pct || s.LossPct || 0;
+            html += `<tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:6px 8px;">${s.site_name||s.SiteName||s.site_id||s.SiteID}</td>
+              <td style="padding:6px 8px;color:var(--muted);">${s.isp_label||s.ISPLabel||'—'}</td>
+              <td style="padding:6px 8px;text-align:right;"><span style="color:${up?'var(--ok)':'var(--err)'};">${up ? '● Up' : '● Down'}</span></td>
+              <td style="padding:6px 8px;text-align:right;">${lat.toFixed(0)}ms</td>
+              <td style="padding:6px 8px;text-align:right;${loss>0?'color:var(--warn)':''}">${loss.toFixed(1)}%</td>
+            </tr>`;
+          });
+          html += '</tbody></table>';
+        }
+        if (!html) html = '<span class="muted">No WAN data yet — the background poller collects WAN metrics every 15 minutes.</span>';
+        body.innerHTML = html;
+        ts.textContent = 'as of ' + new Date().toLocaleTimeString();
+        body.dataset.loaded = '1';
+      } catch(e) { body.innerHTML = `<span style="color:var(--err)">${e.message}</span>`; }
+    };
+
+    // Hook ISP days selector
+    document.getElementById('isp-days-sel').addEventListener('change', () => {
+      document.getElementById('isp-body').dataset.loaded = '';
+      loadISP(true).catch(console.error);
+    });
+
+    // Auto-load when tab is switched to
+    document.addEventListener('tab-changed', e => {
+      if (e.detail === 'fleet') loadFleet().catch(console.error);
+      if (e.detail === 'isp-perf') loadISP().catch(console.error);
+    });
   })();
   </script>
 
