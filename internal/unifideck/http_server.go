@@ -201,6 +201,7 @@ func (s *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}})
 }
 
+// handleFleetSummary returns a rolled-up online status across all polled sites.
 func (s *HTTPServer) handleFleetSummary(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
@@ -218,6 +219,7 @@ func (s *HTTPServer) handleFleetSummary(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: summary})
 }
 
+// handleSettings reads (GET), saves (POST), or tests (PUT) the app configuration.
 func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -305,6 +307,7 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleNetworks lists the UniFi networks/VLANs for the configured site.
 func (s *HTTPServer) handleNetworks(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
@@ -327,7 +330,7 @@ func (s *HTTPServer) handleNetworks(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"networks": nets, "configured": true}})
 }
 
-// handleNetworkSubroutes: POST /api/networks/{id}/enable, POST /api/networks/{id}/disable
+// handleNetworkSubroutes enables or disables a UniFi network by ID.
 func (s *HTTPServer) handleNetworkSubroutes(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/networks/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
@@ -375,6 +378,7 @@ func (s *HTTPServer) handleNetworkSubroutes(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+// handleClients lists all currently connected clients for the configured site.
 func (s *HTTPServer) handleClients(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
@@ -595,6 +599,7 @@ func (s *HTTPServer) handleSecuritySummary(w http.ResponseWriter, r *http.Reques
 	}})
 }
 
+// handleDevices lists the UniFi infrastructure devices for the configured site.
 func (s *HTTPServer) handleDevices(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
@@ -615,6 +620,7 @@ func (s *HTTPServer) handleDevices(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"devices": devices}})
 }
 
+// handleCameras lists the UniFi Protect cameras for the configured site.
 func (s *HTTPServer) handleCameras(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
@@ -742,7 +748,7 @@ func (s *HTTPServer) handleCameraLive(w http.ResponseWriter, r *http.Request, c 
 
 // ── Snapshot handlers ──────────────────────────────────────────────────────────
 
-// GET /api/snapshots — returns schedule config + all snapshots grouped by camera.
+// handleSnapshots returns the snapshot schedule config and all snapshots grouped by camera.
 func (s *HTTPServer) handleSnapshots(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
@@ -854,6 +860,7 @@ func (s *HTTPServer) handleSnapshotSubroutes(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// handleAutomations lists (GET) or creates (POST) automation rules.
 func (s *HTTPServer) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -886,6 +893,7 @@ func (s *HTTPServer) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleAutomationSubroutes runs (POST /{id}/run), updates (PUT), or deletes (DELETE) an automation.
 func (s *HTTPServer) handleAutomationSubroutes(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/api/automations/")
 	parts := strings.Split(strings.Trim(path, "/"), "/")
@@ -948,8 +956,7 @@ func (s *HTTPServer) handleAutomationSubroutes(w http.ResponseWriter, r *http.Re
 
 // ── Config Snapshot handlers ───────────────────────────────────────────────────
 
-// GET  /api/config-snapshots         → list all snapshots + schedule
-// POST /api/config-snapshots         → capture a new snapshot now
+// handleConfigSnapshots lists config snapshots with schedule (GET) or captures a new one now (POST).
 func (s *HTTPServer) handleConfigSnapshots(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -1096,7 +1103,7 @@ func (s *HTTPServer) handleCfgBackup(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
-// GET /api/audit — recent UniFi system events
+// handleAuditLog returns recent UniFi system audit events.
 func (s *HTTPServer) handleAuditLog(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
@@ -1128,6 +1135,7 @@ func (s *HTTPServer) handleAuditLog(w http.ResponseWriter, r *http.Request) {
 	}})
 }
 
+// handleLogs returns the most recent server log lines (default 200, max 5000).
 func (s *HTTPServer) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
