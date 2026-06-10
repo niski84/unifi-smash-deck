@@ -359,7 +359,7 @@ func parseMemAvailable(raw string) int64 {
 
 // ── HTTP handlers ─────────────────────────────────────────────────────────────
 
-// handleUDMWatchdog handles GET/POST /api/udm-watchdog.
+// handleUDMWatchdog reports status (GET) or starts, stops, or reconfigures (POST) the memory watchdog.
 func (s *HTTPServer) handleUDMWatchdog(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:

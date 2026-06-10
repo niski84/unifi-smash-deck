@@ -250,7 +250,7 @@ func RunFirewallAudit(ctx context.Context, c *UnifiClient) (*FirewallAuditReport
 	return report, nil
 }
 
-// handleFirewallAudit handles GET /api/firewall-audit.
+// handleFirewallAudit audits the firewall rules and returns a scored report.
 func (s *HTTPServer) handleFirewallAudit(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})

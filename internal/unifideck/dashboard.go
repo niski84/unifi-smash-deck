@@ -45,7 +45,7 @@ type AutoSummary struct {
 	NextRunAt *time.Time `json:"next_run_at,omitempty"`
 }
 
-// handleDashboard handles GET /api/dashboard.
+// handleDashboard returns an aggregated snapshot of watchdog, security, and client status.
 func (s *HTTPServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})

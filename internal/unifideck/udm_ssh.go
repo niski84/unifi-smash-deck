@@ -358,7 +358,7 @@ func AnalyzeUDMScan(scan *UDMProcessScan) []UDMFinding {
 	return findings
 }
 
-// handleUDMProcessScan handles GET /api/udm-process-scan.
+// handleUDMProcessScan scans running UDM processes over SSH and returns the findings.
 func (s *HTTPServer) handleUDMProcessScan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})

@@ -742,6 +742,7 @@ func BuildSwitchPortsResult(devices []rawDevice) *SwitchPortsResult {
 
 // ── HTTP handlers ─────────────────────────────────────────────────────────────
 
+// handleNetworkHealth runs a full network health check and returns the findings.
 func (s *HTTPServer) handleNetworkHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})

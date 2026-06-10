@@ -13,7 +13,7 @@ import (
 const udmSysPropsPath = "/usr/lib/unifi/data/system.properties"
 const udmBackupDir = "/data/unifideck-backups"
 
-// handleUDMSysConfig handles GET/POST /api/udm-sysconfig.
+// handleUDMSysConfig reads (GET) or edits/backs up (POST) the UDM system.properties file via SSH.
 func (s *HTTPServer) handleUDMSysConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 

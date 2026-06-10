@@ -233,7 +233,7 @@ func RunNetworkInsights(ctx context.Context, c *UnifiClient) (*NetworkInsightsRe
 	return report, nil
 }
 
-// handleNetworkInsights handles GET /api/network-insights.
+// handleNetworkInsights returns a graded report of network findings and recommendations.
 func (s *HTTPServer) handleNetworkInsights(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})

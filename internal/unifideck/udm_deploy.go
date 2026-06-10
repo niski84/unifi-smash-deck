@@ -205,6 +205,7 @@ func sshBaseArgs(cfg AppConfig) []string {
 
 // ── HTTP handlers ─────────────────────────────────────────────────────────────
 
+// handleUDMDeploy reports (GET) or deploys/undeploys (POST) the watchdog on the UDM via SSH.
 func (s *HTTPServer) handleUDMDeploy(w http.ResponseWriter, r *http.Request) {
 	cfg := s.snapshotCfg()
 	if cfg.SSHHost == "" {
