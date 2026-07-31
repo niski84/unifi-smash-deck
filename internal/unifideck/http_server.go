@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,7 +40,16 @@ type HTTPServer struct {
 	honeypotSrv      *HoneypotServer
 	sigUpdater       *SignatureUpdater
 	watchdog         *UDMWatchdog
+	clientBrake      *ClientBrake
 	fleetDB          *FleetDB
+
+	// conntrack-derived per-device rates (real throughput for EVERY device incl. WiFi,
+	// where UniFi's per-client counters are stale). Background poller diffs snapshots.
+	connMu    sync.Mutex
+	connRates map[string][2]float64 // ip -> {upBps, downBps}
+	connPrev  map[string][2]float64 // ip -> cumulative {up, down} bytes
+	connPrevT time.Time
+	connOnce  sync.Once
 }
 
 func NewHTTPServer(cfg AppConfig) *HTTPServer {
@@ -73,6 +85,8 @@ func NewHTTPServer(cfg AppConfig) *HTTPServer {
 		fleetDB:        nil,
 	}
 	s.watchdog = NewUDMWatchdog(watchdogCfgPath, s.snapshotCfg)
+	brakeCfgPath := filepath.Join(DataDir(), "client-brake.json")
+	s.clientBrake = NewClientBrake(brakeCfgPath, s.snapshotCfg)
 	s.scheduler = NewAutomationScheduler(s.store, s.logger, s.unifiClient)
 	s.snapScheduler = NewSnapshotScheduler(snapStore, logger, s.unifiClient)
 	s.cfgSnapScheduler = NewConfigSnapshotScheduler(cfgSnapStore, logger, s.unifiClient, s.snapshotCfg)
@@ -80,6 +94,9 @@ func NewHTTPServer(cfg AppConfig) *HTTPServer {
 	log.Printf("[unifideck] snapshots dir   : %s (%d stored)", filepath.Join(DataDir(), "snapshots"), snapStore.Count())
 	log.Printf("[unifideck] config snapshots: %s (%d stored)", filepath.Join(DataDir(), "config-snapshots"), cfgSnapStore.Count())
 	log.Printf("[unifideck] activity log    : %s", logPath)
+	// Warm the conntrack rate poller at BOOT so per-device (incl. WiFi) rates are ready
+	// before the first page load — no more "wait minutes for the animation to appear".
+	s.connOnce.Do(func() { go s.startConnPoller() })
 	return s
 }
 
@@ -141,6 +158,7 @@ func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("/api/clients/dismiss", s.handleClientsDismiss)
 	mux.HandleFunc("/api/clients/block", s.handleClientBlock)
 	mux.HandleFunc("/api/security/events", s.handleSecurityEvents)
+	mux.HandleFunc("/api/security/status", s.handleSecurityStatus)
 	mux.HandleFunc("/api/security/summary", s.handleSecuritySummary)
 	mux.HandleFunc("/api/security/test", s.handleSecurityTest)
 	mux.HandleFunc("/api/security/signatures", s.handleSecuritySignatures)
@@ -170,25 +188,485 @@ func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("/api/isp/summary", s.handleISPSummary)
 	mux.HandleFunc("/api/isp/status", s.handleISPStatus)
 	mux.HandleFunc("/api/isp/history", s.handleISPHistory)
+	mux.HandleFunc("/api/isp/traffic", s.handleISPTraffic)
+	mux.HandleFunc("/api/isp/traffic/flow-audit", s.handleISPFlowAudit)
+	mux.HandleFunc("/api/isp/traffic/attribution", s.handleISPTrafficAttribution)
 	s.registerUDMRoutes(mux)
 
 	// Auto-start watchdog if it was previously enabled.
 	if s.watchdog.Status().Config.Enabled {
 		_ = s.watchdog.Start()
 	}
+	// Auto-start upload brake if it was previously enabled.
+	if s.clientBrake.Status().Config.Enabled {
+		_ = s.clientBrake.Start()
+	}
 
+	mux.HandleFunc("/api/topology", s.handleTopology)
+	mux.HandleFunc("/api/topology/stream", s.handleTopologyStream)
+	mux.HandleFunc("/api/flows", s.handleFlows)
 	mux.Handle("/", http.FileServer(http.FS(webFS)))
-	return mux
+	return corsMiddleware(mux)
+}
+
+// corsMiddleware adds permissive CORS headers so the topology viz can be opened from any origin.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// handleTopology returns live devices + clients in one call, purpose-built for the 3D topology viz.
+func (s *HTTPServer) handleTopology(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	c := s.unifiClient()
+	if !c.IsConfigured() {
+		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
+			"devices": []any{}, "clients": []any{}, "configured": false,
+		}})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	data, err := s.buildTopologyData(ctx, c)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: data})
+}
+
+// handleFlows SSHes to the UDM, runs conntrack, and returns every active flow whose
+// DESTINATION is a public/external IP — i.e. a LAN device talking to the internet.
+// This is the foundation for "suspicious IoT": the viz maps src → node and flags
+// devices (especially on the IoT VLAN) reaching unexpected external hosts.
+func (s *HTTPServer) handleFlows(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+	out, err := s.fetchConntrack(ctx)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	flows := parseExternalFlows(out)
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"flows": flows, "count": len(flows)}})
+}
+
+// fetchConntrack SSHes to the UDM and returns `conntrack -L` output (every active flow
+// with per-connection byte counts). Shared by the external-flow endpoint and the
+// per-device rate poller.
+func (s *HTTPServer) fetchConntrack(ctx context.Context) (string, error) {
+	cfg := s.snapshotCfg()
+	// SSH and the Network API do not necessarily use the same address. In this
+	// setup the API host may be a controller alias while SSH is pinned to the
+	// UDM's management address. Using UnifiHost here made /api/flows fail after
+	// reboots or network readdressing even though the configured SSH connection
+	// worked.
+	host := cfg.SSHHost
+	if host == "" {
+		host = strings.Split(strings.TrimPrefix(strings.TrimPrefix(cfg.UnifiHost, "https://"), "http://"), ":")[0]
+	}
+	if host == "" {
+		return "", fmt.Errorf("UDM SSH host not configured")
+	}
+	key := cfg.SSHKeyPath
+	if key == "" {
+		key = filepath.Join(os.Getenv("HOME"), ".ssh", "id_ed25519")
+	}
+	port := cfg.SSHPort
+	if port == "" {
+		port = "22"
+	}
+	out, err := exec.CommandContext(ctx, "ssh", "-i", key, "-p", port,
+		"-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=7", "-o", "BatchMode=yes",
+		"root@"+host, "conntrack -L 2>/dev/null").Output()
+	if err != nil {
+		return "", fmt.Errorf("ssh/conntrack: %w", err)
+	}
+	return string(out), nil
+}
+
+// parseConntrackCumulative sums per-device cumulative up/down bytes from conntrack.
+// Each entry has an original direction (src→dst, first bytes=) and a reply (second bytes=).
+// For the original src: up=orig, down=reply. For the original dst: up=reply, down=orig.
+func parseConntrackCumulative(out string) map[string][2]float64 {
+	cum := map[string][2]float64{}
+	add := func(ip string, up, down float64) {
+		if ip == "" || !isPrivateIP(ip) {
+			return
+		}
+		v := cum[ip]
+		v[0] += up
+		v[1] += down
+		cum[ip] = v
+	}
+	for _, line := range strings.Split(out, "\n") {
+		var os, od string
+		var ob, rb float64
+		srcN, dstN, byteN := 0, 0, 0
+		for _, tok := range strings.Fields(line) {
+			switch {
+			case strings.HasPrefix(tok, "src="):
+				if srcN == 0 {
+					os = tok[4:]
+				}
+				srcN++
+			case strings.HasPrefix(tok, "dst="):
+				if dstN == 0 {
+					od = tok[4:]
+				}
+				dstN++
+			case strings.HasPrefix(tok, "bytes="):
+				v, _ := strconv.ParseFloat(tok[6:], 64)
+				if byteN == 0 {
+					ob = v
+				} else if byteN == 1 {
+					rb = v
+				}
+				byteN++
+			}
+		}
+		add(os, ob, rb)
+		add(od, rb, ob)
+	}
+	return cum
+}
+
+// startConnPoller refreshes per-device conntrack rates every 6s in the background.
+func (s *HTTPServer) startConnPoller() {
+	tick := func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+		out, err := s.fetchConntrack(ctx)
+		if err != nil {
+			return
+		}
+		cum := parseConntrackCumulative(out)
+		now := time.Now()
+		s.connMu.Lock()
+		rates := map[string][2]float64{}
+		if !s.connPrevT.IsZero() {
+			if dt := now.Sub(s.connPrevT).Seconds(); dt > 0.5 {
+				for ip, c := range cum {
+					p := s.connPrev[ip]
+					up, down := (c[0]-p[0])/dt, (c[1]-p[1])/dt
+					if up < 0 {
+						up = 0
+					}
+					if down < 0 {
+						down = 0
+					}
+					rates[ip] = [2]float64{up, down}
+				}
+			}
+		}
+		s.connPrev, s.connPrevT, s.connRates = cum, now, rates
+		s.connMu.Unlock()
+	}
+	// Fast warmup: first snapshot, then a 2nd ~2.5s later so real rates are available
+	// within ~3s of boot (instead of waiting a full 6s tick). Then settle to 4s.
+	tick()
+	time.Sleep(2500 * time.Millisecond)
+	tick()
+	t := time.NewTicker(4 * time.Second)
+	defer t.Stop()
+	for range t.C {
+		tick()
+	}
+}
+
+func (s *HTTPServer) conntrackRates() map[string][2]float64 {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	return s.connRates
+}
+
+// parseExternalFlows extracts flows with a public destination from `conntrack -L` output.
+func parseExternalFlows(out string) []map[string]any {
+	var flows []map[string]any
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 4 {
+			continue
+		}
+		proto := f[0]
+		var src, dst, dport string
+		var totBytes int64
+		for _, tok := range f {
+			switch {
+			case strings.HasPrefix(tok, "src=") && src == "":
+				src = tok[4:]
+			case strings.HasPrefix(tok, "dst=") && dst == "":
+				dst = tok[4:]
+			case strings.HasPrefix(tok, "dport=") && dport == "":
+				dport = tok[6:]
+			case strings.HasPrefix(tok, "bytes="):
+				if v, e := strconv.ParseInt(tok[6:], 10, 64); e == nil {
+					totBytes += v
+				}
+			}
+		}
+		if src == "" || dst == "" || !isExternalIP(dst) || !isPrivateIP(src) {
+			continue // want LAN-device → public-internet flows only
+		}
+		flows = append(flows, map[string]any{"src": src, "dst": dst, "dport": dport, "proto": proto, "bytes": totBytes})
+	}
+	return flows
+}
+
+func isExternalIP(s string) bool {
+	ip := net.ParseIP(s)
+	if ip == nil || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() ||
+		ip.IsMulticast() || ip.IsUnspecified() {
+		return false
+	}
+	// exclude CGNAT 100.64.0.0/10 (carrier / Tailscale-ish space)
+	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
+		return false
+	}
+	return true
+}
+
+// buildTopologyData assembles the full topology payload (devices + clients + cameras,
+// with trunk uplink rates annotated). Shared by the one-shot handler and the SSE stream.
+func (s *HTTPServer) buildTopologyData(ctx context.Context, c *UnifiClient) (map[string]any, error) {
+	devices, err := c.ListDevicesRaw(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("devices: %w", err)
+	}
+	clients, err := c.ListActiveClientsRaw(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("clients: %w", err)
+	}
+	// Trunk uplink rates so traffic is conserved up to the router (controller-measured).
+	annotateUplinkRates(devices)
+	// Per-device rates from conntrack (covers WiFi devices, which UniFi's API reports
+	// stale/zero for). Background poller; first reading appears after ~6s.
+	s.connOnce.Do(func() { go s.startConnPoller() })
+	rates := s.conntrackRates()
+	if rates != nil {
+		for _, cl := range clients {
+			if ip, _ := cl["ip"].(string); ip != "" {
+				if r, ok := rates[ip]; ok {
+					cl["up_bps"] = r[0]
+					cl["down_bps"] = r[1]
+				}
+			}
+		}
+	}
+	// Cameras as real nodes with their switch-port bitrate (wireless cams via conntrack).
+	cameras := buildCameraNodes(ctx, c, devices, rates)
+	return map[string]any{"devices": devices, "clients": clients, "cameras": cameras}, nil
+}
+
+// handleTopologyStream pushes the topology over SSE every few seconds — one persistent
+// connection instead of repeated polls (the lightest live-delivery approach). The
+// underlying UniFi data only refreshes every few seconds, so 4s cadence is plenty.
+func (s *HTTPServer) handleTopologyStream(w http.ResponseWriter, r *http.Request) {
+	c := s.unifiClient()
+	if !c.IsConfigured() {
+		writeJSON(w, http.StatusOK, apiResp{Success: false, Error: "unifi not configured"})
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: "streaming unsupported"})
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	push := func() bool {
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		data, err := s.buildTopologyData(ctx, c)
+		if err != nil {
+			return true // skip this tick, keep the stream open
+		}
+		b, err := json.Marshal(data)
+		if err != nil {
+			return true
+		}
+		if _, err := fmt.Fprintf(w, "event: topology\ndata: %s\n\n", b); err != nil {
+			return false
+		}
+		flusher.Flush()
+		return true
+	}
+	push() // immediate first frame
+	ticker := time.NewTicker(4 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-ticker.C:
+			if !push() {
+				return
+			}
+		}
+	}
+}
+
+// annotateUplinkRates adds up_bps/down_bps to each device from its uplink port's
+// live rate (tx_bytes-r = up toward parent, rx_bytes-r = down). This makes the trunk
+// links carry the real aggregate (e.g. a switch's cameras visibly flow up to the
+// router) instead of vanishing. Falls back to the device.uplink object if no port is
+// flagged is_uplink. Leaves up_bps absent if neither source has it (viz then uses deltas).
+func annotateUplinkRates(devices []map[string]any) {
+	toF := func(v any) float64 {
+		switch n := v.(type) {
+		case float64:
+			return n
+		case int:
+			return float64(n)
+		}
+		return 0
+	}
+	max := func(a, b float64) float64 {
+		if a > b {
+			return a
+		}
+		return b
+	}
+	for _, d := range devices {
+		// Two independent measures of trunk traffic, because the uplink-port rate field
+		// is FLAKY on some switches (intermittently reports 0 between polls):
+		//   1) the uplink port's own tx/rx-r
+		//   2) the SUM of downstream ports (rx = traffic going up, tx = coming down) — conserved
+		// Take the max per direction so a momentary 0 on one source can't blank the trunk.
+		var ulTx, ulRx, dnRx, dnTx float64
+		if pt, ok := d["port_table"].([]any); ok {
+			for _, pi := range pt {
+				pm, _ := pi.(map[string]any)
+				if isUp, _ := pm["is_uplink"].(bool); isUp {
+					ulTx += toF(pm["tx_bytes-r"])
+					ulRx += toF(pm["rx_bytes-r"])
+				} else {
+					dnRx += toF(pm["rx_bytes-r"]) // received from a downstream device → flows UP
+					dnTx += toF(pm["tx_bytes-r"]) // sent to a downstream device → came DOWN
+				}
+			}
+		}
+		up, down := max(ulTx, dnRx), max(ulRx, dnTx)
+		if up == 0 && down == 0 { // APs with no usable port_table → fall back to the uplink object
+			if ul, ok := d["uplink"].(map[string]any); ok {
+				up, down = toF(ul["tx_bytes-r"]), toF(ul["rx_bytes-r"])
+			}
+		}
+		if up > 0 || down > 0 {
+			d["up_bps"] = up
+			d["down_bps"] = down
+		}
+	}
+}
+
+// buildCameraNodes correlates Protect cameras → station (uplink/port) → switch
+// port_table (byte counters), emitting camera entries the 3D viz renders as nodes
+// wired to their switch with real upload flow.
+func buildCameraNodes(ctx context.Context, c *UnifiClient, devices []map[string]any, connRates map[string][2]float64) []map[string]any {
+	cams, err := c.ListCameras(ctx)
+	if err != nil || len(cams) == 0 {
+		return []map[string]any{}
+	}
+	stas, err := c.ListStationsRaw(ctx)
+	if err != nil {
+		return []map[string]any{}
+	}
+	normMac := func(v any) string {
+		s := strings.ToLower(fmt.Sprint(v))
+		return strings.NewReplacer(":", "", "-", "").Replace(s)
+	}
+	str := func(v any) string { s, _ := v.(string); return s }
+	toF := func(v any) float64 {
+		switch n := v.(type) {
+		case float64:
+			return n
+		case int:
+			return float64(n)
+		}
+		return 0
+	}
+	toI := func(v any) int { return int(toF(v)) }
+
+	staByMac := map[string]map[string]any{}
+	for _, s := range stas {
+		staByMac[normMac(s["mac"])] = s
+	}
+	// per-switch-port stats: cumulative bytes + controller-measured instantaneous
+	// rate (bytes-r). The cumulative counters refresh slowly (~30-60s), so the viz
+	// uses the -r rate fields for cameras instead of computing deltas.
+	portStats := func(swMac string, port int) (txR, rxR float64, ok bool) {
+		for _, d := range devices {
+			if normMac(d["mac"]) != normMac(swMac) {
+				continue
+			}
+			pt, _ := d["port_table"].([]any)
+			for _, pi := range pt {
+				pm, _ := pi.(map[string]any)
+				if toI(pm["port_idx"]) == port {
+					return toF(pm["tx_bytes-r"]), toF(pm["rx_bytes-r"]), true
+				}
+			}
+		}
+		return 0, 0, false
+	}
+
+	out := []map[string]any{}
+	for _, cam := range cams {
+		sta := staByMac[normMac(cam.MAC)]
+		if sta == nil {
+			continue // camera not seen on the network right now
+		}
+		wired, _ := sta["is_wired"].(bool)
+		var uplink string
+		var upBps, downBps float64
+		if wired {
+			uplink = str(sta["sw_mac"])
+			if txR, rxR, ok := portStats(uplink, toI(sta["sw_port"])); ok {
+				upBps, downBps = rxR, txR // switch rx-rate = camera upload (video to NVR)
+			}
+		} else {
+			uplink = str(sta["ap_mac"])
+			upBps, downBps = toF(sta["rx_bytes-r"]), toF(sta["tx_bytes-r"])
+		}
+		// Wireless cams report stale 0 via UniFi — use conntrack rate by IP instead.
+		if (upBps == 0 && downBps == 0) && connRates != nil {
+			if r, ok := connRates[str(sta["ip"])]; ok {
+				upBps, downBps = r[0], r[1]
+			}
+		}
+		out = append(out, map[string]any{
+			"mac": cam.MAC, "name": cam.Name, "id": cam.ID,
+			"uplink_mac": uplink, "up_bps": upBps, "down_bps": downBps,
+			"is_camera": true, "is_wired": wired,
+		})
+	}
+	return out
 }
 
 // registerUDMRoutes adds all UDM Pro-specific API routes.
 func (s *HTTPServer) registerUDMRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/api/client-brake", s.handleClientBrake)
 	mux.HandleFunc("/api/udm-process-scan", s.handleUDMProcessScan)
 	mux.HandleFunc("/api/udm-watchdog", s.handleUDMWatchdog)
 	mux.HandleFunc("/api/udm-sysconfig", s.handleUDMSysConfig)
 	mux.HandleFunc("/api/udm-deploy", s.handleUDMDeploy)
 }
 
+// handleHealth reports service liveness, data dir, and loaded automation count.
 func (s *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
@@ -225,24 +703,26 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		cfg := s.snapshotCfg()
 		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
-			"port":                 cfg.Port,
-			"unifi_host":           cfg.UnifiHost,
-			"unifi_site":           cfg.UnifiSite,
-			"unifi_api_key":        maskKey(cfg.UnifiAPIKey),
-			"honeypot_ports":       cfg.HoneypotPorts,
-			"security_webhook_url": cfg.SecurityWebhookURL,
-			"threat_feed_mode":     cfg.ThreatFeedMode,
+			"port":                    cfg.Port,
+			"unifi_host":              cfg.UnifiHost,
+			"unifi_site":              cfg.UnifiSite,
+			"unifi_api_key":           maskKey(cfg.UnifiAPIKey),
+			"honeypot_ports":          cfg.HoneypotPorts,
+			"controller_honeypot_ips": cfg.ControllerHoneypotIPs,
+			"security_webhook_url":    cfg.SecurityWebhookURL,
+			"threat_feed_mode":        cfg.ThreatFeedMode,
 		}})
 	case http.MethodPost:
 		var body struct {
-			Port               string `json:"port"`
-			UnifiHost          string `json:"unifi_host"`
-			UnifiSite          string `json:"unifi_site"`
-			UnifiAPIKey        string `json:"unifi_api_key"`
-			UnifiPass          string `json:"unifi_pass"` // backward compat alias
-			HoneypotPorts      []int  `json:"honeypot_ports"`
-			SecurityWebhookURL string `json:"security_webhook_url"`
-			ThreatFeedMode     string `json:"threat_feed_mode"`
+			Port                  string   `json:"port"`
+			UnifiHost             string   `json:"unifi_host"`
+			UnifiSite             string   `json:"unifi_site"`
+			UnifiAPIKey           string   `json:"unifi_api_key"`
+			UnifiPass             string   `json:"unifi_pass"` // backward compat alias
+			HoneypotPorts         []int    `json:"honeypot_ports"`
+			ControllerHoneypotIPs []string `json:"controller_honeypot_ips"`
+			SecurityWebhookURL    string   `json:"security_webhook_url"`
+			ThreatFeedMode        string   `json:"threat_feed_mode"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "invalid JSON"})
@@ -270,6 +750,9 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if body.HoneypotPorts != nil {
 			cur.HoneypotPorts = body.HoneypotPorts
 		}
+		if body.ControllerHoneypotIPs != nil {
+			cur.ControllerHoneypotIPs = body.ControllerHoneypotIPs
+		}
 		cur.SecurityWebhookURL = body.SecurityWebhookURL
 		if body.ThreatFeedMode != "" {
 			cur.ThreatFeedMode = string(ValidThreatFeedMode(body.ThreatFeedMode))
@@ -281,6 +764,9 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 		s.replaceCfg(cur)
 		// Reconcile honeypot listeners with new port list.
 		s.honeypotSrv.UpdatePorts(cur.HoneypotPorts)
+		if s.threatPoller != nil {
+			s.threatPoller.SetHoneypotIPs(cur.ControllerHoneypotIPs)
+		}
 		// Apply new feed mode immediately.
 		if cur.ThreatFeedMode != "" {
 			s.sigUpdater.SetMode(ValidThreatFeedMode(cur.ThreatFeedMode))
@@ -566,8 +1052,29 @@ func (s *HTTPServer) handleSecurityEvents(w http.ResponseWriter, r *http.Request
 	}
 	ports := s.honeypotSrv.ActivePorts()
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
-		"events":          events,
-		"honeypot_active": ports,
+		"events":              events,
+		"honeypot_active":     ports,
+		"honeypot_configured": s.snapshotCfg().HoneypotPorts,
+	}})
+}
+
+// handleSecurityStatus exposes whether local listeners are actually active and
+// whether the controller feed is producing data. This avoids reporting a
+// configured-but-unbound honeypot as healthy.
+func (s *HTTPServer) handleSecurityStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	cfg := s.snapshotCfg()
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
+		"local_honeypot": map[string]any{
+			"configured_ports": cfg.HoneypotPorts,
+			"active_ports":     s.honeypotSrv.ActivePorts(),
+			"enabled":          len(s.honeypotSrv.ActivePorts()) > 0,
+		},
+		"controller_honeypot_ips": cfg.ControllerHoneypotIPs,
+		"controller_ips":          s.threatPoller.Status(),
 	}})
 }
 
@@ -1173,6 +1680,9 @@ func (s *HTTPServer) StartScheduler() {
 		return c.ListIPSEvents(ctx, since)
 	})
 	cfg := s.snapshotCfg()
+	if s.threatPoller != nil {
+		s.threatPoller.SetHoneypotIPs(cfg.ControllerHoneypotIPs)
+	}
 	s.honeypotSrv.UpdatePorts(cfg.HoneypotPorts)
 	// Wire webhook after we have cfg.
 	s.honeypotSrv.webhookFn = s.fireSecurityWebhook
@@ -1398,7 +1908,6 @@ func (s *HTTPServer) handleCapacitySummary(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: summary})
 }
 
-
 // ── ISP / WAN Health handlers ─────────────────────────────────────────────────
 
 // handleISPSummary returns per-ISP WAN health summary.
@@ -1478,4 +1987,259 @@ func (s *HTTPServer) handleISPHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"points": points, "site_id": siteID, "hours": hours}})
+}
+
+// handleISPTraffic returns WAN (internet) download/upload bytes since local
+// midnight for a site. GET /api/isp/traffic?site_id=xxx
+//
+// The numbers come from the gateway's WAN uplink port (eth8) cumulative byte
+// counters, differenced against the first sample after midnight. This is
+// real internet traffic only — eth8 is a pure WAN interface with no VLANs.
+func (s *HTTPServer) handleISPTraffic(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	if s.fleetDB == nil {
+		writeJSON(w, http.StatusServiceUnavailable, apiResp{Success: false, Error: "fleet polling not available"})
+		return
+	}
+	siteID := r.URL.Query().Get("site_id")
+	if siteID == "" {
+		// Default to the first configured site if not specified.
+		if sites := s.cfg.Sites; len(sites) > 0 {
+			siteID = sites[0].ID
+		}
+	}
+	if siteID == "" {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "site_id required (no default site configured)"})
+		return
+	}
+
+	// Fetch all samples from the last 36h (covers midnight even if poller
+	// started early today) and compute "today" via midnight baseline.
+	sinceMidnight := time.Now().Truncate(24 * time.Hour).Add(-12 * time.Hour).Unix()
+	samples, err := s.fleetDB.QueryWANTrafficSince(siteID, sinceMidnight)
+	if err != nil {
+		log.Printf("[isp] traffic site=%s err=%v", siteID, err)
+		writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	// Recovery for databases written before persisted site IDs were loaded:
+	// samples may be split across random IDs from prior restarts. Combine those
+	// same-UDM counter readings long enough to restore the dashboard; new
+	// samples use the stable site ID going forward.
+	legacyRecovery := false
+	if len(samples) < 2 {
+		if recovered, rerr := s.fleetDB.QueryWANTrafficAcrossSitesSince(sinceMidnight); rerr == nil && len(recovered) >= 2 {
+			samples = recovered
+			legacyRecovery = true
+		}
+	}
+
+	rxToday, txToday := ComputeTodayTraffic(samples)
+	totalToday := rxToday + txToday
+
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
+		"site_id":         siteID,
+		"download_bytes":  rxToday,
+		"upload_bytes":    txToday,
+		"total_bytes":     totalToday,
+		"download_gb":     fmt.Sprintf("%.2f", float64(rxToday)/1e9),
+		"upload_gb":       fmt.Sprintf("%.2f", float64(txToday)/1e9),
+		"total_gb":        fmt.Sprintf("%.2f", float64(totalToday)/1e9),
+		"download_str":    formatBytes(rxToday),
+		"upload_str":      formatBytes(txToday),
+		"total_str":       formatBytes(totalToday),
+		"sample_count":    len(samples),
+		"legacy_recovery": legacyRecovery,
+		"note":            "Real WAN (internet) traffic from gateway eth8 uplink. Cross-validated against SSH /proc/net/dev.",
+	}})
+}
+
+// handleISPFlowAudit reads the UDM's historical traffic_flow records directly
+// and reports the source/destination breakdown alongside the WAN counter. This
+// is the forensic path for cases where client counters are stale or incomplete.
+// GET /api/isp/traffic/flow-audit?hours=24
+func (s *HTTPServer) handleISPFlowAudit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	hours := 24
+	if v := r.URL.Query().Get("hours"); v != "" {
+		fmt.Sscanf(v, "%d", &hours)
+	}
+	if hours <= 0 || hours > 168 {
+		hours = 24
+	}
+	end := time.Now()
+	start := end.Add(-time.Duration(hours) * time.Hour)
+	cfg := s.snapshotCfg()
+	rows, err := QueryUDMWANFlows(cfg, start, end)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	var linkLookupError string
+	if links, linkErr := CurrentUDMClientLinks(cfg); linkErr == nil {
+		for i := range rows {
+			if link, ok := links[strings.ToLower(rows[i].SourceMAC)]; ok {
+				rows[i].CurrentName = link.Name
+				rows[i].CurrentHostname = link.Hostname
+				rows[i].CurrentSwitchMAC = link.SwitchMAC
+				rows[i].CurrentSwitchPort = link.SwitchPort
+				rows[i].CurrentLinkUp = link.LinkUp
+			}
+		}
+	} else {
+		linkLookupError = linkErr.Error()
+		log.Printf("[isp] flow audit current-link lookup failed: %v", linkErr)
+	}
+
+	var flowUpload, flowDownload int64
+	for _, row := range rows {
+		flowUpload += row.UploadBytes
+		flowDownload += row.DownloadBytes
+	}
+
+	data := map[string]any{
+		"start":               start,
+		"end":                 end,
+		"hours":               hours,
+		"wan_upload_bytes":    nil,
+		"wan_download_bytes":  nil,
+		"flow_upload_bytes":   flowUpload,
+		"flow_download_bytes": flowDownload,
+		"unattributed_upload": nil,
+		"rows":                rows,
+		"note":                "WAN totals come from eth8 counters; flow totals come from UDM ace_audit.traffic_flow. A positive remainder means the UDM flow collection did not expose every WAN byte in this window.",
+	}
+	if linkLookupError != "" {
+		data["current_link_lookup_error"] = linkLookupError
+	}
+
+	// Compare against the same interval when local WAN snapshots are available.
+	if s.fleetDB != nil {
+		siteID := r.URL.Query().Get("site_id")
+		if siteID == "" && len(cfg.Sites) > 0 {
+			siteID = cfg.Sites[0].ID
+		}
+		if siteID != "" {
+			samples, qerr := s.fleetDB.QueryWANTrafficSince(siteID, start.Unix()-300)
+			if qerr == nil && len(samples) >= 2 {
+				first, last := samples[0], samples[len(samples)-1]
+				wanUpload := last.TXBytes - first.TXBytes
+				wanDownload := last.RXBytes - first.RXBytes
+				if wanUpload < 0 {
+					wanUpload = 0
+				}
+				if wanDownload < 0 {
+					wanDownload = 0
+				}
+				unattributed := wanUpload - flowUpload
+				if unattributed < 0 {
+					unattributed = 0
+				}
+				data["site_id"] = siteID
+				data["wan_upload_bytes"] = wanUpload
+				data["wan_download_bytes"] = wanDownload
+				data["unattributed_upload"] = unattributed
+				data["flow_upload_coverage"] = float64(flowUpload) / float64(maxInt64(wanUpload, 1))
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: data})
+}
+
+func maxInt64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+// handleISPTrafficAttribution answers "who downloaded all that data?" — it
+// diffs per-client byte counters between a baseline (default: midnight today)
+// and the latest sample, then returns per-device download/upload deltas sorted
+// by total bytes. GET /api/isp/traffic/attribution?site_id=xxx&hours=24
+func (s *HTTPServer) handleISPTrafficAttribution(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	if s.fleetDB == nil {
+		writeJSON(w, http.StatusServiceUnavailable, apiResp{Success: false, Error: "fleet polling not available"})
+		return
+	}
+	siteID := r.URL.Query().Get("site_id")
+	if siteID == "" {
+		if sites := s.cfg.Sites; len(sites) > 0 {
+			siteID = sites[0].ID
+		}
+	}
+	if siteID == "" {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "site_id required"})
+		return
+	}
+
+	// Default: since local midnight. Allow ?hours=N override.
+	sinceTS := time.Now().Truncate(24 * time.Hour).Unix()
+	if v := r.URL.Query().Get("hours"); v != "" {
+		var hours int
+		fmt.Sscanf(v, "%d", &hours)
+		if hours > 0 && hours <= 168 {
+			sinceTS = time.Now().Add(-time.Duration(hours) * time.Hour).Unix()
+		}
+	}
+
+	baseline, err := s.fleetDB.QueryClientTrafficAt(siteID, sinceTS)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	latest, err := s.fleetDB.QueryClientTrafficLatest(siteID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+
+	attributions := AttributeClientTraffic(baseline, latest)
+
+	// Sum totals for the header.
+	var totalRX, totalTX int64
+	for _, a := range attributions {
+		totalRX += a.RXDelta
+		totalTX += a.TXDelta
+	}
+
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
+		"site_id":        siteID,
+		"since_ts":       sinceTS,
+		"total_download": totalRX,
+		"total_upload":   totalTX,
+		"total_dl_str":   formatBytes(totalRX),
+		"total_ul_str":   formatBytes(totalTX),
+		"client_count":   len(attributions),
+		"clients":        attributions,
+	}})
+}
+
+func formatBytes(b int64) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+		TB = GB * 1024
+	)
+	switch {
+	case b >= TB:
+		return fmt.Sprintf("%.2f TB", float64(b)/TB)
+	case b >= GB:
+		return fmt.Sprintf("%.1f GB", float64(b)/GB)
+	case b >= MB:
+		return fmt.Sprintf("%.0f MB", float64(b)/MB)
+	default:
+		return fmt.Sprintf("%.0f KB", float64(b)/KB)
+	}
 }

@@ -840,6 +840,10 @@
   <div class="tabs">
     <!-- Overview (home) -->
     <button type="button" class="tab-btn active" data-tab="overview" data-testid="tab-overview">🏠 Overview</button>
+    <!-- Live 3D topology viz (separate full-screen page, opens in a new tab) -->
+    <a class="tab-btn" href="/topology-3d.html" target="_blank" rel="noopener"
+       style="text-decoration:none; border-color:var(--accent,#006fff); color:var(--accent,#006fff);"
+       data-testid="tab-topology-3d">🛰️ 3D Topology ↗</a>
     <span class="tab-sep" role="separator"></span>
     <!-- Fleet intelligence group -->
     <button type="button" class="tab-btn" data-tab="fleet" data-testid="tab-fleet">🌐 Fleet</button>
@@ -1173,6 +1177,7 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
       </div>
       <!-- Honeypot status -->
       <div id="honeypotStatus" style="margin-top:8px;font-size:12px;color:var(--muted);"></div>
+      <div id="controllerIPSStatus" style="margin-top:4px;font-size:12px;color:var(--muted);"></div>
     </div>
 
     <!-- Event table -->
@@ -2118,6 +2123,11 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
         <div>
           <label for="cfgHoneypotPorts">Honeypot ports (comma-separated)</label>
           <input id="cfgHoneypotPorts" placeholder="e.g. 2222, 3389, 4444, 8888" autocomplete="off" />
+        </div>
+        <div>
+          <label for="cfgControllerHoneypotIPs">UDM honeypot IPs (comma-separated)</label>
+          <input id="cfgControllerHoneypotIPs" placeholder="e.g. 192.168.2.2, 192.168.3.2" autocomplete="off" />
+          <p class="muted" style="font-size:11px;margin:4px 0 0 0;">Classifies controller IPS events targeting these native decoy addresses.</p>
         </div>
         <div>
           <label for="cfgSecWebhook">Security webhook URL</label>
@@ -3305,10 +3315,22 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
         $('honeypotStatus').textContent = ports.length > 0
           ? `Honeypot active on port${ports.length > 1 ? 's' : ''}: ${ports.sort((a,b)=>a-b).join(', ')}`
           : 'Honeypot not configured — add ports in Settings.';
+        loadSecurityStatus().catch(console.error);
         renderSecurityEvents();
       } catch (e) {
         console.error('[UniFiDeck] loadSecurityEvents failed', e);
       }
+    }
+
+    async function loadSecurityStatus() {
+      const d = await api('GET', '/api/security/status');
+      const ips = d.controller_ips || {};
+      const configured = (d.controller_honeypot_ips || []).length;
+      let text = configured ? `UDM honeypot IPs tracked: ${configured}` : 'UDM native honeypot IPs not configured';
+      if (ips.state === 'disabled') text += ' · controller IPS/Threat Management is disabled or unavailable';
+      else if (ips.state === 'ok') text += ' · controller IPS feed healthy';
+      else if (ips.state === 'error') text += ` · controller IPS error: ${ips.last_error || 'unknown'}`;
+      $('controllerIPSStatus').textContent = text;
     }
 
     async function loadSecuritySummary() {
@@ -3543,6 +3565,7 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
           .filter(n => !isNaN(n) && n > 0 && n < 65536);
         const body = {
           honeypot_ports:       ports,
+          controller_honeypot_ips: ($('cfgControllerHoneypotIPs').value || '').split(',').map(s => s.trim()).filter(Boolean),
           security_webhook_url: ($('cfgSecWebhook').value || '').trim(),
           threat_feed_mode:     $('cfgThreatFeedMode').value || 'balanced',
         };
@@ -4870,6 +4893,7 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
         // Populate security settings fields.
         const hp = st.honeypot_ports;
         $('cfgHoneypotPorts').value = (Array.isArray(hp) && hp.length) ? hp.join(', ') : '';
+        $('cfgControllerHoneypotIPs').value = (Array.isArray(st.controller_honeypot_ips) && st.controller_honeypot_ips.length) ? st.controller_honeypot_ips.join(', ') : '';
         $('cfgSecWebhook').value = st.security_webhook_url || '';
         if (st.threat_feed_mode) $('cfgThreatFeedMode').value = st.threat_feed_mode;
         loadSigFeedStatus().catch(console.error);

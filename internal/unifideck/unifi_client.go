@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -59,20 +60,21 @@ type SiteHealth struct {
 
 // ProtectCamera is a UniFi Protect camera from the bootstrap endpoint.
 type ProtectCamera struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Type         string `json:"type"`
-	State        string `json:"state"`
-	MAC          string `json:"mac"`
-	Host         string `json:"host,omitempty"`
-	IsConnected  bool   `json:"isConnected"`
-	IsRecording  bool   `json:"isRecording"`
-	IsMotionDetected bool `json:"isMotionDetected"`
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Type             string `json:"type"`
+	State            string `json:"state"`
+	MAC              string `json:"mac"`
+	Host             string `json:"host,omitempty"`
+	IsConnected      bool   `json:"isConnected"`
+	IsRecording      bool   `json:"isRecording"`
+	IsMotionDetected bool   `json:"isMotionDetected"`
 }
 
 // UnifiClient calls the UDM Pro API using an API key (X-API-KEY header).
 // This matches the official local Network API described at:
-//   UniFi Network > Settings > Control Plane > Integrations
+//
+//	UniFi Network > Settings > Control Plane > Integrations
 type UnifiClient struct {
 	host       string
 	site       string
@@ -83,6 +85,17 @@ type UnifiClient struct {
 	camCacheMu  sync.Mutex
 	camCache    []ProtectCamera
 	camCachedAt time.Time
+}
+
+var ErrThreatManagementUnavailable = errors.New("unifi threat management is unavailable or disabled")
+
+type unifiHTTPError struct {
+	Status int
+	Body   string
+}
+
+func (e *unifiHTTPError) Error() string {
+	return fmt.Sprintf("unifi API HTTP %d: %s", e.Status, e.Body)
 }
 
 func NewUnifiClient(host, apiKey, site string) *UnifiClient {
@@ -156,7 +169,7 @@ func (c *UnifiClient) doJSON(ctx context.Context, method, url string, body any, 
 		if len(snippet) > 200 {
 			snippet = snippet[:200]
 		}
-		return fmt.Errorf("unifi API HTTP %d: %s", resp.StatusCode, snippet)
+		return &unifiHTTPError{Status: resp.StatusCode, Body: snippet}
 	}
 
 	if out != nil && len(rawBody) > 0 {
@@ -392,19 +405,18 @@ func (c *UnifiClient) ListCameras(ctx context.Context) ([]ProtectCamera, error) 
 // Pass highQuality=true to request 1080p or higher resolution from Protect.
 // If the camera does not support high quality, falls back to standard quality automatically.
 func (c *UnifiClient) CameraSnapshot(ctx context.Context, cameraID string, highQuality bool) ([]byte, string, error) {
+	// The Protect integration v1 API validates query params strictly (AJV) and only
+	// allows highQuality — ts/force trigger a 500 AJV_PARSE_ERROR. Request HQ first;
+	// many cameras reject it (400 "does not support full HD"), so fall back to a
+	// plain snapshot with no params.
 	base := c.protectIntURL("cameras/" + cameraID + "/snapshot")
-	ts := timeNowMS()
 
 	if highQuality {
-		url := fmt.Sprintf("%s?ts=%d&force=true&highQuality=true", base, ts)
-		if data, ct, err := c.doRaw(ctx, http.MethodGet, url); err == nil {
+		if data, ct, err := c.doRaw(ctx, http.MethodGet, base+"?highQuality=true"); err == nil {
 			return data, ct, nil
 		}
-		// Fall through to standard quality if HQ is unsupported.
 	}
-
-	url := fmt.Sprintf("%s?ts=%d&force=true", base, ts)
-	data, ct, err := c.doRaw(ctx, http.MethodGet, url)
+	data, ct, err := c.doRaw(ctx, http.MethodGet, base)
 	if err != nil {
 		return nil, "", fmt.Errorf("camera snapshot: %w", err)
 	}
@@ -428,9 +440,9 @@ type WLAN struct {
 
 // MDNSSetting represents the site-level mDNS relay configuration.
 type MDNSSetting struct {
-	Mode             string   `json:"mode"`
-	PredefinedSvcs   []string `json:"predefined_services"`
-	CustomSvcs       []string `json:"custom_services"`
+	Mode           string   `json:"mode"`
+	PredefinedSvcs []string `json:"predefined_services"`
+	CustomSvcs     []string `json:"custom_services"`
 }
 
 // ListWLANs returns all SSID/wireless network configurations.
@@ -546,8 +558,14 @@ func (c *UnifiClient) ListIPSEvents(ctx context.Context, since time.Time) ([]IPS
 		} `json:"meta"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, url, nil, &resp); err != nil {
-		// IPS not enabled returns a 400 or non-ok rc — treat as empty, not fatal.
+		var httpErr *unifiHTTPError
+		if errors.As(err, &httpErr) && (httpErr.Status == http.StatusNotFound || httpErr.Status == http.StatusBadRequest) {
+			return nil, ErrThreatManagementUnavailable
+		}
 		return nil, fmt.Errorf("ips events: %w", err)
+	}
+	if resp.Meta.RC != "" && resp.Meta.RC != "ok" {
+		return nil, ErrThreatManagementUnavailable
 	}
 	return resp.Data, nil
 }
@@ -601,7 +619,9 @@ func (c *UnifiClient) v2apiURL(path string) string {
 func (c *UnifiClient) ListNetworksRaw(ctx context.Context) ([]map[string]any, error) {
 	var resp struct {
 		Data []map[string]any `json:"data"`
-		Meta struct{ RC string `json:"rc"` } `json:"meta"`
+		Meta struct {
+			RC string `json:"rc"`
+		} `json:"meta"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("rest/networkconf"), nil, &resp); err != nil {
 		return nil, err
@@ -613,9 +633,35 @@ func (c *UnifiClient) ListNetworksRaw(ctx context.Context) ([]map[string]any, er
 func (c *UnifiClient) ListWLANsRaw(ctx context.Context) ([]map[string]any, error) {
 	var resp struct {
 		Data []map[string]any `json:"data"`
-		Meta struct{ RC string `json:"rc"` } `json:"meta"`
+		Meta struct {
+			RC string `json:"rc"`
+		} `json:"meta"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("rest/wlanconf"), nil, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Data, nil
+}
+
+// ListActiveClientsRaw returns all active clients via the v2 API.
+// The v2 response includes rich fields: ap_mac, rssi, signal, network_name, model_name, etc.
+func (c *UnifiClient) ListActiveClientsRaw(ctx context.Context) ([]map[string]any, error) {
+	var result []map[string]any
+	if err := c.doJSON(ctx, http.MethodGet, c.v2apiURL("clients/active"), nil, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// ListStationsRaw returns all active stations via the legacy stat/sta endpoint.
+// Unlike the v2 clients/active feed, this includes WIRED clients (e.g. PoE cameras)
+// with their uplink switch (sw_mac) and port (sw_port) — needed to place cameras in
+// the topology and read their per-port throughput from the switch's port_table.
+func (c *UnifiClient) ListStationsRaw(ctx context.Context) ([]map[string]any, error) {
+	var resp struct {
+		Data []map[string]any `json:"data"`
+	}
+	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("stat/sta"), nil, &resp); err != nil {
 		return nil, err
 	}
 	return resp.Data, nil
@@ -625,7 +671,9 @@ func (c *UnifiClient) ListWLANsRaw(ctx context.Context) ([]map[string]any, error
 func (c *UnifiClient) ListDevicesRaw(ctx context.Context) ([]map[string]any, error) {
 	var resp struct {
 		Data []map[string]any `json:"data"`
-		Meta struct{ RC string `json:"rc"` } `json:"meta"`
+		Meta struct {
+			RC string `json:"rc"`
+		} `json:"meta"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("stat/device"), nil, &resp); err != nil {
 		return nil, err
@@ -634,10 +682,41 @@ func (c *UnifiClient) ListDevicesRaw(ctx context.Context) ([]map[string]any, err
 }
 
 // ListFirewallPolicies returns all zone-based firewall policies via the v2 API.
+// Returns an empty slice (not an error) when the controller doesn't support this
+// endpoint (HTTP 500/404), so the firewall audit degrades gracefully on older firmware.
 func (c *UnifiClient) ListFirewallPolicies(ctx context.Context) ([]map[string]any, error) {
-	var policies []map[string]any
-	if err := c.doJSON(ctx, http.MethodGet, c.v2apiURL("firewall-policies"), nil, &policies); err != nil {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.v2apiURL("firewall-policies"), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-API-KEY", c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
 		return nil, fmt.Errorf("list firewall policies: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusInternalServerError || resp.StatusCode == http.StatusNotFound {
+		return nil, nil
+	}
+
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("list firewall policies: read response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		snippet := strings.TrimSpace(string(rawBody))
+		if len(snippet) > 200 {
+			snippet = snippet[:200]
+		}
+		return nil, fmt.Errorf("list firewall policies: unifi API HTTP %d: %s", resp.StatusCode, snippet)
+	}
+
+	var policies []map[string]any
+	if err := json.Unmarshal(rawBody, &policies); err != nil {
+		return nil, fmt.Errorf("list firewall policies: decode: %w", err)
 	}
 	return policies, nil
 }
@@ -646,7 +725,9 @@ func (c *UnifiClient) ListFirewallPolicies(ctx context.Context) ([]map[string]an
 func (c *UnifiClient) ListPortForwards(ctx context.Context) ([]map[string]any, error) {
 	var resp struct {
 		Data []map[string]any `json:"data"`
-		Meta struct{ RC string `json:"rc"` } `json:"meta"`
+		Meta struct {
+			RC string `json:"rc"`
+		} `json:"meta"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("rest/portforward"), nil, &resp); err != nil {
 		return nil, fmt.Errorf("list port forwards: %w", err)
@@ -658,7 +739,9 @@ func (c *UnifiClient) ListPortForwards(ctx context.Context) ([]map[string]any, e
 func (c *UnifiClient) GetIPSSettings(ctx context.Context) (map[string]any, error) {
 	var resp struct {
 		Data []map[string]any `json:"data"`
-		Meta struct{ RC string `json:"rc"` } `json:"meta"`
+		Meta struct {
+			RC string `json:"rc"`
+		} `json:"meta"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("get/setting/ips"), nil, &resp); err != nil {
 		return nil, fmt.Errorf("get ips settings: %w", err)
@@ -691,7 +774,9 @@ func (c *UnifiClient) ListAuditEvents(ctx context.Context, limit int) ([]AuditEv
 	url := fmt.Sprintf("%s?_limit=%d", c.apiURL("stat/event"), limit)
 	var resp struct {
 		Data []AuditEvent `json:"data"`
-		Meta struct{ RC string `json:"rc"` } `json:"meta"`
+		Meta struct {
+			RC string `json:"rc"`
+		} `json:"meta"`
 	}
 	if err := c.doJSON(ctx, http.MethodGet, url, nil, &resp); err != nil {
 		return nil, fmt.Errorf("list events: %w", err)
@@ -708,7 +793,9 @@ func (c *UnifiClient) TriggerBackup(ctx context.Context) ([]byte, string, error)
 		Data []struct {
 			URL string `json:"url"`
 		} `json:"data"`
-		Meta struct{ RC string `json:"rc"` } `json:"meta"`
+		Meta struct {
+			RC string `json:"rc"`
+		} `json:"meta"`
 	}
 	if err := c.doJSON(ctx, http.MethodPost, c.apiURL("cmd/backup"),
 		map[string]any{"cmd": "backup"}, &cmdResp); err != nil {
@@ -728,13 +815,28 @@ func (c *UnifiClient) TriggerBackup(ctx context.Context) ([]byte, string, error)
 	return data, ct, nil
 }
 
-func timeNowMS() int64 {
-	return time.Now().UnixNano() / int64(time.Millisecond)
-}
-
 func min(a, b int) int {
 	if a < b {
 		return a
 	}
 	return b
+}
+
+// SetClientUsergroup assigns a client device to a usergroup by its document ID.
+// clientDocID is the UniFi _id field (not MAC); groupID is the usergroup _id.
+func (c *UnifiClient) SetClientUsergroup(ctx context.Context, clientDocID, groupID string) error {
+	endpoint := fmt.Sprintf("%s/proxy/network/api/s/%s/rest/user/%s", c.host, c.site, clientDocID)
+	body := map[string]string{"usergroup_id": groupID}
+	var out struct {
+		Meta struct {
+			RC string `json:"rc"`
+		} `json:"meta"`
+	}
+	if err := c.doJSON(ctx, http.MethodPut, endpoint, body, &out); err != nil {
+		return fmt.Errorf("set usergroup: %w", err)
+	}
+	if out.Meta.RC != "ok" {
+		return fmt.Errorf("set usergroup: rc=%s", out.Meta.RC)
+	}
+	return nil
 }

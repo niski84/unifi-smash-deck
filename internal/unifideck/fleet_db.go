@@ -152,6 +152,34 @@ func migrateFleet(db *sql.DB) error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_wh_site_ts ON wan_health(site_id, ts)`,
 		`CREATE INDEX IF NOT EXISTS idx_wh_ts ON wan_health(ts)`,
+		// wan_traffic table — gateway WAN port cumulative byte counters,
+		// sampled by the fleet poller. "Today" is computed by differencing
+		// against the first sample after local midnight.
+		`CREATE TABLE IF NOT EXISTS wan_traffic (
+			id        INTEGER PRIMARY KEY AUTOINCREMENT,
+			site_id   TEXT NOT NULL,
+			ts        INTEGER NOT NULL,
+			rx_bytes  INTEGER NOT NULL,
+			tx_bytes  INTEGER NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_wt_site_ts ON wan_traffic(site_id, ts)`,
+		`CREATE INDEX IF NOT EXISTS idx_wt_ts ON wan_traffic(ts)`,
+		// client_traffic table — per-client byte counters sampled every 5 min.
+		// Differencing consecutive samples attributes WAN traffic to devices,
+		// answering "who downloaded 33 GB overnight?"
+		`CREATE TABLE IF NOT EXISTS client_traffic (
+			id        INTEGER PRIMARY KEY AUTOINCREMENT,
+			site_id   TEXT NOT NULL,
+			mac       TEXT NOT NULL,
+			ts        INTEGER NOT NULL,
+			rx_bytes  INTEGER NOT NULL,
+			tx_bytes  INTEGER NOT NULL,
+			name      TEXT,
+			hostname  TEXT,
+			ip        TEXT
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_ct_site_ts ON client_traffic(site_id, ts)`,
+		`CREATE INDEX IF NOT EXISTS idx_ct_mac_ts ON client_traffic(mac, ts)`,
 	}
 
 	// Run each statement
@@ -165,6 +193,10 @@ func migrateFleet(db *sql.DB) error {
 	_, _ = db.Exec(`ALTER TABLE fleet_device_snapshots ADD COLUMN temp_c REAL`)
 	_, _ = db.Exec(`ALTER TABLE fleet_device_snapshots ADD COLUMN ul_mbps REAL`)
 	_, _ = db.Exec(`ALTER TABLE fleet_device_snapshots ADD COLUMN dl_mbps REAL`)
+	// client_traffic: add name/hostname/ip columns for readable attribution.
+	_, _ = db.Exec(`ALTER TABLE client_traffic ADD COLUMN name TEXT`)
+	_, _ = db.Exec(`ALTER TABLE client_traffic ADD COLUMN hostname TEXT`)
+	_, _ = db.Exec(`ALTER TABLE client_traffic ADD COLUMN ip TEXT`)
 
 	return nil
 }
@@ -183,9 +215,11 @@ func (f *FleetDB) Close() error {
 func (f *FleetDB) PruneOlderThan(table string, days int) error {
 	// Whitelist tables to prevent SQL injection
 	validTables := map[string]bool{
-		"site_snapshots":           true,
-		"fleet_device_snapshots":   true,
-		"wan_health":               true,
+		"site_snapshots":         true,
+		"fleet_device_snapshots": true,
+		"wan_health":             true,
+		"wan_traffic":            true,
+		"client_traffic":         true,
 	}
 	if !validTables[table] {
 		return fmt.Errorf("invalid table name: %s", table)
@@ -259,6 +293,135 @@ func (f *FleetDB) SnapshotWAN(w WANSnapshot) error {
 
 	_, err := f.db.Exec(query, w.SiteID, w.TS, w.LatencyMS, w.LossPct, w.DNSFails, w.ISPLabel, boolToInt(w.IsUp))
 	return err
+}
+
+// SnapshotWANTraffic inserts a WAN byte-counter reading.
+func (f *FleetDB) SnapshotWANTraffic(s WANTrafficSample) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	_, err := f.db.Exec(`INSERT INTO wan_traffic (site_id, ts, rx_bytes, tx_bytes) VALUES (?, ?, ?, ?)`,
+		s.SiteID, s.TS, s.RXBytes, s.TXBytes)
+	return err
+}
+
+// QueryWANTrafficSince returns all WAN traffic samples for a site since the
+// given Unix timestamp, oldest-first. Used to compute "today" deltas.
+func (f *FleetDB) QueryWANTrafficSince(siteID string, sinceTS int64) ([]WANTrafficSample, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rows, err := f.db.Query(`SELECT site_id, ts, rx_bytes, tx_bytes FROM wan_traffic
+		WHERE site_id = ? AND ts >= ? ORDER BY ts ASC`, siteID, sinceTS)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WANTrafficSample
+	for rows.Next() {
+		var s WANTrafficSample
+		if err := rows.Scan(&s.SiteID, &s.TS, &s.RXBytes, &s.TXBytes); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// QueryWANTrafficAcrossSitesSince is a recovery path for databases created
+// before site identity was persisted correctly. Older restarts could assign a
+// new random site ID while still polling the same UDM, splitting the counter
+// samples across IDs and making a dashboard show 0 KB.
+func (f *FleetDB) QueryWANTrafficAcrossSitesSince(sinceTS int64) ([]WANTrafficSample, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rows, err := f.db.Query(`SELECT site_id, ts, rx_bytes, tx_bytes FROM wan_traffic
+		WHERE ts >= ? ORDER BY ts ASC`, sinceTS)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []WANTrafficSample
+	for rows.Next() {
+		var s WANTrafficSample
+		if err := rows.Scan(&s.SiteID, &s.TS, &s.RXBytes, &s.TXBytes); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// ── Client traffic ───────────────────────────────────────────────────────────
+
+// SnapshotClientTraffic inserts per-client byte counters for a site.
+func (f *FleetDB) SnapshotClientTraffic(siteID string, samples []ClientTrafficSample) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	tx, err := f.db.Begin()
+	if err != nil {
+		return err
+	}
+	for _, s := range samples {
+		if _, err := tx.Exec(`INSERT INTO client_traffic (site_id, mac, ts, rx_bytes, tx_bytes, name, hostname, ip) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			siteID, s.MAC, s.TS, s.RXBytes, s.TXBytes, s.Name, s.Hostname, s.IP); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// QueryClientTrafficAt returns the per-client byte counters at the oldest
+// sample at or after atTS — the baseline for attribution. Uses a subquery so
+// the rx_bytes/tx_bytes correctly correspond to the MIN(ts) row (SQLite's
+// GROUP BY doesn't guarantee non-aggregated columns match the aggregate).
+func (f *FleetDB) QueryClientTrafficAt(siteID string, atTS int64) ([]ClientTrafficSample, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rows, err := f.db.Query(`
+		SELECT mac, ts, rx_bytes, tx_bytes, name, hostname, ip FROM client_traffic c
+		WHERE site_id = ? AND ts = (
+			SELECT MIN(ts) FROM client_traffic
+			WHERE site_id = ? AND mac = c.mac AND ts >= ?
+		)`, siteID, siteID, atTS)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ClientTrafficSample
+	for rows.Next() {
+		var s ClientTrafficSample
+		if err := rows.Scan(&s.MAC, &s.TS, &s.RXBytes, &s.TXBytes, &s.Name, &s.Hostname, &s.IP); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// QueryClientTrafficLatest returns the most recent byte counters per client.
+// Uses a subquery so rx_bytes/tx_bytes match the MAX(ts) row per MAC.
+func (f *FleetDB) QueryClientTrafficLatest(siteID string) ([]ClientTrafficSample, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	rows, err := f.db.Query(`
+		SELECT mac, ts, rx_bytes, tx_bytes, name, hostname, ip FROM client_traffic c
+		WHERE site_id = ? AND ts = (
+			SELECT MAX(ts) FROM client_traffic
+			WHERE site_id = ? AND mac = c.mac
+		)`, siteID, siteID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ClientTrafficSample
+	for rows.Next() {
+		var s ClientTrafficSample
+		if err := rows.Scan(&s.MAC, &s.TS, &s.RXBytes, &s.TXBytes, &s.Name, &s.Hostname, &s.IP); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
 }
 
 // QueryFleetSummary queries the latest fleet metrics from the database.

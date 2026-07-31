@@ -205,6 +205,25 @@ func (p *FleetPoller) pollSite(ctx context.Context, site SiteConnection) {
 		}
 	}
 
+	// Fetch WAN byte counters (internet download/upload). Sampled on every
+	// poll so "today" can be computed from the baseline at local midnight.
+	if wt, err := FetchWANTraffic(ctx, site); err != nil {
+		log.Printf("[fleet-poller] site %s: WAN traffic error: %v", site.Name, err)
+	} else {
+		if err2 := p.db.SnapshotWANTraffic(*wt); err2 != nil {
+			log.Printf("[fleet-poller] site %s: WAN traffic snapshot error: %v", site.Name, err2)
+		}
+	}
+
+	// Fetch per-client byte counters so traffic can be attributed to specific
+	// devices. This answers "who downloaded 33 GB overnight?" by diffing
+	// consecutive samples.
+	if ct, err := FetchClientTraffic(ctx, site); err != nil {
+		log.Printf("[fleet-poller] site %s: client traffic error: %v", site.Name, err)
+	} else if err2 := p.db.SnapshotClientTraffic(site.ID, ct); err2 != nil {
+		log.Printf("[fleet-poller] site %s: client traffic snapshot error: %v", site.Name, err2)
+	}
+
 	if err := p.db.SnapshotSite(ss); err != nil {
 		log.Printf("[fleet-poller] site %s: snapshot site error: %v", site.Name, err)
 	}

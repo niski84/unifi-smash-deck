@@ -24,8 +24,8 @@ var fakeBanners = map[int]string{
 	2222: "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6\r\n",
 	2121: "220 FTP server ready\r\n",
 	3306: "\x4a\x00\x00\x00\x0a\x38\x2e\x30\x2e\x32\x37\x00", // MySQL greeting start
-	3389: "",  // RDP — no plain-text banner; just accept the connection
-	5900: "RFB 003.008\n",                                     // VNC
+	3389: "",                                                 // RDP — no plain-text banner; just accept the connection
+	5900: "RFB 003.008\n",                                    // VNC
 	8080: "HTTP/1.1 200 OK\r\nServer: Apache/2.4.57\r\nContent-Length: 0\r\n\r\n",
 }
 
@@ -58,6 +58,10 @@ func (h *HoneypotServer) UpdatePorts(ports []int) {
 
 	desired := make(map[int]bool, len(ports))
 	for _, p := range ports {
+		if p < 1 || p > 65535 {
+			log.Printf("[honeypot] ignoring invalid port %d", p)
+			continue
+		}
 		desired[p] = true
 	}
 
@@ -84,6 +88,16 @@ func (h *HoneypotServer) UpdatePorts(ports []int) {
 		log.Printf("[honeypot] listening on port %d", port)
 		go h.serve(ln, port)
 	}
+}
+
+func (h *HoneypotServer) ConfiguredPorts(ports []int) []int {
+	valid := make([]int, 0, len(ports))
+	for _, p := range ports {
+		if p >= 1 && p <= 65535 {
+			valid = append(valid, p)
+		}
+	}
+	return valid
 }
 
 // StopAll closes every active listener.
@@ -133,7 +147,7 @@ func (h *HoneypotServer) handle(conn net.Conn, port int) {
 	// Send fake service banner if we have one for this port.
 	if banner, ok := fakeBanners[port]; ok && banner != "" {
 		conn.SetWriteDeadline(time.Now().Add(3 * time.Second)) //nolint:errcheck
-		conn.Write([]byte(banner))                              //nolint:errcheck
+		conn.Write([]byte(banner))                             //nolint:errcheck
 	}
 
 	// Read up to 512 bytes of what the client sends (credentials, payloads, etc.).

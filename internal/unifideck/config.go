@@ -57,9 +57,12 @@ type AppConfig struct {
 	SSHPassword   string `json:"ssh_password,omitempty"`
 	SSHKnownHosts string `json:"ssh_known_hosts,omitempty"`
 	// Security
-	HoneypotPorts      []int  `json:"honeypot_ports,omitempty"`
-	SecurityWebhookURL string `json:"security_webhook_url,omitempty"`
-	ThreatFeedMode     string `json:"threat_feed_mode,omitempty"` // passive|balanced|aggressive
+	HoneypotPorts []int `json:"honeypot_ports,omitempty"`
+	// ControllerHoneypotIPs are the UDM-native decoy addresses. When an IPS
+	// event targets one of these addresses it is promoted to a honeypot alert.
+	ControllerHoneypotIPs []string `json:"controller_honeypot_ips,omitempty"`
+	SecurityWebhookURL    string   `json:"security_webhook_url,omitempty"`
+	ThreatFeedMode        string   `json:"threat_feed_mode,omitempty"` // passive|balanced|aggressive
 	// UISP (Ubiquiti ISP platform — airCube, sector APs, solar sites)
 	UISPHost  string `json:"uisp_host,omitempty"`
 	UISPToken string `json:"uisp_token,omitempty"`
@@ -96,6 +99,12 @@ func LoadAppConfig(path string) AppConfig {
 	if err == nil {
 		var stored AppConfig
 		if json.Unmarshal(raw, &stored) == nil {
+			// Preserve the persisted multi-site identity. Dropping these fields
+			// causes migrateLegacyToSites to generate a new random site ID on
+			// every restart, orphaning WAN/client samples and making dashboards
+			// report 0 KB after reboot.
+			cfg.Sites = stored.Sites
+			cfg.ActiveSiteID = stored.ActiveSiteID
 			if stored.Port != "" {
 				cfg.Port = stored.Port
 			}
@@ -118,8 +127,29 @@ func LoadAppConfig(path string) AppConfig {
 			if stored.UISPToken != "" {
 				cfg.UISPToken = stored.UISPToken
 			}
+			// Preserve persisted UDM SSH settings when the environment does not
+			// provide them. These are required by the historical WAN-flow audit.
+			if stored.SSHHost != "" {
+				cfg.SSHHost = stored.SSHHost
+			}
+			if stored.SSHUser != "" {
+				cfg.SSHUser = stored.SSHUser
+			}
+			if stored.SSHPort != "" {
+				cfg.SSHPort = stored.SSHPort
+			}
+			if stored.SSHKeyPath != "" {
+				cfg.SSHKeyPath = stored.SSHKeyPath
+			}
+			if stored.SSHPassword != "" {
+				cfg.SSHPassword = stored.SSHPassword
+			}
+			if stored.SSHKnownHosts != "" {
+				cfg.SSHKnownHosts = stored.SSHKnownHosts
+			}
 			cfg.GusConfig = stored.GusConfig
 			cfg.HoneypotPorts = stored.HoneypotPorts
+			cfg.ControllerHoneypotIPs = stored.ControllerHoneypotIPs
 			cfg.SecurityWebhookURL = stored.SecurityWebhookURL
 			cfg.ThreatFeedMode = stored.ThreatFeedMode
 		}
@@ -144,13 +174,34 @@ func LoadAppConfig(path string) AppConfig {
 	if v := strings.TrimSpace(os.Getenv("UISP_TOKEN")); v != "" {
 		cfg.UISPToken = v
 	}
+	if v := strings.TrimSpace(os.Getenv("UNIFI_HONEYPOT_IPS")); v != "" {
+		cfg.ControllerHoneypotIPs = splitCSV(v)
+	}
 	// SSH credentials (from UNIFICERT_SSH_* env vars, shared with unifi-cert-smash-deck)
-	cfg.SSHHost = getenv("UNIFICERT_SSH_HOST", "")
-	cfg.SSHUser = getenv("UNIFICERT_SSH_USER", "root")
-	cfg.SSHPort = getenv("UNIFICERT_SSH_PORT", "22")
-	cfg.SSHKeyPath = getenv("UNIFICERT_SSH_KEY", "")
-	cfg.SSHPassword = getenv("UNIFICERT_SSH_PASSWORD", "")
-	cfg.SSHKnownHosts = getenv("UNIFICERT_SSH_KNOWN_HOSTS", "")
+	if v := strings.TrimSpace(os.Getenv("UNIFICERT_SSH_HOST")); v != "" {
+		cfg.SSHHost = v
+	}
+	if v := strings.TrimSpace(os.Getenv("UNIFICERT_SSH_USER")); v != "" {
+		cfg.SSHUser = v
+	}
+	if v := strings.TrimSpace(os.Getenv("UNIFICERT_SSH_PORT")); v != "" {
+		cfg.SSHPort = v
+	}
+	if v := strings.TrimSpace(os.Getenv("UNIFICERT_SSH_KEY")); v != "" {
+		cfg.SSHKeyPath = v
+	}
+	if v := strings.TrimSpace(os.Getenv("UNIFICERT_SSH_PASSWORD")); v != "" {
+		cfg.SSHPassword = v
+	}
+	if v := strings.TrimSpace(os.Getenv("UNIFICERT_SSH_KNOWN_HOSTS")); v != "" {
+		cfg.SSHKnownHosts = v
+	}
+	if cfg.SSHUser == "" {
+		cfg.SSHUser = "root"
+	}
+	if cfg.SSHPort == "" {
+		cfg.SSHPort = "22"
+	}
 	// Gus Cam defaults
 	if cfg.GusConfig.DetectionIntervalSec == 0 {
 		cfg.GusConfig.DetectionIntervalSec = 3
@@ -252,7 +303,38 @@ func SaveAppConfig(path string, cfg AppConfig) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o600)
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".unifideck-settings-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName)
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(b); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
+}
+
+func splitCSV(v string) []string {
+	var out []string
+	for _, part := range strings.Split(v, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func getenv(k, def string) string {

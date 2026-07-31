@@ -4,23 +4,64 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
+	"sync"
 	"time"
 )
 
 // IPSThreatPoller polls the UniFi IDS/IPS event feed on a 5-minute interval
 // and normalises events into ThreatStore.
 type IPSThreatPoller struct {
-	store   *ThreatStore
-	tracker *ClientTracker
-	stopCh  chan struct{}
+	store       *ThreatStore
+	tracker     *ClientTracker
+	stopCh      chan struct{}
+	mu          sync.RWMutex
+	lastPoll    time.Time
+	lastSuccess time.Time
+	lastError   string
+	feedState   string
+	honeypotIPs map[string]struct{}
 }
 
 func NewIPSThreatPoller(store *ThreatStore, tracker *ClientTracker) *IPSThreatPoller {
 	return &IPSThreatPoller{
-		store:   store,
-		tracker: tracker,
-		stopCh:  make(chan struct{}),
+		store:       store,
+		tracker:     tracker,
+		stopCh:      make(chan struct{}),
+		feedState:   "not_started",
+		honeypotIPs: make(map[string]struct{}),
 	}
+}
+
+type ThreatPollerStatus struct {
+	State         string `json:"state"`
+	LastPollMs    int64  `json:"last_poll_ms,omitempty"`
+	LastSuccessMs int64  `json:"last_success_ms,omitempty"`
+	LastError     string `json:"last_error,omitempty"`
+}
+
+func (p *IPSThreatPoller) SetHoneypotIPs(ips []string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.honeypotIPs = make(map[string]struct{}, len(ips))
+	for _, ip := range ips {
+		if ip = strings.TrimSpace(ip); ip != "" {
+			p.honeypotIPs[ip] = struct{}{}
+		}
+	}
+}
+
+func (p *IPSThreatPoller) Status() ThreatPollerStatus {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return ThreatPollerStatus{State: p.feedState, LastPollMs: unixMilli(p.lastPoll), LastSuccessMs: unixMilli(p.lastSuccess), LastError: p.lastError}
+}
+
+func unixMilli(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixMilli()
 }
 
 type fetchIPSFn func(ctx context.Context, since time.Time) ([]IPSEvent, error)
@@ -50,6 +91,9 @@ func (p *IPSThreatPoller) Stop() {
 }
 
 func (p *IPSThreatPoller) poll(fetch fetchIPSFn) {
+	p.mu.Lock()
+	p.lastPoll = time.Now()
+	p.mu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -61,9 +105,26 @@ func (p *IPSThreatPoller) poll(fetch fetchIPSFn) {
 
 	events, err := fetch(ctx, since)
 	if err != nil {
-		log.Printf("[threats/ips] poll error: %v", err)
+		p.mu.Lock()
+		p.lastError = err.Error()
+		if err == ErrThreatManagementUnavailable {
+			p.feedState = "disabled"
+		} else {
+			p.feedState = "error"
+		}
+		p.mu.Unlock()
+		if err == ErrThreatManagementUnavailable {
+			log.Printf("[threats/ips] unavailable — enable UniFi Threat Management/IPS to ingest controller alerts")
+		} else {
+			log.Printf("[threats/ips] poll error: %v", err)
+		}
 		return
 	}
+	p.mu.Lock()
+	p.lastSuccess = time.Now()
+	p.lastError = ""
+	p.feedState = "ok"
+	p.mu.Unlock()
 
 	ipLookup := p.ipSnapshot()
 	newCount := 0
@@ -103,18 +164,36 @@ func (p *IPSThreatPoller) convert(e IPSEvent, ipLookup map[string]struct{ MAC, N
 	if id == "" {
 		id = fmt.Sprintf("ips-%d-%s-%d", e.TimestampMs(), e.SrcIP, e.SrcPort)
 	}
+	p.mu.RLock()
+	controllerHoneypot := false
+	if _, ok := p.honeypotIPs[e.DstIP]; ok {
+		controllerHoneypot = true
+	}
+	p.mu.RUnlock()
+	kind := ThreatKindIPS
+	severity := e.Alert.Severity
+	category := e.Alert.Category
+	signature := e.Alert.Signature
+	if controllerHoneypot {
+		kind = ThreatKindHoneypot
+		severity = 1
+		category = "Controller Honeypot"
+		if signature == "" {
+			signature = "UniFi controller honeypot hit"
+		}
+	}
 	te := ThreatEvent{
 		ID:        id,
-		Kind:      ThreatKindIPS,
+		Kind:      kind,
 		Timestamp: e.TimestampMs(),
 		SrcIP:     e.SrcIP,
 		DstIP:     e.DstIP,
 		SrcPort:   e.SrcPort,
 		DstPort:   e.DstPort,
 		Proto:     e.Proto,
-		Severity:  e.Alert.Severity,
-		Category:  e.Alert.Category,
-		Signature: e.Alert.Signature,
+		Severity:  severity,
+		Category:  category,
+		Signature: signature,
 		Action:    e.Alert.Action,
 	}
 	if client, ok := ipLookup[e.SrcIP]; ok {
