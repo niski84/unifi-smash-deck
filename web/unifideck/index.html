@@ -2130,6 +2130,15 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
           <p class="muted" style="font-size:11px;margin:4px 0 0 0;">Classifies controller IPS events targeting these native decoy addresses.</p>
         </div>
         <div>
+          <label for="cfgAdaptixHTTPPaths">Adaptix HTTP callback paths</label>
+          <input id="cfgAdaptixHTTPPaths" placeholder="e.g. /c2/check, /updates" autocomplete="off" />
+          <p class="muted" style="font-size:11px;margin:4px 0 0 0;">Optional values copied from the generated listener profile.</p>
+        </div>
+        <div>
+          <label for="cfgAdaptixHTTPHeader">Adaptix heartbeat header</label>
+          <input id="cfgAdaptixHTTPHeader" placeholder="e.g. X-Heartbeat" autocomplete="off" />
+        </div>
+        <div>
           <label for="cfgSecWebhook">Security webhook URL</label>
           <input id="cfgSecWebhook" placeholder="https://your-scene-runner/hook/…" autocomplete="off" />
         </div>
@@ -3566,6 +3575,10 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
         const body = {
           honeypot_ports:       ports,
           controller_honeypot_ips: ($('cfgControllerHoneypotIPs').value || '').split(',').map(s => s.trim()).filter(Boolean),
+          adaptix_profile: {
+            http_paths: ($('cfgAdaptixHTTPPaths').value || '').split(',').map(s => s.trim()).filter(Boolean),
+            http_header: ($('cfgAdaptixHTTPHeader').value || '').trim(),
+          },
           security_webhook_url: ($('cfgSecWebhook').value || '').trim(),
           threat_feed_mode:     $('cfgThreatFeedMode').value || 'balanced',
         };
@@ -4894,6 +4907,9 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
         const hp = st.honeypot_ports;
         $('cfgHoneypotPorts').value = (Array.isArray(hp) && hp.length) ? hp.join(', ') : '';
         $('cfgControllerHoneypotIPs').value = (Array.isArray(st.controller_honeypot_ips) && st.controller_honeypot_ips.length) ? st.controller_honeypot_ips.join(', ') : '';
+        const ap = st.adaptix_profile || {};
+        $('cfgAdaptixHTTPPaths').value = (Array.isArray(ap.http_paths) && ap.http_paths.length) ? ap.http_paths.join(', ') : '';
+        $('cfgAdaptixHTTPHeader').value = ap.http_header || '';
         $('cfgSecWebhook').value = st.security_webhook_url || '';
         if (st.threat_feed_mode) $('cfgThreatFeedMode').value = st.threat_feed_mode;
         loadSigFeedStatus().catch(console.error);

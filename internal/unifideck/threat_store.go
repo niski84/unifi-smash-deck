@@ -18,18 +18,18 @@ const (
 
 // ThreatEvent is the unified representation for IDS/IPS alerts and honeypot hits.
 type ThreatEvent struct {
-	ID         string     `json:"id"`
-	Kind       ThreatKind `json:"kind"`
-	Timestamp  int64      `json:"timestamp"`            // Unix ms
-	SrcIP      string     `json:"src_ip"`
-	DstIP      string     `json:"dst_ip,omitempty"`
-	SrcPort    int        `json:"src_port,omitempty"`
-	DstPort    int        `json:"dst_port,omitempty"`
-	Proto      string     `json:"proto,omitempty"`
-	Severity   int        `json:"severity"` // 1=critical 2=major 3=minor
-	Category   string     `json:"category,omitempty"`
-	Signature  string     `json:"signature,omitempty"`
-	Action     string     `json:"action,omitempty"` // alert|drop|honeypot
+	ID        string     `json:"id"`
+	Kind      ThreatKind `json:"kind"`
+	Timestamp int64      `json:"timestamp"` // Unix ms
+	SrcIP     string     `json:"src_ip"`
+	DstIP     string     `json:"dst_ip,omitempty"`
+	SrcPort   int        `json:"src_port,omitempty"`
+	DstPort   int        `json:"dst_port,omitempty"`
+	Proto     string     `json:"proto,omitempty"`
+	Severity  int        `json:"severity"` // 1=critical 2=major 3=minor
+	Category  string     `json:"category,omitempty"`
+	Signature string     `json:"signature,omitempty"`
+	Action    string     `json:"action,omitempty"` // alert|drop|honeypot
 	// Resolved from client tracker
 	ClientMAC  string `json:"client_mac,omitempty"`
 	ClientName string `json:"client_name,omitempty"`
@@ -37,6 +37,9 @@ type ThreatEvent struct {
 	HoneypotPort int    `json:"honeypot_port,omitempty"`
 	BytesRecv    int    `json:"bytes_recv,omitempty"`
 	BannerData   string `json:"banner_data,omitempty"` // first bytes the client sent
+	Fingerprint  string `json:"fingerprint,omitempty"`
+	Confidence   int    `json:"fingerprint_confidence,omitempty"`
+	Evidence     string `json:"fingerprint_evidence,omitempty"`
 }
 
 const maxThreatEvents = 5000

@@ -60,9 +60,10 @@ type AppConfig struct {
 	HoneypotPorts []int `json:"honeypot_ports,omitempty"`
 	// ControllerHoneypotIPs are the UDM-native decoy addresses. When an IPS
 	// event targets one of these addresses it is promoted to a honeypot alert.
-	ControllerHoneypotIPs []string `json:"controller_honeypot_ips,omitempty"`
-	SecurityWebhookURL    string   `json:"security_webhook_url,omitempty"`
-	ThreatFeedMode        string   `json:"threat_feed_mode,omitempty"` // passive|balanced|aggressive
+	ControllerHoneypotIPs []string       `json:"controller_honeypot_ips,omitempty"`
+	AdaptixProfile        AdaptixProfile `json:"adaptix_profile,omitempty"`
+	SecurityWebhookURL    string         `json:"security_webhook_url,omitempty"`
+	ThreatFeedMode        string         `json:"threat_feed_mode,omitempty"` // passive|balanced|aggressive
 	// UISP (Ubiquiti ISP platform — airCube, sector APs, solar sites)
 	UISPHost  string `json:"uisp_host,omitempty"`
 	UISPToken string `json:"uisp_token,omitempty"`
@@ -150,6 +151,7 @@ func LoadAppConfig(path string) AppConfig {
 			cfg.GusConfig = stored.GusConfig
 			cfg.HoneypotPorts = stored.HoneypotPorts
 			cfg.ControllerHoneypotIPs = stored.ControllerHoneypotIPs
+			cfg.AdaptixProfile = stored.AdaptixProfile
 			cfg.SecurityWebhookURL = stored.SecurityWebhookURL
 			cfg.ThreatFeedMode = stored.ThreatFeedMode
 		}
@@ -176,6 +178,12 @@ func LoadAppConfig(path string) AppConfig {
 	}
 	if v := strings.TrimSpace(os.Getenv("UNIFI_HONEYPOT_IPS")); v != "" {
 		cfg.ControllerHoneypotIPs = splitCSV(v)
+	}
+	if v := strings.TrimSpace(os.Getenv("ADAPTIX_HTTP_PATHS")); v != "" {
+		cfg.AdaptixProfile.HTTPPaths = splitCSV(v)
+	}
+	if v := strings.TrimSpace(os.Getenv("ADAPTIX_HTTP_HEADER")); v != "" {
+		cfg.AdaptixProfile.HTTPHeader = v
 	}
 	// SSH credentials (from UNIFICERT_SSH_* env vars, shared with unifi-cert-smash-deck)
 	if v := strings.TrimSpace(os.Getenv("UNIFICERT_SSH_HOST")); v != "" {

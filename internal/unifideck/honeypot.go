@@ -36,6 +36,7 @@ type HoneypotServer struct {
 	store     *ThreatStore
 	tracker   *ClientTracker
 	webhookFn func(ThreatEvent)
+	profile   AdaptixProfile
 
 	mu        sync.Mutex
 	listeners map[int]net.Listener
@@ -48,6 +49,18 @@ func NewHoneypotServer(store *ThreatStore, tracker *ClientTracker, webhookFn fun
 		webhookFn: webhookFn,
 		listeners: make(map[int]net.Listener),
 	}
+}
+
+func (h *HoneypotServer) SetAdaptixProfile(profile AdaptixProfile) {
+	h.mu.Lock()
+	h.profile = profile
+	h.mu.Unlock()
+}
+
+func (h *HoneypotServer) adaptixProfile() AdaptixProfile {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.profile
 }
 
 // UpdatePorts reconciles the running listeners with the desired port list.
@@ -175,6 +188,13 @@ func (h *HoneypotServer) handle(conn net.Conn, port int) {
 		HoneypotPort: port,
 		BytesRecv:    n,
 		BannerData:   bannerData,
+	}
+	if fp := FingerprintAdaptix(port, buf, h.adaptixProfile()); fp != nil {
+		te.Fingerprint = fp.Name
+		te.Confidence = fp.Confidence
+		te.Evidence = fp.Evidence
+		te.Category = "AdaptixC2"
+		te.Signature = fp.Name
 	}
 
 	// Resolve src IP to client identity.

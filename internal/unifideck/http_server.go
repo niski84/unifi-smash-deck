@@ -709,20 +709,22 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 			"unifi_api_key":           maskKey(cfg.UnifiAPIKey),
 			"honeypot_ports":          cfg.HoneypotPorts,
 			"controller_honeypot_ips": cfg.ControllerHoneypotIPs,
+			"adaptix_profile":         cfg.AdaptixProfile,
 			"security_webhook_url":    cfg.SecurityWebhookURL,
 			"threat_feed_mode":        cfg.ThreatFeedMode,
 		}})
 	case http.MethodPost:
 		var body struct {
-			Port                  string   `json:"port"`
-			UnifiHost             string   `json:"unifi_host"`
-			UnifiSite             string   `json:"unifi_site"`
-			UnifiAPIKey           string   `json:"unifi_api_key"`
-			UnifiPass             string   `json:"unifi_pass"` // backward compat alias
-			HoneypotPorts         []int    `json:"honeypot_ports"`
-			ControllerHoneypotIPs []string `json:"controller_honeypot_ips"`
-			SecurityWebhookURL    string   `json:"security_webhook_url"`
-			ThreatFeedMode        string   `json:"threat_feed_mode"`
+			Port                  string         `json:"port"`
+			UnifiHost             string         `json:"unifi_host"`
+			UnifiSite             string         `json:"unifi_site"`
+			UnifiAPIKey           string         `json:"unifi_api_key"`
+			UnifiPass             string         `json:"unifi_pass"` // backward compat alias
+			HoneypotPorts         []int          `json:"honeypot_ports"`
+			ControllerHoneypotIPs []string       `json:"controller_honeypot_ips"`
+			AdaptixProfile        AdaptixProfile `json:"adaptix_profile"`
+			SecurityWebhookURL    string         `json:"security_webhook_url"`
+			ThreatFeedMode        string         `json:"threat_feed_mode"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "invalid JSON"})
@@ -753,6 +755,9 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if body.ControllerHoneypotIPs != nil {
 			cur.ControllerHoneypotIPs = body.ControllerHoneypotIPs
 		}
+		if body.AdaptixProfile.HTTPHeader != "" || body.AdaptixProfile.HTTPPaths != nil || body.AdaptixProfile.HTTPUserAgents != nil || body.AdaptixProfile.DNSSuffixes != nil {
+			cur.AdaptixProfile = body.AdaptixProfile
+		}
 		cur.SecurityWebhookURL = body.SecurityWebhookURL
 		if body.ThreatFeedMode != "" {
 			cur.ThreatFeedMode = string(ValidThreatFeedMode(body.ThreatFeedMode))
@@ -767,6 +772,7 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if s.threatPoller != nil {
 			s.threatPoller.SetHoneypotIPs(cur.ControllerHoneypotIPs)
 		}
+		s.honeypotSrv.SetAdaptixProfile(cur.AdaptixProfile)
 		// Apply new feed mode immediately.
 		if cur.ThreatFeedMode != "" {
 			s.sigUpdater.SetMode(ValidThreatFeedMode(cur.ThreatFeedMode))
@@ -1067,6 +1073,7 @@ func (s *HTTPServer) handleSecurityStatus(w http.ResponseWriter, r *http.Request
 		return
 	}
 	cfg := s.snapshotCfg()
+	s.honeypotSrv.SetAdaptixProfile(cfg.AdaptixProfile)
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
 		"local_honeypot": map[string]any{
 			"configured_ports": cfg.HoneypotPorts,
