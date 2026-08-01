@@ -62,6 +62,7 @@ type AppConfig struct {
 	// event targets one of these addresses it is promoted to a honeypot alert.
 	ControllerHoneypotIPs []string       `json:"controller_honeypot_ips,omitempty"`
 	AdaptixProfile        AdaptixProfile `json:"adaptix_profile,omitempty"`
+	WindowsProfile        WindowsProfile `json:"windows_profile,omitempty"`
 	SecurityWebhookURL    string         `json:"security_webhook_url,omitempty"`
 	ThreatFeedMode        string         `json:"threat_feed_mode,omitempty"` // passive|balanced|aggressive
 	// UISP (Ubiquiti ISP platform — airCube, sector APs, solar sites)
@@ -90,11 +91,12 @@ func DefaultSettingsPath() string {
 
 func LoadAppConfig(path string) AppConfig {
 	cfg := AppConfig{
-		Port:        getenv("PORT", "8099"),
-		UnifiHost:   getenv("UNIFI_HOST", ""),
-		UnifiSite:   getenv("UNIFI_SITE", "default"),
-		UnifiAPIKey: getenv("UNIFI_API_KEY", ""),
-		GusConfig:   GusConfig{Enabled: true},
+		Port:           getenv("PORT", "8099"),
+		UnifiHost:      getenv("UNIFI_HOST", ""),
+		UnifiSite:      getenv("UNIFI_SITE", "default"),
+		UnifiAPIKey:    getenv("UNIFI_API_KEY", ""),
+		GusConfig:      GusConfig{Enabled: true},
+		WindowsProfile: DefaultWindowsProfile(),
 	}
 	raw, err := os.ReadFile(path)
 	if err == nil {
@@ -152,6 +154,10 @@ func LoadAppConfig(path string) AppConfig {
 			cfg.HoneypotPorts = stored.HoneypotPorts
 			cfg.ControllerHoneypotIPs = stored.ControllerHoneypotIPs
 			cfg.AdaptixProfile = stored.AdaptixProfile
+			cfg.WindowsProfile = stored.WindowsProfile
+			if cfg.WindowsProfile.Persona == "" {
+				cfg.WindowsProfile = DefaultWindowsProfile()
+			}
 			cfg.SecurityWebhookURL = stored.SecurityWebhookURL
 			cfg.ThreatFeedMode = stored.ThreatFeedMode
 		}

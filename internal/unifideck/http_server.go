@@ -711,6 +711,7 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 			"honeypot_ports":          cfg.HoneypotPorts,
 			"controller_honeypot_ips": cfg.ControllerHoneypotIPs,
 			"adaptix_profile":         cfg.AdaptixProfile,
+			"windows_profile":         cfg.WindowsProfile,
 			"security_webhook_url":    cfg.SecurityWebhookURL,
 			"threat_feed_mode":        cfg.ThreatFeedMode,
 		}})
@@ -724,6 +725,7 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 			HoneypotPorts         []int          `json:"honeypot_ports"`
 			ControllerHoneypotIPs []string       `json:"controller_honeypot_ips"`
 			AdaptixProfile        AdaptixProfile `json:"adaptix_profile"`
+			WindowsProfile        WindowsProfile `json:"windows_profile"`
 			SecurityWebhookURL    string         `json:"security_webhook_url"`
 			ThreatFeedMode        string         `json:"threat_feed_mode"`
 		}
@@ -759,6 +761,9 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if body.AdaptixProfile.HTTPHeader != "" || body.AdaptixProfile.HTTPPaths != nil || body.AdaptixProfile.HTTPUserAgents != nil || body.AdaptixProfile.DNSSuffixes != nil {
 			cur.AdaptixProfile = body.AdaptixProfile
 		}
+		if body.WindowsProfile.Persona != "" || body.WindowsProfile.OS != "" || body.WindowsProfile.Enabled {
+			cur.WindowsProfile = normalizeWindowsProfile(body.WindowsProfile)
+		}
 		cur.SecurityWebhookURL = body.SecurityWebhookURL
 		if body.ThreatFeedMode != "" {
 			cur.ThreatFeedMode = string(ValidThreatFeedMode(body.ThreatFeedMode))
@@ -774,6 +779,7 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 			s.threatPoller.SetHoneypotIPs(cur.ControllerHoneypotIPs)
 		}
 		s.honeypotSrv.SetAdaptixProfile(cur.AdaptixProfile)
+		s.honeypotSrv.SetWindowsProfile(cur.WindowsProfile)
 		// Apply new feed mode immediately.
 		if cur.ThreatFeedMode != "" {
 			s.sigUpdater.SetMode(ValidThreatFeedMode(cur.ThreatFeedMode))
@@ -1075,11 +1081,13 @@ func (s *HTTPServer) handleSecurityStatus(w http.ResponseWriter, r *http.Request
 	}
 	cfg := s.snapshotCfg()
 	s.honeypotSrv.SetAdaptixProfile(cfg.AdaptixProfile)
+	s.honeypotSrv.SetWindowsProfile(cfg.WindowsProfile)
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
 		"local_honeypot": map[string]any{
 			"configured_ports": cfg.HoneypotPorts,
 			"active_ports":     s.honeypotSrv.ActivePorts(),
 			"enabled":          len(s.honeypotSrv.ActivePorts()) > 0,
+			"windows_profile":  cfg.WindowsProfile,
 		},
 		"controller_honeypot_ips": cfg.ControllerHoneypotIPs,
 		"controller_ips":          s.threatPoller.Status(),
@@ -1718,6 +1726,7 @@ func (s *HTTPServer) StartScheduler() {
 		s.threatPoller.SetHoneypotIPs(cfg.ControllerHoneypotIPs)
 	}
 	s.honeypotSrv.SetAdaptixProfile(cfg.AdaptixProfile)
+	s.honeypotSrv.SetWindowsProfile(cfg.WindowsProfile)
 	s.honeypotSrv.UpdatePorts(cfg.HoneypotPorts)
 	// Wire webhook after we have cfg.
 	s.honeypotSrv.webhookFn = s.fireSecurityWebhook

@@ -2139,6 +2139,20 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
           <input id="cfgAdaptixHTTPHeader" placeholder="e.g. X-Heartbeat" autocomplete="off" />
         </div>
         <div>
+          <label for="cfgWindowsPersona">Windows decoy persona</label>
+          <select id="cfgWindowsPersona">
+            <option value="legacy_2008_r2">Windows Server 2008 R2 SP1 — legacy SMBv1</option>
+            <option value="server_2012_r2">Windows Server 2012 R2 — transitional</option>
+            <option value="server_2019">Windows Server 2019 — hardened</option>
+          </select>
+          <p class="muted" style="font-size:11px;margin:4px 0 0 0;">Emulates banners and probe responses only; no real exploit code runs.</p>
+        </div>
+        <div>
+          <label for="cfgWindowsPorts">Windows decoy ports (comma-separated)</label>
+          <input id="cfgWindowsPorts" placeholder="e.g. 1445, 13389, 1135, 15985" autocomplete="off" />
+          <p class="muted" style="font-size:11px;margin:4px 0 0 0;">Use 445/3389/135/5985 on a dedicated privileged deployment; aliases are safer here.</p>
+        </div>
+        <div>
           <label for="cfgSecWebhook">Security webhook URL</label>
           <input id="cfgSecWebhook" placeholder="https://your-scene-runner/hook/…" autocomplete="off" />
           <div style="display:flex;gap:6px;margin-top:6px;">
@@ -2173,7 +2187,7 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <button type="button" class="primary" id="saveSecuritySettingsBtn">Save Security Settings</button>
         <label style="font-size:12px;display:flex;gap:5px;align-items:center;"><input type="checkbox" id="securityBrowserNotify"> Browser notifications</label>
-        <label style="font-size:12px;display:flex;gap:5px;align-items:center;"><input type="checkbox" id="securitySpeechNotify"> Speak Adaptix alerts</label>
+        <label style="font-size:12px;display:flex;gap:5px;align-items:center;"><input type="checkbox" id="securitySpeechNotify"> Speak security alerts</label>
         <span id="securitySettingsMsg" style="font-size:13px;"></span>
       </div>
     </div>
@@ -3190,6 +3204,14 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
           <span class="muted">Signature:</span> ${escapeHtml(e.signature)}</div>`;
       }
 
+      if (e.fingerprint) {
+        html += `<div style="font-size:12px;margin-bottom:10px;padding:8px 10px;border-left:2px solid var(--warn);background:rgba(255,170,0,0.07);">
+          <div><span class="muted">Fingerprint:</span> ${escapeHtml(e.fingerprint)}${e.persona ? ` <span class="muted">(${escapeHtml(e.persona)})</span>` : ''}</div>
+          ${e.assessment ? `<div style="margin-top:3px;"><span class="muted">Assessment:</span> ${escapeHtml(e.assessment)}</div>` : ''}
+          ${e.evidence ? `<div style="margin-top:3px;"><span class="muted">Evidence:</span> ${escapeHtml(e.evidence)}</div>` : ''}
+        </div>`;
+      }
+
       if (hasSession) {
         const hasData = e.banner_data && e.banner_data.length > 0;
         html += `<div style="margin-top:4px;">`;
@@ -3575,15 +3597,24 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
       $('securitySettingsMsg').className = '';
       try {
         const rawPorts = ($('cfgHoneypotPorts').value || '').trim();
-        const ports = rawPorts === '' ? [] : rawPorts.split(',')
+        const basePorts = rawPorts === '' ? [] : rawPorts.split(',')
           .map(s => parseInt(s.trim(), 10))
           .filter(n => !isNaN(n) && n > 0 && n < 65536);
+        const rawWindowsPorts = ($('cfgWindowsPorts').value || '').trim();
+        const windowsPorts = rawWindowsPorts === '' ? [] : rawWindowsPorts.split(',')
+          .map(s => parseInt(s.trim(), 10))
+          .filter(n => !isNaN(n) && n > 0 && n < 65536);
+        const ports = [...new Set([...basePorts, ...windowsPorts])];
         const body = {
           honeypot_ports:       ports,
           controller_honeypot_ips: ($('cfgControllerHoneypotIPs').value || '').split(',').map(s => s.trim()).filter(Boolean),
           adaptix_profile: {
             http_paths: ($('cfgAdaptixHTTPPaths').value || '').split(',').map(s => s.trim()).filter(Boolean),
             http_header: ($('cfgAdaptixHTTPHeader').value || '').trim(),
+          },
+          windows_profile: {
+            enabled: true,
+            persona: ($('cfgWindowsPersona').value || 'legacy_2008_r2').trim(),
           },
           security_webhook_url: ($('cfgSecWebhook').value || '').trim(),
           threat_feed_mode:     $('cfgThreatFeedMode').value || 'balanced',
@@ -4955,6 +4986,9 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
         const ap = st.adaptix_profile || {};
         $('cfgAdaptixHTTPPaths').value = (Array.isArray(ap.http_paths) && ap.http_paths.length) ? ap.http_paths.join(', ') : '';
         $('cfgAdaptixHTTPHeader').value = ap.http_header || '';
+        const wp = st.windows_profile || {};
+        $('cfgWindowsPersona').value = wp.persona || 'legacy_2008_r2';
+        $('cfgWindowsPorts').value = (Array.isArray(hp) ? hp.filter(p => [135,445,3389,5985,5986,1135,1445,13389,15985,15986].includes(Number(p))) : []).join(', ');
         $('cfgSecWebhook').value = st.security_webhook_url || '';
         if (st.threat_feed_mode) $('cfgThreatFeedMode').value = st.threat_feed_mode;
         loadSigFeedStatus().catch(console.error);
@@ -7200,14 +7234,15 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
     function announceSecurityEvent(e) {
       if (!e || !e.id || !e.fingerprint) return;
       const label = `${e.fingerprint}${e.src_ip ? ` · ${e.src_ip}` : ''}${e.dst_port ? `:${e.dst_port}` : ''}`;
-      showSecurityToast(`🚨 Adaptix activity detected — ${label}`);
+      const family = e.category || 'Security';
+      showSecurityToast(`🚨 ${family} activity detected — ${label}`);
       if (localStorage.getItem('ud_security_notify') === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        try { new Notification('AdaptixC2 activity detected', { body: label, tag: `security-${e.id}` }); } catch (_) {}
+        try { new Notification(`${family} activity detected`, { body: label, tag: `security-${e.id}` }); } catch (_) {}
       }
       if (localStorage.getItem('ud_security_speech') === '1' && 'speechSynthesis' in window) {
         try {
           window.speechSynthesis.cancel();
-          window.speechSynthesis.speak(new SpeechSynthesisUtterance(`Security alert. ${e.fingerprint} detected.`));
+          window.speechSynthesis.speak(new SpeechSynthesisUtterance(`Security alert. ${family} activity detected. ${e.fingerprint}.`));
         } catch (_) {}
       }
     }

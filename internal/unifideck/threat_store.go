@@ -40,6 +40,8 @@ type ThreatEvent struct {
 	Fingerprint  string `json:"fingerprint,omitempty"`
 	Confidence   int    `json:"fingerprint_confidence,omitempty"`
 	Evidence     string `json:"fingerprint_evidence,omitempty"`
+	Persona      string `json:"persona,omitempty"`
+	Assessment   string `json:"assessment,omitempty"`
 }
 
 const maxThreatEvents = 5000

@@ -17,18 +17,23 @@ import (
 // fakeBanners are sent immediately on connection to make the honeypot look real
 // and encourage the scanner to send credentials/payloads we can log.
 var fakeBanners = map[int]string{
-	21:   "220 FTP server ready\r\n",
-	22:   "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6\r\n",
-	23:   "\xff\xfb\x01\xff\xfb\x03\xff\xfd\x18\xff\xfd\x1f", // Telnet IAC options
-	25:   "220 mail.local ESMTP Postfix (Ubuntu)\r\n",
-	110:  "+OK POP3 server ready\r\n",
-	143:  "* OK IMAP4rev1 Service Ready\r\n",
-	2222: "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6\r\n",
-	2121: "220 FTP server ready\r\n",
-	3306: "\x4a\x00\x00\x00\x0a\x38\x2e\x30\x2e\x32\x37\x00", // MySQL greeting start
-	3389: "",                                                 // RDP — no plain-text banner; just accept the connection
-	5900: "RFB 003.008\n",                                    // VNC
-	8080: "HTTP/1.1 200 OK\r\nServer: Apache/2.4.57\r\nContent-Length: 0\r\n\r\n",
+	21:    "220 FTP server ready\r\n",
+	22:    "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6\r\n",
+	23:    "\xff\xfb\x01\xff\xfb\x03\xff\xfd\x18\xff\xfd\x1f", // Telnet IAC options
+	25:    "220 mail.local ESMTP Postfix (Ubuntu)\r\n",
+	110:   "+OK POP3 server ready\r\n",
+	143:   "* OK IMAP4rev1 Service Ready\r\n",
+	2222:  "SSH-2.0-OpenSSH_8.9p1 Ubuntu-3ubuntu0.6\r\n",
+	2121:  "220 FTP server ready\r\n",
+	3306:  "\x4a\x00\x00\x00\x0a\x38\x2e\x30\x2e\x32\x37\x00", // MySQL greeting start
+	3389:  "",                                                 // RDP — no plain-text banner; just accept the connection
+	13389: "",                                                 // RDP persona alias
+	5985:  "HTTP/1.1 401 Unauthorized\r\nServer: Microsoft-HTTPAPI/2.0\r\nWWW-Authenticate: Negotiate, NTLM\r\nContent-Length: 0\r\n\r\n",
+	15985: "HTTP/1.1 401 Unauthorized\r\nServer: Microsoft-HTTPAPI/2.0\r\nWWW-Authenticate: Negotiate, NTLM\r\nContent-Length: 0\r\n\r\n",
+	5986:  "HTTP/1.1 401 Unauthorized\r\nServer: Microsoft-HTTPAPI/2.0\r\nWWW-Authenticate: Negotiate, NTLM\r\nContent-Length: 0\r\n\r\n",
+	15986: "HTTP/1.1 401 Unauthorized\r\nServer: Microsoft-HTTPAPI/2.0\r\nWWW-Authenticate: Negotiate, NTLM\r\nContent-Length: 0\r\n\r\n",
+	5900:  "RFB 003.008\n", // VNC
+	8080:  "HTTP/1.1 200 OK\r\nServer: Apache/2.4.57\r\nContent-Length: 0\r\n\r\n",
 }
 
 // HoneypotServer listens on configurable TCP ports and logs any connection
@@ -39,6 +44,7 @@ type HoneypotServer struct {
 	tracker   *ClientTracker
 	webhookFn func(ThreatEvent)
 	profile   AdaptixProfile
+	windows   WindowsProfile
 
 	mu        sync.Mutex
 	listeners map[int]net.Listener
@@ -59,10 +65,22 @@ func (h *HoneypotServer) SetAdaptixProfile(profile AdaptixProfile) {
 	h.mu.Unlock()
 }
 
+func (h *HoneypotServer) SetWindowsProfile(profile WindowsProfile) {
+	h.mu.Lock()
+	h.windows = normalizeWindowsProfile(profile)
+	h.mu.Unlock()
+}
+
 func (h *HoneypotServer) adaptixProfile() AdaptixProfile {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.profile
+}
+
+func (h *HoneypotServer) windowsProfile() WindowsProfile {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.windows
 }
 
 // UpdatePorts reconciles the running listeners with the desired port list.
@@ -194,9 +212,20 @@ func (h *HoneypotServer) handle(conn net.Conn, port int) {
 		Category:     "Honeypot",
 		Signature:    fmt.Sprintf("Connection to honeypot port %d", port),
 		Action:       "honeypot",
+		Proto:        "TCP",
 		HoneypotPort: port,
 		BytesRecv:    n,
 		BannerData:   bannerData,
+	}
+	wp := h.windowsProfile()
+	if fp := FingerprintWindows(port, buf, wp); fp != nil {
+		te.Fingerprint = fp.Name
+		te.Confidence = fp.Confidence
+		te.Evidence = fp.Evidence
+		te.Persona = fp.Persona
+		te.Assessment = fp.Assessment
+		te.Category = "Windows"
+		te.Signature = fp.Name
 	}
 	if fp := FingerprintAdaptix(port, buf, h.adaptixProfile()); fp != nil {
 		te.Fingerprint = fp.Name
