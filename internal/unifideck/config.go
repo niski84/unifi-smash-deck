@@ -57,13 +57,15 @@ type AppConfig struct {
 	SSHPassword   string `json:"ssh_password,omitempty"`
 	SSHKnownHosts string `json:"ssh_known_hosts,omitempty"`
 	// Security
-	HoneypotPorts []int `json:"honeypot_ports,omitempty"`
+	HoneypotPorts []int          `json:"honeypot_ports,omitempty"`
+	HoneypotVLANs []HoneypotVLAN `json:"honeypot_vlans,omitempty"`
 	// ControllerHoneypotIPs are the UDM-native decoy addresses. When an IPS
 	// event targets one of these addresses it is promoted to a honeypot alert.
 	ControllerHoneypotIPs []string       `json:"controller_honeypot_ips,omitempty"`
 	AdaptixProfile        AdaptixProfile `json:"adaptix_profile,omitempty"`
 	WindowsProfile        WindowsProfile `json:"windows_profile,omitempty"`
 	SecurityWebhookURL    string         `json:"security_webhook_url,omitempty"`
+	HoneypotIngestToken   string         `json:"honeypot_ingest_token,omitempty"`
 	ThreatFeedMode        string         `json:"threat_feed_mode,omitempty"` // passive|balanced|aggressive
 	// UISP (Ubiquiti ISP platform — airCube, sector APs, solar sites)
 	UISPHost  string `json:"uisp_host,omitempty"`
@@ -152,6 +154,7 @@ func LoadAppConfig(path string) AppConfig {
 			}
 			cfg.GusConfig = stored.GusConfig
 			cfg.HoneypotPorts = stored.HoneypotPorts
+			cfg.HoneypotVLANs = stored.HoneypotVLANs
 			cfg.ControllerHoneypotIPs = stored.ControllerHoneypotIPs
 			cfg.AdaptixProfile = stored.AdaptixProfile
 			cfg.WindowsProfile = stored.WindowsProfile
@@ -190,6 +193,9 @@ func LoadAppConfig(path string) AppConfig {
 	}
 	if v := strings.TrimSpace(os.Getenv("ADAPTIX_HTTP_HEADER")); v != "" {
 		cfg.AdaptixProfile.HTTPHeader = v
+	}
+	if v := strings.TrimSpace(os.Getenv("HONEYPOT_INGEST_TOKEN")); v != "" {
+		cfg.HoneypotIngestToken = v
 	}
 	// SSH credentials (from UNIFICERT_SSH_* env vars, shared with unifi-cert-smash-deck)
 	if v := strings.TrimSpace(os.Getenv("UNIFICERT_SSH_HOST")); v != "" {

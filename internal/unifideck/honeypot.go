@@ -45,6 +45,7 @@ type HoneypotServer struct {
 	webhookFn func(ThreatEvent)
 	profile   AdaptixProfile
 	windows   WindowsProfile
+	vlans     []HoneypotVLAN
 
 	mu        sync.Mutex
 	listeners map[int]net.Listener
@@ -71,6 +72,12 @@ func (h *HoneypotServer) SetWindowsProfile(profile WindowsProfile) {
 	h.mu.Unlock()
 }
 
+func (h *HoneypotServer) SetHoneypotVLANs(vlans []HoneypotVLAN) {
+	h.mu.Lock()
+	h.vlans = append([]HoneypotVLAN(nil), vlans...)
+	h.mu.Unlock()
+}
+
 func (h *HoneypotServer) adaptixProfile() AdaptixProfile {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -81,6 +88,26 @@ func (h *HoneypotServer) windowsProfile() WindowsProfile {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.windows
+}
+
+func (h *HoneypotServer) vlanScope(srcIP string) (HoneypotVLAN, bool, bool) {
+	h.mu.Lock()
+	vlans := append([]HoneypotVLAN(nil), h.vlans...)
+	h.mu.Unlock()
+	if len(vlans) == 0 {
+		return HoneypotVLAN{}, true, false
+	}
+	ip := net.ParseIP(srcIP)
+	if ip == nil {
+		return HoneypotVLAN{}, false, true
+	}
+	for _, vlan := range vlans {
+		_, subnet, err := net.ParseCIDR(strings.TrimSpace(vlan.IPSubnet))
+		if err == nil && subnet.Contains(ip) {
+			return vlan, vlan.Enabled, true
+		}
+	}
+	return HoneypotVLAN{}, false, true
 }
 
 // UpdatePorts reconciles the running listeners with the desired port list.
@@ -174,6 +201,11 @@ func (h *HoneypotServer) handle(conn net.Conn, port int) {
 	defer conn.Close()
 	remoteAddr := conn.RemoteAddr().String()
 	srcIP, _, _ := net.SplitHostPort(remoteAddr)
+	vlan, allowed, scoped := h.vlanScope(srcIP)
+	if scoped && !allowed {
+		log.Printf("[honeypot] ignored source outside enabled VLAN scopes port=%d src=%s", port, srcIP)
+		return
+	}
 
 	log.Printf("[honeypot] HIT port=%d src=%s", port, srcIP)
 
@@ -213,6 +245,8 @@ func (h *HoneypotServer) handle(conn net.Conn, port int) {
 		Signature:    fmt.Sprintf("Connection to honeypot port %d", port),
 		Action:       "honeypot",
 		Proto:        "TCP",
+		VLAN:         vlan.VLAN,
+		VLANName:     vlan.NetworkName,
 		HoneypotPort: port,
 		BytesRecv:    n,
 		BannerData:   bannerData,

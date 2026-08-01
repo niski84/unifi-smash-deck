@@ -97,6 +97,24 @@ func FingerprintWindows(port int, payload []byte, profile WindowsProfile) *Windo
 	if port == 80 || port == 8080 || port == 18080 || port == 443 || port == 18443 {
 		return fingerprintIIS(payload, p)
 	}
+	// Companion agents may use arbitrary high ports when standard Windows
+	// ports are occupied. Fall back to protocol bytes so those deployments
+	// retain the same fingerprint coverage.
+	if bytes.Contains(payload, []byte("SMB")) {
+		return fingerprintSMB(payload, p)
+	}
+	if len(payload) >= 2 && payload[0] == 0x03 && payload[1] == 0x00 {
+		return fingerprintRDP(payload, p)
+	}
+	if bytes.Contains(bytes.ToUpper(payload), []byte("HTTP/1.")) {
+		if bytes.Contains(bytes.ToLower(payload), []byte("/wsman")) {
+			return fingerprintWinRM(payload, p)
+		}
+		return fingerprintIIS(payload, p)
+	}
+	if bytes.Contains(payload, []byte("\x05\x00")) || bytes.Contains(bytes.ToLower(payload), []byte("ncacn")) {
+		return fingerprintRPC(payload, p)
+	}
 	return nil
 }
 

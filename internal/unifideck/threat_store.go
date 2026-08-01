@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 // ThreatKind distinguishes IDS/IPS events from local honeypot hits.
@@ -35,6 +36,10 @@ type ThreatEvent struct {
 	ClientName string `json:"client_name,omitempty"`
 	// Honeypot-specific
 	HoneypotPort int    `json:"honeypot_port,omitempty"`
+	VLAN         int    `json:"vlan,omitempty"`
+	VLANName     string `json:"vlan_name,omitempty"`
+	AgentID      string `json:"agent_id,omitempty"`
+	AgentName    string `json:"agent_name,omitempty"`
 	BytesRecv    int    `json:"bytes_recv,omitempty"`
 	BannerData   string `json:"banner_data,omitempty"` // first bytes the client sent
 	Fingerprint  string `json:"fingerprint,omitempty"`
@@ -57,6 +62,46 @@ type ThreatStore struct {
 	path   string
 	byID   map[string]*ThreatEvent
 	events []*ThreatEvent // newest-first
+}
+
+// HoneypotSummary is the compact rolling-window view sent to alert consumers.
+// It deliberately contains counts and fingerprints, never raw payloads.
+type HoneypotSummary struct {
+	WindowMinutes int            `json:"window_minutes"`
+	Since         int64          `json:"since"`
+	Until         int64          `json:"until"`
+	EventCount    int            `json:"event_count"`
+	ByFingerprint map[string]int `json:"by_fingerprint"`
+	ByPort        map[int]int    `json:"by_port"`
+	Latest        *ThreatEvent   `json:"latest,omitempty"`
+}
+
+func (ts *ThreatStore) HoneypotSummary(now time.Time, window time.Duration) HoneypotSummary {
+	nowMS := now.UnixMilli()
+	sinceMS := now.Add(-window).UnixMilli()
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	sum := HoneypotSummary{
+		WindowMinutes: int(window / time.Minute), Since: sinceMS, Until: nowMS,
+		ByFingerprint: map[string]int{}, ByPort: map[int]int{},
+	}
+	for _, e := range ts.events {
+		if e.Kind != ThreatKindHoneypot || e.Timestamp < sinceMS || e.Timestamp > nowMS {
+			continue
+		}
+		sum.EventCount++
+		fingerprint := e.Fingerprint
+		if fingerprint == "" {
+			fingerprint = e.Signature
+		}
+		sum.ByFingerprint[fingerprint]++
+		sum.ByPort[e.DstPort]++
+		if sum.Latest == nil {
+			copy := *e
+			sum.Latest = &copy
+		}
+	}
+	return sum
 }
 
 func NewThreatStore(dataDir string) *ThreatStore {

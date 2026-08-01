@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -160,6 +161,8 @@ func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("/api/security/events", s.handleSecurityEvents)
 	mux.HandleFunc("/api/security/status", s.handleSecurityStatus)
 	mux.HandleFunc("/api/security/webhook/test", s.handleSecurityWebhookTest)
+	mux.HandleFunc("/api/security/vlans", s.handleHoneypotVLANs)
+	mux.HandleFunc("/api/security/agents/events", s.handleHoneypotAgentEvent)
 	mux.HandleFunc("/api/security/summary", s.handleSecuritySummary)
 	mux.HandleFunc("/api/security/test", s.handleSecurityTest)
 	mux.HandleFunc("/api/security/signatures", s.handleSecuritySignatures)
@@ -704,16 +707,18 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		cfg := s.snapshotCfg()
 		writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
-			"port":                    cfg.Port,
-			"unifi_host":              cfg.UnifiHost,
-			"unifi_site":              cfg.UnifiSite,
-			"unifi_api_key":           maskKey(cfg.UnifiAPIKey),
-			"honeypot_ports":          cfg.HoneypotPorts,
-			"controller_honeypot_ips": cfg.ControllerHoneypotIPs,
-			"adaptix_profile":         cfg.AdaptixProfile,
-			"windows_profile":         cfg.WindowsProfile,
-			"security_webhook_url":    cfg.SecurityWebhookURL,
-			"threat_feed_mode":        cfg.ThreatFeedMode,
+			"port":                       cfg.Port,
+			"unifi_host":                 cfg.UnifiHost,
+			"unifi_site":                 cfg.UnifiSite,
+			"unifi_api_key":              maskKey(cfg.UnifiAPIKey),
+			"honeypot_ports":             cfg.HoneypotPorts,
+			"controller_honeypot_ips":    cfg.ControllerHoneypotIPs,
+			"honeypot_vlans":             cfg.HoneypotVLANs,
+			"adaptix_profile":            cfg.AdaptixProfile,
+			"windows_profile":            cfg.WindowsProfile,
+			"security_webhook_url":       cfg.SecurityWebhookURL,
+			"honeypot_ingest_configured": cfg.HoneypotIngestToken != "",
+			"threat_feed_mode":           cfg.ThreatFeedMode,
 		}})
 	case http.MethodPost:
 		var body struct {
@@ -724,6 +729,8 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 			UnifiPass             string         `json:"unifi_pass"` // backward compat alias
 			HoneypotPorts         []int          `json:"honeypot_ports"`
 			ControllerHoneypotIPs []string       `json:"controller_honeypot_ips"`
+			HoneypotVLANs         []HoneypotVLAN `json:"honeypot_vlans"`
+			HoneypotIngestToken   string         `json:"honeypot_ingest_token"`
 			AdaptixProfile        AdaptixProfile `json:"adaptix_profile"`
 			WindowsProfile        WindowsProfile `json:"windows_profile"`
 			SecurityWebhookURL    string         `json:"security_webhook_url"`
@@ -758,6 +765,12 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if body.ControllerHoneypotIPs != nil {
 			cur.ControllerHoneypotIPs = body.ControllerHoneypotIPs
 		}
+		if body.HoneypotVLANs != nil {
+			cur.HoneypotVLANs = body.HoneypotVLANs
+		}
+		if body.HoneypotIngestToken != "" {
+			cur.HoneypotIngestToken = body.HoneypotIngestToken
+		}
 		if body.AdaptixProfile.HTTPHeader != "" || body.AdaptixProfile.HTTPPaths != nil || body.AdaptixProfile.HTTPUserAgents != nil || body.AdaptixProfile.DNSSuffixes != nil {
 			cur.AdaptixProfile = body.AdaptixProfile
 		}
@@ -780,6 +793,7 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		s.honeypotSrv.SetAdaptixProfile(cur.AdaptixProfile)
 		s.honeypotSrv.SetWindowsProfile(cur.WindowsProfile)
+		s.honeypotSrv.SetHoneypotVLANs(cur.HoneypotVLANs)
 		// Apply new feed mode immediately.
 		if cur.ThreatFeedMode != "" {
 			s.sigUpdater.SetMode(ValidThreatFeedMode(cur.ThreatFeedMode))
@@ -804,6 +818,46 @@ func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
 	}
+}
+
+// handleHoneypotAgentEvent accepts an event from a companion sensor. The
+// shared token is intentionally only accepted in a header and is never
+// returned by the settings API.
+func (s *HTTPServer) handleHoneypotAgentEvent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	cfg := s.snapshotCfg()
+	if cfg.HoneypotIngestToken == "" || r.Header.Get("X-Honeypot-Agent-Token") != cfg.HoneypotIngestToken {
+		writeJSON(w, http.StatusUnauthorized, apiResp{Success: false, Error: "invalid agent token"})
+		return
+	}
+	var input struct {
+		AgentID   string       `json:"agent_id"`
+		AgentName string       `json:"agent_name"`
+		VLAN      HoneypotVLAN `json:"vlan"`
+		Event     ThreatEvent  `json:"event"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&input); err != nil {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "invalid event payload"})
+		return
+	}
+	if input.Event.ID == "" || input.Event.Kind != ThreatKindHoneypot {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "honeypot event required"})
+		return
+	}
+	input.Event.AgentID, input.Event.AgentName = input.AgentID, input.AgentName
+	if input.Event.VLAN == 0 {
+		input.Event.VLAN = input.VLAN.VLAN
+	}
+	if input.Event.VLANName == "" {
+		input.Event.VLANName = input.VLAN.NetworkName
+	}
+	if s.threatStore.Add(input.Event) {
+		s.fireSecurityWebhook(input.Event)
+	}
+	writeJSON(w, http.StatusAccepted, apiResp{Success: true, Data: map[string]any{"accepted": true}})
 }
 
 // handleNetworks lists the UniFi networks/VLANs for the configured site.
@@ -1082,6 +1136,7 @@ func (s *HTTPServer) handleSecurityStatus(w http.ResponseWriter, r *http.Request
 	cfg := s.snapshotCfg()
 	s.honeypotSrv.SetAdaptixProfile(cfg.AdaptixProfile)
 	s.honeypotSrv.SetWindowsProfile(cfg.WindowsProfile)
+	s.honeypotSrv.SetHoneypotVLANs(cfg.HoneypotVLANs)
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
 		"local_honeypot": map[string]any{
 			"configured_ports": cfg.HoneypotPorts,
@@ -1112,7 +1167,9 @@ func (s *HTTPServer) handleSecurityWebhookTest(w http.ResponseWriter, r *http.Re
 		Signature: "AdaptixC2 webhook delivery test", Fingerprint: "AdaptixC2 webhook delivery test",
 		Confidence: 100, Evidence: "manual test from UniFi Smash Deck",
 	}
-	status, err := deliverSecurityWebhook(url, e)
+	sum := s.threatStore.HoneypotSummary(time.Now(), 15*time.Minute)
+	payload := SecurityWebhookPayload{ThreatEvent: e, Summary: sum, Announcement: "Security alert. This is a honeypot webhook delivery test."}
+	status, err := deliverSecurityWebhook(url, payload)
 	if err != nil {
 		writeJSON(w, http.StatusBadGateway, apiResp{Success: false, Error: err.Error()})
 		return
@@ -1762,7 +1819,47 @@ func isMasked(s string) bool {
 	return strings.Contains(s, "•") || strings.HasPrefix(s, "****")
 }
 
-// fireSecurityWebhook POSTs a ThreatEvent to the configured security webhook URL.
+type SecurityWebhookPayload struct {
+	ThreatEvent
+	Summary      HoneypotSummary `json:"honeypot_summary"`
+	Announcement string          `json:"announcement"`
+}
+
+func buildHoneypotAnnouncement(sum HoneypotSummary) string {
+	if sum.EventCount == 0 {
+		return "Security alert. A honeypot event was detected."
+	}
+	type item struct {
+		name  string
+		count int
+	}
+	items := make([]item, 0, len(sum.ByFingerprint))
+	for name, count := range sum.ByFingerprint {
+		items = append(items, item{name, count})
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].count == items[j].count {
+			return items[i].name < items[j].name
+		}
+		return items[i].count > items[j].count
+	})
+	parts := make([]string, 0, 3)
+	for i, item := range items {
+		if i == 3 {
+			break
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", item.count, item.name))
+	}
+	latest := ""
+	if sum.Latest != nil {
+		latest = fmt.Sprintf(" Latest was %s on port %d.", sum.Latest.Fingerprint, sum.Latest.DstPort)
+	}
+	return fmt.Sprintf("Security alert. In the last %d minutes, %d honeypot events were detected. Activity included %s.%s", sum.WindowMinutes, sum.EventCount, strings.Join(parts, ", "), latest)
+}
+
+// fireSecurityWebhook POSTs a ThreatEvent plus a rolling 15-minute summary to
+// the configured security webhook URL. Consumers can use Announcement as
+// ready-to-speak text without reconstructing the event history.
 // Called by the honeypot server (and can be called for IPS events in future).
 func (s *HTTPServer) fireSecurityWebhook(e ThreatEvent) {
 	cfg := s.snapshotCfg()
@@ -1770,8 +1867,10 @@ func (s *HTTPServer) fireSecurityWebhook(e ThreatEvent) {
 	if url == "" {
 		return
 	}
+	sum := s.threatStore.HoneypotSummary(time.Now(), 15*time.Minute)
+	payload := SecurityWebhookPayload{ThreatEvent: e, Summary: sum, Announcement: buildHoneypotAnnouncement(sum)}
 	go func() {
-		status, err := deliverSecurityWebhook(url, e)
+		status, err := deliverSecurityWebhook(url, payload)
 		if err != nil {
 			log.Printf("[threats] webhook delivery error: %v", err)
 			return
@@ -1780,8 +1879,8 @@ func (s *HTTPServer) fireSecurityWebhook(e ThreatEvent) {
 	}()
 }
 
-func deliverSecurityWebhook(url string, e ThreatEvent) (int, error) {
-	b, err := json.Marshal(e)
+func deliverSecurityWebhook(url string, payload any) (int, error) {
+	b, err := json.Marshal(payload)
 	if err != nil {
 		return 0, err
 	}
