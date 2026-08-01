@@ -159,6 +159,7 @@ func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
 	mux.HandleFunc("/api/clients/block", s.handleClientBlock)
 	mux.HandleFunc("/api/security/events", s.handleSecurityEvents)
 	mux.HandleFunc("/api/security/status", s.handleSecurityStatus)
+	mux.HandleFunc("/api/security/webhook/test", s.handleSecurityWebhookTest)
 	mux.HandleFunc("/api/security/summary", s.handleSecuritySummary)
 	mux.HandleFunc("/api/security/test", s.handleSecurityTest)
 	mux.HandleFunc("/api/security/signatures", s.handleSecuritySignatures)
@@ -1085,6 +1086,32 @@ func (s *HTTPServer) handleSecurityStatus(w http.ResponseWriter, r *http.Request
 	}})
 }
 
+// handleSecurityWebhookTest sends a non-persisted test payload to the configured
+// webhook. It does not create a threat event or trigger a honeypot listener.
+func (s *HTTPServer) handleSecurityWebhookTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
+		return
+	}
+	url := strings.TrimSpace(s.snapshotCfg().SecurityWebhookURL)
+	if url == "" {
+		writeJSON(w, http.StatusBadRequest, apiResp{Success: false, Error: "security webhook is not configured"})
+		return
+	}
+	e := ThreatEvent{
+		ID: "webhook-test", Kind: ThreatKindHoneypot, Timestamp: time.Now().UnixMilli(),
+		SrcIP: "127.0.0.1", Severity: 1, Category: "Webhook Test", Action: "test",
+		Signature: "AdaptixC2 webhook delivery test", Fingerprint: "AdaptixC2 webhook delivery test",
+		Confidence: 100, Evidence: "manual test from UniFi Smash Deck",
+	}
+	status, err := deliverSecurityWebhook(url, e)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, apiResp{Success: false, Error: err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"status": "delivered", "http_status": status}})
+}
+
 // handleSecuritySignatures returns the threat intel feed status (GET) or triggers
 // an immediate refresh (POST).
 func (s *HTTPServer) handleSecuritySignatures(w http.ResponseWriter, r *http.Request) {
@@ -1690,6 +1717,7 @@ func (s *HTTPServer) StartScheduler() {
 	if s.threatPoller != nil {
 		s.threatPoller.SetHoneypotIPs(cfg.ControllerHoneypotIPs)
 	}
+	s.honeypotSrv.SetAdaptixProfile(cfg.AdaptixProfile)
 	s.honeypotSrv.UpdatePorts(cfg.HoneypotPorts)
 	// Wire webhook after we have cfg.
 	s.honeypotSrv.webhookFn = s.fireSecurityWebhook
@@ -1734,24 +1762,36 @@ func (s *HTTPServer) fireSecurityWebhook(e ThreatEvent) {
 		return
 	}
 	go func() {
-		b, err := json.Marshal(e)
-		if err != nil {
-			return
-		}
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewReader(b))
-		if err != nil {
-			log.Printf("[threats] webhook request error: %v", err)
-			return
-		}
-		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
+		status, err := deliverSecurityWebhook(url, e)
 		if err != nil {
 			log.Printf("[threats] webhook delivery error: %v", err)
 			return
 		}
-		resp.Body.Close()
-		log.Printf("[threats] webhook fired → %s (HTTP %d)", url, resp.StatusCode)
+		log.Printf("[threats] webhook fired → %s (HTTP %d)", url, status)
 	}()
+}
+
+func deliverSecurityWebhook(url string, e ThreatEvent) (int, error) {
+	b, err := json.Marshal(e)
+	if err != nil {
+		return 0, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return resp.StatusCode, fmt.Errorf("webhook returned HTTP %d", resp.StatusCode)
+	}
+	return resp.StatusCode, nil
 }
 
 // ── Config Drift Detection handlers ────────────────────────────────────────

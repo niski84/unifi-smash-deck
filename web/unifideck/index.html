@@ -2141,6 +2141,10 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
         <div>
           <label for="cfgSecWebhook">Security webhook URL</label>
           <input id="cfgSecWebhook" placeholder="https://your-scene-runner/hook/…" autocomplete="off" />
+          <div style="display:flex;gap:6px;margin-top:6px;">
+            <button type="button" class="secondary" id="testSecWebhookBtn" style="font-size:12px;padding:4px 10px;">Test Webhook</button>
+            <button type="button" class="secondary" id="clearSecWebhookBtn" style="font-size:12px;padding:4px 10px;">Clear</button>
+          </div>
         </div>
       </div>
       <div class="row">
@@ -2168,6 +2172,8 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
       </div>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <button type="button" class="primary" id="saveSecuritySettingsBtn">Save Security Settings</button>
+        <label style="font-size:12px;display:flex;gap:5px;align-items:center;"><input type="checkbox" id="securityBrowserNotify"> Browser notifications</label>
+        <label style="font-size:12px;display:flex;gap:5px;align-items:center;"><input type="checkbox" id="securitySpeechNotify"> Speak Adaptix alerts</label>
         <span id="securitySettingsMsg" style="font-size:13px;"></span>
       </div>
     </div>
@@ -3592,6 +3598,45 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
         $('securitySettingsMsg').textContent = e.message;
         $('securitySettingsMsg').className = 'err';
       }
+    };
+
+    $('clearSecWebhookBtn').onclick = () => {
+      $('cfgSecWebhook').value = '';
+      $('securitySettingsMsg').textContent = 'Webhook cleared — click Save Security Settings to apply.';
+      $('securitySettingsMsg').className = 'muted';
+    };
+
+    $('testSecWebhookBtn').onclick = async () => {
+      const btn = $('testSecWebhookBtn');
+      const old = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Testing…';
+      try {
+        const d = await api('POST', '/api/security/webhook/test');
+        $('securitySettingsMsg').textContent = `Webhook delivered ✓ HTTP ${d.http_status || 200}`;
+        $('securitySettingsMsg').className = 'ok';
+      } catch (e) {
+        $('securitySettingsMsg').textContent = e.message || String(e);
+        $('securitySettingsMsg').className = 'err';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = old;
+      }
+    };
+
+    const LS_SECURITY_NOTIFY = 'ud_security_notify';
+    const LS_SECURITY_SPEECH = 'ud_security_speech';
+    $('securityBrowserNotify').checked = localStorage.getItem(LS_SECURITY_NOTIFY) === '1';
+    $('securitySpeechNotify').checked = localStorage.getItem(LS_SECURITY_SPEECH) === '1';
+    $('securityBrowserNotify').onchange = async () => {
+      const on = $('securityBrowserNotify').checked;
+      localStorage.setItem(LS_SECURITY_NOTIFY, on ? '1' : '0');
+      if (on && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+        await Notification.requestPermission().catch(() => {});
+      }
+    };
+    $('securitySpeechNotify').onchange = () => {
+      localStorage.setItem(LS_SECURITY_SPEECH, $('securitySpeechNotify').checked ? '1' : '0');
     };
 
     async function loadSigFeedStatus() {
@@ -7129,6 +7174,44 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
       }, durationMs);
     }
 
+    let securityToastContainer = null;
+    function showSecurityToast(msg) {
+      if (!securityToastContainer) {
+        securityToastContainer = document.createElement('div');
+        Object.assign(securityToastContainer.style, {
+          position: 'fixed', top: '20px', right: '20px', display: 'flex',
+          flexDirection: 'column', gap: '8px', zIndex: '10000', maxWidth: '380px',
+        });
+        document.body.appendChild(securityToastContainer);
+      }
+      const el = document.createElement('div');
+      Object.assign(el.style, {
+        padding: '12px 16px', borderRadius: '8px',
+        border: '1px solid rgba(229,57,53,0.65)', background: 'rgba(70,10,12,0.94)',
+        color: '#fff', fontSize: '13px', fontWeight: '700',
+        boxShadow: '0 5px 20px rgba(0,0,0,0.45)', cursor: 'pointer',
+      });
+      el.textContent = msg;
+      el.onclick = () => el.remove();
+      securityToastContainer.appendChild(el);
+      setTimeout(() => el.remove(), 10000);
+    }
+
+    function announceSecurityEvent(e) {
+      if (!e || !e.id || !e.fingerprint) return;
+      const label = `${e.fingerprint}${e.src_ip ? ` · ${e.src_ip}` : ''}${e.dst_port ? `:${e.dst_port}` : ''}`;
+      showSecurityToast(`🚨 Adaptix activity detected — ${label}`);
+      if (localStorage.getItem('ud_security_notify') === '1' && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+        try { new Notification('AdaptixC2 activity detected', { body: label, tag: `security-${e.id}` }); } catch (_) {}
+      }
+      if (localStorage.getItem('ud_security_speech') === '1' && 'speechSynthesis' in window) {
+        try {
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(new SpeechSynthesisUtterance(`Security alert. ${e.fingerprint} detected.`));
+        } catch (_) {}
+      }
+    }
+
     // ── Security badge helper ─────────────────────────────────────────────────
     function updateSecBadge(critical) {
       const badge = document.getElementById('securityBadge');
@@ -7156,6 +7239,7 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
     // ── SSE connection ────────────────────────────────────────────────────────
     let prevThreats = null;
     let prevMemAvail = null;
+    let prevThreatID = null;
     const MEMORY_WARN_MB = 400; // toast when memory drops below this
 
     function connectSSE() {
@@ -7174,6 +7258,13 @@ pip install -r sidecar/requirements.txt<button onclick="copyInstallCmds()" style
             showToast(`🔒 ${delta} new threat${delta > 1 ? 's' : ''} detected (${p.threats.critical} critical)`, 'error', 7000);
           }
           prevThreats = p.threats.total;
+
+          // The first pulse seeds the cursor; only announce subsequently seen
+          // fingerprinted events so a page refresh does not replay old alerts.
+          if (p.latest_threat && prevThreatID !== null && p.latest_threat.id !== prevThreatID) {
+            announceSecurityEvent(p.latest_threat);
+          }
+          if (p.latest_threat) prevThreatID = p.latest_threat.id;
 
           // 3. Toast: memory critically low.
           if (p.mem_avail_mb > 0 && p.mem_avail_mb < MEMORY_WARN_MB) {

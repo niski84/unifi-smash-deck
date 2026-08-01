@@ -1,12 +1,14 @@
 package unifideck
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
 	"math/rand"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -167,6 +169,13 @@ func (h *HoneypotServer) handle(conn net.Conn, port int) {
 	conn.SetReadDeadline(time.Now().Add(5 * time.Second)) //nolint:errcheck
 	buf := make([]byte, 512)
 	n, _ := io.ReadAtLeast(conn, buf, 1)
+	// Adaptix HTTP callbacks carry the heartbeat in a request body. TCP may
+	// split headers and body across packets, so collect the declared body before
+	// classifying the request instead of fingerprinting only the first read.
+	if want := httpPayloadLength(buf[:n]); want > n && want <= len(buf) {
+		readN, _ := io.ReadFull(conn, buf[n:want])
+		n += readN
+	}
 	buf = buf[:n]
 
 	// Encode raw bytes as hex so control chars don't corrupt JSON/logs.
@@ -206,6 +215,24 @@ func (h *HoneypotServer) handle(conn net.Conn, port int) {
 	if h.store.Add(te) && h.webhookFn != nil {
 		h.webhookFn(te)
 	}
+}
+
+func httpPayloadLength(payload []byte) int {
+	headerEnd := bytes.Index(payload, []byte("\r\n\r\n"))
+	if headerEnd < 0 {
+		return 0
+	}
+	contentLength := 0
+	for _, line := range strings.Split(string(payload[:headerEnd]), "\r\n") {
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 && strings.EqualFold(strings.TrimSpace(parts[0]), "Content-Length") {
+			contentLength, _ = strconv.Atoi(strings.TrimSpace(parts[1]))
+		}
+	}
+	if contentLength <= 0 {
+		return 0
+	}
+	return headerEnd + 4 + contentLength
 }
 
 func (h *HoneypotServer) ipSnapshot() map[string]struct{ MAC, Name string } {

@@ -31,6 +31,7 @@ type StreamPulse struct {
 	ClientCount  int             `json:"client_count"`
 	NewDevices   int             `json:"new_devices_30d"`
 	AutoNext     *time.Time      `json:"auto_next_run,omitempty"`
+	LatestThreat *ThreatEvent    `json:"latest_threat,omitempty"`
 }
 
 func (s *HTTPServer) currentPulse() StreamPulse {
@@ -48,14 +49,20 @@ func (s *HTTPServer) currentPulse() StreamPulse {
 		}
 	}
 
+	latest := s.threatStore.Recent(1)
+	var latestThreat *ThreatEvent
+	if len(latest) > 0 {
+		latestThreat = &latest[0]
+	}
 	return StreamPulse{
-		At:          time.Now().UTC(),
-		Threats:     SecuritySummary{Total: total, Critical: critical, Honeypot: honeypot},
-		MemAvailMB:  wd.LastMemAvail,
-		WatchdogOn:  wd.Running,
-		ClientCount: s.clientTracker.Count(),
-		NewDevices:  len(newDev),
-		AutoNext:    autoNext,
+		At:           time.Now().UTC(),
+		Threats:      SecuritySummary{Total: total, Critical: critical, Honeypot: honeypot},
+		MemAvailMB:   wd.LastMemAvail,
+		WatchdogOn:   wd.Running,
+		ClientCount:  s.clientTracker.Count(),
+		NewDevices:   len(newDev),
+		AutoNext:     autoNext,
+		LatestThreat: latestThreat,
 	}
 }
 
