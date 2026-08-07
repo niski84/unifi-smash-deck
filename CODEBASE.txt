@@ -1,0 +1,693 @@
+# github.com/niski84/unifi-smash-deck — Codebase Map
+# Generated: 2026-04-06T03:56:35Z
+# Usage: grep for a type/func name to find its file and line number.
+
+── cmd/unifideck/main.go
+    19  func main() {
+
+── internal/unifideck/automation.go
+    21  type AutomationType string
+    23  const (
+    29  type RunMode string
+    31  const (
+    37  type ScheduleConfig struct {
+    46  type VlanTarget struct {
+    52  type Automation struct {
+    71  type AutomationStore struct {
+    77  func NewAutomationStore(path string) *AutomationStore {
+    84  func (s *AutomationStore) LoadedCount() int {
+    90  func (s *AutomationStore) load() {
+   107  func (s *AutomationStore) save() error {
+   118  func (s *AutomationStore) List() []Automation {
+   126  func (s *AutomationStore) Get(id string) (Automation, bool) {
+   137  func (s *AutomationStore) Upsert(a Automation) error {
+   150  func (s *AutomationStore) Delete(id string) error {
+   162  func (s *AutomationStore) UpdateNextRun(id string, t *time.Time) {
+   176  func (s *AutomationStore) UpdateLastRun(id string, t *time.Time) {
+   194  type AutomationLogger struct {
+   199  func NewAutomationLogger(path string) *AutomationLogger {
+   204  func (l *AutomationLogger) log(level, format string, args ...any) {
+   217  func (l *AutomationLogger) Info(format string, args ...any)  { l.log("INFO", format, args...) }
+   218  func (l *AutomationLogger) Warn(format string, args ...any)  { l.log("WARN", format, args...) }
+   219  func (l *AutomationLogger) Error(format string, args ...any) { l.log("ERROR", format, args...) }
+   222  func (l *AutomationLogger) Tail(n int) []string {
+   244  type clientFactory func() *UnifiClient
+   246  type AutomationScheduler struct {
+   255  func NewAutomationScheduler(store *AutomationStore, logger *AutomationLogger, cf clientFactory) *AutomationScheduler {
+   259  func (s *AutomationScheduler) Start() {
+   274  func (s *AutomationScheduler) Stop() {
+   281  func (s *AutomationScheduler) tick() {
+   301  func (s *AutomationScheduler) advanceNextRun(a Automation) {
+   306  func (s *AutomationScheduler) RefreshNextRunTimes() {
+   319  func (s *AutomationScheduler) RunAutomation(ctx context.Context, id string) error {
+   381  func NextRunTime(a Automation, from time.Time) *time.Time {
+   441  func newID() string {
+   447  func validateAutomation(a Automation) error {
+   469  func InferRunMode(a Automation) RunMode {
+   480  func sortNetworks(nets []Network) []Network {
+
+── internal/unifideck/client_tracker.go
+    15  type TrackedClient struct {
+    26  type clientTrackerDisk struct {
+    32  type ClientTracker struct {
+    41  func NewClientTracker(dataDir string) *ClientTracker {
+    51  func (ct *ClientTracker) load() {
+    67  func (ct *ClientTracker) save() {
+    83  func (ct *ClientTracker) Snapshot(clients []Client) []TrackedClient {
+   125  func (ct *ClientTracker) NewDevices(days int) []TrackedClient {
+   142  func (ct *ClientTracker) Dismiss(macs []string) {
+   155  func (ct *ClientTracker) Count() int {
+   162  func (ct *ClientTracker) LastSnapshot() time.Time {
+   171  func (ct *ClientTracker) Start(fetchClients func(ctx context.Context) ([]Client, error)) {
+   187  func (ct *ClientTracker) poll(fetchClients func(ctx context.Context) ([]Client, error)) {
+   207  func (ct *ClientTracker) Stop() {
+
+── internal/unifideck/config.go
+    11  type AppConfig struct {
+    36  func DataDir() string {
+    43  func DefaultSettingsPath() string {
+    47  func LoadAppConfig(path string) AppConfig {
+   100  func SaveAppConfig(path string, cfg AppConfig) error {
+   111  func getenv(k, def string) string {
+
+── internal/unifideck/config_snapshot.go
+    17  type ConfigSnapshotSummary struct {
+    26  type ConfigSnapshot struct {
+    36  type ConfigSnapshotData struct {
+    49  type ConfigSnapshotSchedule struct {
+    58  type DiffChangeEntry struct {
+    65  type DiffItem struct {
+    72  type DiffChangedItem struct {
+    79  type DiffSection struct {
+    87  type ConfigSnapshotDiff struct {
+   100  type ConfigSnapshotStore struct {
+   107  func NewConfigSnapshotStore(dataDir string) *ConfigSnapshotStore {
+   119  func (s *ConfigSnapshotStore) indexPath() string    { return filepath.Join(s.dir, "index.json") }
+   120  func (s *ConfigSnapshotStore) schedulePath() string { return filepath.Join(s.dir, "schedule.json") }
+   121  func (s *ConfigSnapshotStore) dataPath(id string) string {
+   125  func (s *ConfigSnapshotStore) loadIndex() {
+   136  func (s *ConfigSnapshotStore) saveIndex() error {
+   144  func (s *ConfigSnapshotStore) loadSchedule() {
+   156  func (s *ConfigSnapshotStore) GetSchedule() ConfigSnapshotSchedule {
+   162  func (s *ConfigSnapshotStore) SaveSchedule(sched ConfigSnapshotSchedule) error {
+   176  func (s *ConfigSnapshotStore) List() []ConfigSnapshot {
+   187  func (s *ConfigSnapshotStore) GetMeta(id string) *ConfigSnapshot {
+   199  func (s *ConfigSnapshotStore) Get(id string) (*ConfigSnapshotData, error) {
+   211  func (s *ConfigSnapshotStore) add(snap ConfigSnapshot, data *ConfigSnapshotData) error {
+   230  func (s *ConfigSnapshotStore) Delete(id string) error {
+   254  func (s *ConfigSnapshotStore) Count() int {
+   261  func (s *ConfigSnapshotStore) Prune(retainDays int) int {
+   292  func (s *ConfigSnapshotStore) Capture(ctx context.Context, c *UnifiClient, label, trigger string, appCfg ...AppConfig) (*ConfigSnapshot, error) {
+   351  func (s *ConfigSnapshotStore) Diff(idA, idB string) (*ConfigSnapshotDiff, error) {
+   394  func diffCollection(name string, a, b []map[string]any) DiffSection {
+   427  func indexByID(items []map[string]any) map[string]map[string]any {
+   447  func objDisplayName(item map[string]any) string {
+   457  var noiseFields = map[string]bool{
+   495  func fieldDiff(a, b map[string]any) []DiffChangeEntry {
+   526  type ConfigSnapshotScheduler struct {
+   535  func NewConfigSnapshotScheduler(store *ConfigSnapshotStore, logger *AutomationLogger, clientFn func() *UnifiClient, cfgFn func() AppConfig) *ConfigSnapshotScheduler {
+   545  func (s *ConfigSnapshotScheduler) Start() {
+   549  func (s *ConfigSnapshotScheduler) Stop() {
+   553  func (s *ConfigSnapshotScheduler) run() {
+
+── internal/unifideck/dashboard.go
+    12  type DashboardData struct {
+    21  type WatchdogSummary struct {
+    30  type SecuritySummary struct {
+    36  type ClientSummary struct {
+    42  type AutoSummary struct {
+    49  func (s *HTTPServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
+
+── internal/unifideck/firewall_audit.go
+    16  type FirewallFinding struct {
+    27  type AuditPolicy struct {
+    44  type AuditNetEntry struct {
+    55  type FirewallAuditReport struct {
+    74  func RunFirewallAudit(ctx context.Context, c *UnifiClient) (*FirewallAuditReport, error) {
+   254  func (s *HTTPServer) handleFirewallAudit(w http.ResponseWriter, r *http.Request) {
+   273  func fwBuildPolicy(raw map[string]any, resolveZone func(string) string, netName map[string]string) AuditPolicy {
+   312  func fwNetDisplay(side map[string]any, netName map[string]string) string {
+   338  func fwCheckUnzonedNetworks(networks []map[string]any, netZone, netName, netPurpose map[string]string) []FirewallFinding {
+   364  func fwCheckDefaultAllowCatchAll(policies []map[string]any, internalZoneID string) []FirewallFinding {
+   390  func fwCheckRedundantReturnRules(policies []map[string]any) []FirewallFinding {
+   412  func fwCheckDisabledSecurityRules(policies []map[string]any) []FirewallFinding {
+   440  func fwCheckDuplicateRules(policies []map[string]any) []FirewallFinding {
+   489  func fwCheckSameIndexConflicts(policies []map[string]any) []FirewallFinding {
+   525  func fwCheckAllowBeforeBlock(policies []map[string]any) []FirewallFinding {
+   572  func fwCheckFragileIPRules(policies []map[string]any) []FirewallFinding {
+   602  func fwCheckLegacyObjectRules(policies []map[string]any) []FirewallFinding {
+   629  func fwCheckUncoveredNetworks(policies, networks []map[string]any, netZone map[string]string, internalZoneID string, netName, netPurpose map[string]string) []FirewallFinding {
+   672  func fwStr(m map[string]any, key string) string {
+   677  func fwBool(m map[string]any, key string) bool {
+   682  func fwRuleName(p map[string]any) string {
+   692  func fwNetIDs(side map[string]any) []string {
+
+── internal/unifideck/honeypot.go
+    17  var fakeBanners = map[int]string{
+    35  type HoneypotServer struct {
+    44  func NewHoneypotServer(store *ThreatStore, tracker *ClientTracker, webhookFn func(ThreatEvent)) *HoneypotServer {
+    55  func (h *HoneypotServer) UpdatePorts(ports []int) {
+    90  func (h *HoneypotServer) StopAll() {
+   101  func (h *HoneypotServer) ActivePorts() []int {
+   111  func (h *HoneypotServer) serve(ln net.Listener, port int) {
+   126  func (h *HoneypotServer) handle(conn net.Conn, port int) {
+   177  func (h *HoneypotServer) ipSnapshot() map[string]struct{ MAC, Name string } {
+
+── internal/unifideck/http_server.go
+    19  type HTTPServer struct {
+    42  func NewHTTPServer(cfg AppConfig) *HTTPServer {
+    84  func (s *HTTPServer) unifiClient() *UnifiClient {
+    91  func (s *HTTPServer) snapshotCfg() AppConfig {
+    97  func (s *HTTPServer) replaceCfg(c AppConfig) {
+   103  type apiResp struct {
+   109  func writeJSON(w http.ResponseWriter, status int, v any) {
+   117  func (s *HTTPServer) Routes(webFS fs.FS) http.Handler {
+   162  func (s *HTTPServer) registerUDMRoutes(mux *http.ServeMux) {
+   169  func (s *HTTPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
+   181  func (s *HTTPServer) handleSettings(w http.ResponseWriter, r *http.Request) {
+   268  func (s *HTTPServer) handleNetworks(w http.ResponseWriter, r *http.Request) {
+   291  func (s *HTTPServer) handleNetworkSubroutes(w http.ResponseWriter, r *http.Request) {
+   338  func (s *HTTPServer) handleClients(w http.ResponseWriter, r *http.Request) {
+   360  func (s *HTTPServer) handleClientsNew(w http.ResponseWriter, r *http.Request) {
+   381  func (s *HTTPServer) handleClientsDismiss(w http.ResponseWriter, r *http.Request) {
+   398  func (s *HTTPServer) handleClientBlock(w http.ResponseWriter, r *http.Request) {
+   441  func (s *HTTPServer) handleSecurityTest(w http.ResponseWriter, r *http.Request) {
+   514  func (s *HTTPServer) handleSecurityEvents(w http.ResponseWriter, r *http.Request) {
+   532  func (s *HTTPServer) handleSecuritySignatures(w http.ResponseWriter, r *http.Request) {
+   545  func (s *HTTPServer) handleSecuritySummary(w http.ResponseWriter, r *http.Request) {
+   558  func (s *HTTPServer) handleDevices(w http.ResponseWriter, r *http.Request) {
+   578  func (s *HTTPServer) handleCameras(w http.ResponseWriter, r *http.Request) {
+   600  func (s *HTTPServer) handleCameraSubroutes(w http.ResponseWriter, r *http.Request) {
+   649  func (s *HTTPServer) handleCameraLive(w http.ResponseWriter, r *http.Request, c *UnifiClient, cameraID string) {
+   706  func (s *HTTPServer) handleSnapshots(w http.ResponseWriter, r *http.Request) {
+   729  func (s *HTTPServer) handleSnapshotSubroutes(w http.ResponseWriter, r *http.Request) {
+   817  func (s *HTTPServer) handleAutomations(w http.ResponseWriter, r *http.Request) {
+   849  func (s *HTTPServer) handleAutomationSubroutes(w http.ResponseWriter, r *http.Request) {
+   913  func (s *HTTPServer) handleConfigSnapshots(w http.ResponseWriter, r *http.Request) {
+   950  func (s *HTTPServer) handleConfigSnapshotSubroutes(w http.ResponseWriter, r *http.Request) {
+   990  func (s *HTTPServer) handleCfgSnapSchedule(w http.ResponseWriter, r *http.Request) {
+  1011  func (s *HTTPServer) handleCfgSnapDiff(w http.ResponseWriter, r *http.Request) {
+  1031  func (s *HTTPServer) handleCfgBackup(w http.ResponseWriter, r *http.Request) {
+  1060  func (s *HTTPServer) handleAuditLog(w http.ResponseWriter, r *http.Request) {
+  1091  func (s *HTTPServer) handleLogs(w http.ResponseWriter, r *http.Request) {
+  1108  func (s *HTTPServer) StartScheduler() {
+  1139  func (s *HTTPServer) StopScheduler() {
+  1149  func maskKey(k string) string {
+  1159  func isMasked(s string) bool {
+  1165  func (s *HTTPServer) fireSecurityWebhook(e ThreatEvent) {
+
+── internal/unifideck/iot_diagnostics.go
+    15  type DiagnosticStatus string
+    17  const (
+    24  type DiagnosticCheck struct {
+    38  type IoTDevice struct {
+    50  type IoTDiagnosticsResult struct {
+    58  var iotOUIs = []string{
+    75  func isIoTOUI(oui string) bool {
+    87  type rawSta struct {
+   100  func listRawStations(ctx context.Context, c *UnifiClient) ([]rawSta, error) {
+   117  func RunIoTDiagnostics(ctx context.Context, c *UnifiClient) (*IoTDiagnosticsResult, error) {
+   324  func (s *HTTPServer) handleIoTDiagnose(w http.ResponseWriter, r *http.Request) {
+   347  func (s *HTTPServer) handleIoTWLANFix(w http.ResponseWriter, r *http.Request) {
+   397  func parseJSON(b []byte, v any) error {
+
+── internal/unifideck/network_health.go
+    14  type FindingSeverity string
+    16  const (
+    23  type HealthFinding struct {
+    37  type rawNetwork struct {
+    49  type radioStats struct {
+    59  type radioConfig struct {
+    66  type portEntry struct {
+    77  type portOverride struct {
+    85  type rawDevice struct {
+   108  type rawSiteHealth struct {
+   120  type NetworkHealthResult struct {
+   127  func fetchDevices(ctx context.Context, c *UnifiClient) ([]rawDevice, error) {
+   137  func fetchNetworks(ctx context.Context, c *UnifiClient) ([]rawNetwork, error) {
+   147  func fetchSiteHealth(ctx context.Context, c *UnifiClient) ([]rawSiteHealth, error) {
+   158  func isPrivateIP(ip string) bool {
+   172  func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthResult, error) {
+   568  func (s *HTTPServer) handleNetworkHealth(w http.ResponseWriter, r *http.Request) {
+   591  func (s *HTTPServer) handleHealthFix(w http.ResponseWriter, r *http.Request) {
+
+── internal/unifideck/network_insights.go
+    17  type InsightDevice struct {
+    31  type InsightClient struct {
+    46  type VlanSummary struct {
+    56  type InsightFinding struct {
+    66  type NetworkInsightsReport struct {
+    82  type insightRawDevice struct {
+   102  type insightRawSta struct {
+   117  func RunNetworkInsights(ctx context.Context, c *UnifiClient) (*NetworkInsightsReport, error) {
+   237  func (s *HTTPServer) handleNetworkInsights(w http.ResponseWriter, r *http.Request) {
+   255  func insightCheckDeviceHealth(devices []InsightDevice) []InsightFinding {
+   289  func insightCheckOverloadedAPs(devices []insightRawDevice) []InsightFinding {
+   314  func insightCheckTopTalkers(talkers []InsightClient) []InsightFinding {
+   335  func insightCheckUnknownDevices(clients []insightRawSta) []InsightFinding {
+   357  func insightCheckMisplacedCameras(clients []insightRawSta) []InsightFinding {
+   383  func insightFetchDevices(ctx context.Context, c *UnifiClient) ([]insightRawDevice, error) {
+   393  func insightFetchClients(ctx context.Context, c *UnifiClient) ([]insightRawSta, error) {
+   405  func insightParseFloat(s string) float64 {
+   413  func insightRawStaToClient(s insightRawSta) InsightClient {
+   433  func insightVLANName(vlan int) string {
+   455  func insightFormatUptime(seconds int64) string {
+   467  func insightOUI(oui string) string {
+
+── internal/unifideck/signature_updater.go
+    16  type ThreatFeedMode string
+    18  const (
+    24  func (m ThreatFeedMode) Interval() time.Duration {
+    35  func ValidThreatFeedMode(s string) ThreatFeedMode {
+    45  type FeedEntry struct {
+    53  type FeedStatus struct {
+    64  type SignatureUpdater struct {
+    79  const feodoTrackerURL = "https://feodotracker.abuse.ch/downloads/ipblocklist.json"
+    81  func NewSignatureUpdater(dataDir string) *SignatureUpdater {
+    94  func (su *SignatureUpdater) cacheFile() string {
+    98  type sigCache struct {
+   103  func (su *SignatureUpdater) loadCache() {
+   119  func (su *SignatureUpdater) saveCache() {
+   129  func (su *SignatureUpdater) SetMode(m ThreatFeedMode) {
+   140  func (su *SignatureUpdater) Start() {
+   145  func (su *SignatureUpdater) Stop() {
+   153  func (su *SignatureUpdater) run() {
+   188  func (su *SignatureUpdater) fetch() {
+   227  func (su *SignatureUpdater) setErr(err error) {
+   235  func (su *SignatureUpdater) Status() FeedStatus {
+   257  func (su *SignatureUpdater) IsKnownBadIP(ip string) (bool, string) {
+
+── internal/unifideck/snapshot_store.go
+    22  type SnapshotRule struct {
+    48  type SnapshotScheduleConfig struct {
+    61  type SnapshotRecord struct {
+    70  type SnapshotRecordAPI struct {
+    80  type CameraSnapshotGroup struct {
+    87  type CameraSnapshotGroupAPI struct {
+    97  type SnapshotStore struct {
+   106  var defaultScheduleConfig = SnapshotScheduleConfig{
+   119  func NewSnapshotStore(dataDir string) *SnapshotStore {
+   134  func (s *SnapshotStore) loadSchedule() {
+   175  func (s *SnapshotStore) SaveScheduleConfig(cfg SnapshotScheduleConfig) error {
+   186  func (s *SnapshotStore) GetScheduleConfig() SnapshotScheduleConfig {
+   192  func (s *SnapshotStore) loadIndex() {
+   208  func (s *SnapshotStore) saveIndex() error {
+   217  func (s *SnapshotStore) ImagePath(id string) string {
+   222  func (s *SnapshotStore) Add(camID, camName string, data []byte, takenAt time.Time) (SnapshotRecord, error) {
+   245  func (s *SnapshotStore) GroupedByCamera() []CameraSnapshotGroup {
+   272  func resolveDayLocation(tz string) *time.Location {
+   285  func (s *SnapshotStore) GroupedByCameraAPI() []CameraSnapshotGroupAPI {
+   309  func (s *SnapshotStore) Get(id string) (SnapshotRecord, bool) {
+   321  func (s *SnapshotStore) Delete(id string) error {
+   335  func (s *SnapshotStore) PruneOld() {
+   358  func (s *SnapshotStore) Count() int {
+   370  type SnapshotScheduler struct {
+   382  func NewSnapshotScheduler(store *SnapshotStore, logger *AutomationLogger, clientFunc func() *UnifiClient) *SnapshotScheduler {
+   392  func (ss *SnapshotScheduler) Start() { go ss.run() }
+   393  func (ss *SnapshotScheduler) Stop()  { close(ss.stop) }
+   395  func (ss *SnapshotScheduler) run() {
+   408  func (ss *SnapshotScheduler) checkAndFire(now time.Time) {
+   462  func (ss *SnapshotScheduler) CaptureNow(cameraIDs []string) {
+   473  func (ss *SnapshotScheduler) captureForRule(rule SnapshotRule, scheduledAt time.Time) {
+
+── internal/unifideck/sse.go
+    26  type StreamPulse struct {
+    36  func (s *HTTPServer) currentPulse() StreamPulse {
+    64  func (s *HTTPServer) handleStream(w http.ResponseWriter, r *http.Request) {
+
+── internal/unifideck/threat_harness.go
+    12  type TestScenario struct {
+    19  var builtinScenarios = []TestScenario{
+    63  const tempHoneypotPort = 19991
+    67  func (s *HTTPServer) RunTestScenarios() []ThreatEvent {
+   117  func (s *HTTPServer) probeHoneypot(port int, payload string) (*ThreatEvent, error) {
+   147  func (s *HTTPServer) injectIPSEvent(srcIP string, severity int, signature, category string) ThreatEvent {
+   174  func categoryForSeverity(sev int) string {
+   185  func containsAny(s string, words ...string) bool {
+
+── internal/unifideck/threat_poller.go
+    12  type IPSThreatPoller struct {
+    18  func NewIPSThreatPoller(store *ThreatStore, tracker *ClientTracker) *IPSThreatPoller {
+    26  type fetchIPSFn func(ctx context.Context, since time.Time) ([]IPSEvent, error)
+    28  func (p *IPSThreatPoller) Start(fetch fetchIPSFn) {
+    44  func (p *IPSThreatPoller) Stop() {
+    52  func (p *IPSThreatPoller) poll(fetch fetchIPSFn) {
+    81  func (p *IPSThreatPoller) ipSnapshot() map[string]struct{ MAC, Name string } {
+   101  func (p *IPSThreatPoller) convert(e IPSEvent, ipLookup map[string]struct{ MAC, Name string }) ThreatEvent {
+
+── internal/unifideck/threat_store.go
+    12  type ThreatKind string
+    14  const (
+    20  type ThreatEvent struct {
+    42  const maxThreatEvents = 5000
+    44  type threatDisk struct {
+    50  type ThreatStore struct {
+    57  func NewThreatStore(dataDir string) *ThreatStore {
+    66  func (ts *ThreatStore) load() {
+    83  func (ts *ThreatStore) save() {
+    96  func (ts *ThreatStore) Add(e ThreatEvent) bool {
+   119  func (ts *ThreatStore) Recent(n int) []ThreatEvent {
+   133  func (ts *ThreatStore) LastTimestamp() int64 {
+   143  func (ts *ThreatStore) Summary() (total, critical, honeypot int) {
+
+── internal/unifideck/udm_deploy.go
+    18  const (
+    27  type WatchdogDeployStatus struct {
+    41  func getRemoteWatchdogStatus(cfg AppConfig) (*WatchdogDeployStatus, error) {
+    90  const watchdogReleaseURL = "https://github.com/niski84/udm-pro-memory-monitor/releases/latest/download/udm-pro-memory-monitor-arm64"
+    93  func deployWatchdog(ctx context.Context, cfg AppConfig, wdCfg WatchdogCfg) error {
+   147  func undeployWatchdog(cfg AppConfig) error {
+   168  func downloadBinary(ctx context.Context, url, dest string) error {
+   193  func sshBaseArgs(cfg AppConfig) []string {
+   208  func (s *HTTPServer) handleUDMDeploy(w http.ResponseWriter, r *http.Request) {
+   281  func readBody(r *http.Request) string {
+
+── internal/unifideck/udm_ssh.go
+    26  type UDMProcess struct {
+    37  type BinaryInfo struct {
+    47  type MemInfo struct {
+    59  type DiskEntry struct {
+    69  type UDMFinding struct {
+    78  type UDMProcessScan struct {
+    91  var udmKeyBinaries = []string{
+   105  func udmSSHClient(cfg AppConfig) (*ssh.Client, error) {
+   181  func udmRun(client *ssh.Client, cmd string) (string, error) {
+   195  func RunUDMProcessScan(ctx context.Context, cfg AppConfig) (*UDMProcessScan, error) {
+   233  func AnalyzeUDMScan(scan *UDMProcessScan) []UDMFinding {
+   362  func (s *HTTPServer) handleUDMProcessScan(w http.ResponseWriter, r *http.Request) {
+   380  func parseMemInfo(raw string) MemInfo {
+   410  func parseDf(raw string) []DiskEntry {
+   432  func parsePS(raw string, limit int) []UDMProcess {
+   470  func parseBinaries(statRaw, md5Raw, linkRaw string) []BinaryInfo {
+   549  type UDMBinarySnapshot struct {
+   556  type UDMProcessSnapshot struct {
+   564  func CaptureUDMBinarySnapshot(ctx context.Context, cfg AppConfig) (*UDMBinarySnapshot, error) {
+   589  func MD5String(s string) string {
+
+── internal/unifideck/udm_sysconfig.go
+    13  const udmSysPropsPath = "/usr/lib/unifi/data/system.properties"
+    14  const udmBackupDir = "/data/unifideck-backups"
+    17  func (s *HTTPServer) handleUDMSysConfig(w http.ResponseWriter, r *http.Request) {
+
+── internal/unifideck/udm_watchdog.go
+    18  type WatchdogCfg struct {
+    26  func defaultWatchdogCfg() WatchdogCfg {
+    37  type WatchdogEventType string
+    39  const (
+    50  type WatchdogEvent struct {
+    59  type WatchdogStatus struct {
+    70  const watchdogMaxEvents = 100
+    73  type UDMWatchdog struct {
+    88  func NewUDMWatchdog(cfgPath string, appCfgFn func() AppConfig) *UDMWatchdog {
+    98  func (w *UDMWatchdog) loadCfg() {
+   106  func (w *UDMWatchdog) saveCfg() {
+   112  func (w *UDMWatchdog) addEvent(evt WatchdogEvent) {
+   120  func (w *UDMWatchdog) Status() WatchdogStatus {
+   136  func (w *UDMWatchdog) Start() error {
+   154  func (w *UDMWatchdog) Stop() {
+   170  func (w *UDMWatchdog) CheckNow(ctx context.Context) error {
+   177  func (w *UDMWatchdog) UpdateConfig(cfg WatchdogCfg) {
+   186  func (w *UDMWatchdog) loop(stop <-chan struct{}) {
+   213  func (w *UDMWatchdog) doCheck(ctx context.Context, appCfg AppConfig) error {
+   348  func parseMemAvailable(raw string) int64 {
+   363  func (s *HTTPServer) handleUDMWatchdog(w http.ResponseWriter, r *http.Request) {
+
+── internal/unifideck/unifi_client.go
+    16  type Network struct {
+    28  type Client struct {
+    40  type Device struct {
+    50  type SiteHealth struct {
+    59  type ProtectCamera struct {
+    74  type UnifiClient struct {
+    81  func NewUnifiClient(host, apiKey, site string) *UnifiClient {
+    96  func (c *UnifiClient) IsConfigured() bool {
+   101  func (c *UnifiClient) apiURL(path string) string {
+   110  func (c *UnifiClient) doJSON(ctx context.Context, method, url string, body any, out any) error {
+   164  func (c *UnifiClient) ListNetworks(ctx context.Context) ([]Network, error) {
+   182  func (c *UnifiClient) getNetworkRaw(ctx context.Context, networkID string) (map[string]any, error) {
+   214  func (c *UnifiClient) SetNetworkEnabled(ctx context.Context, networkID string, enabled bool) error {
+   239  func (c *UnifiClient) ListClients(ctx context.Context) ([]Client, error) {
+   253  func (c *UnifiClient) ListDevices(ctx context.Context) ([]Device, error) {
+   267  func (c *UnifiClient) SiteHealthList(ctx context.Context) ([]SiteHealth, error) {
+   281  func (c *UnifiClient) TestConnection(ctx context.Context) (string, error) {
+   297  func (c *UnifiClient) protectIntURL(path string) string {
+   302  func (c *UnifiClient) protectURL(path string) string {
+   308  func (c *UnifiClient) doRaw(ctx context.Context, method, url string) ([]byte, string, error) {
+   343  func (c *UnifiClient) ListCameras(ctx context.Context) ([]ProtectCamera, error) {
+   354  func (c *UnifiClient) CameraSnapshot(ctx context.Context, cameraID string, highQuality bool) ([]byte, string, error) {
+   375  type WLAN struct {
+   390  type MDNSSetting struct {
+   397  func (c *UnifiClient) ListWLANs(ctx context.Context) ([]WLAN, error) {
+   411  func (c *UnifiClient) getWLANRaw(ctx context.Context, wlanID string) (map[string]any, error) {
+   426  func (c *UnifiClient) UpdateWLANFields(ctx context.Context, wlanID string, fields map[string]any) error {
+   450  func (c *UnifiClient) GetMDNSSetting(ctx context.Context) (MDNSSetting, error) {
+   464  type IPSAlert struct {
+   472  type IPSEvent struct {
+   486  func (e IPSEvent) TimestampMs() int64 {
+   500  func (c *UnifiClient) ListIPSEvents(ctx context.Context, since time.Time) ([]IPSEvent, error) {
+   516  func (c *UnifiClient) BlockClient(ctx context.Context, mac string) error {
+   534  func (c *UnifiClient) UnblockClient(ctx context.Context, mac string) error {
+   552  func (c *UnifiClient) v2apiURL(path string) string {
+   561  func (c *UnifiClient) ListNetworksRaw(ctx context.Context) ([]map[string]any, error) {
+   573  func (c *UnifiClient) ListWLANsRaw(ctx context.Context) ([]map[string]any, error) {
+   585  func (c *UnifiClient) ListDevicesRaw(ctx context.Context) ([]map[string]any, error) {
+   597  func (c *UnifiClient) ListFirewallPolicies(ctx context.Context) ([]map[string]any, error) {
+   606  func (c *UnifiClient) ListPortForwards(ctx context.Context) ([]map[string]any, error) {
+   618  func (c *UnifiClient) GetIPSSettings(ctx context.Context) (map[string]any, error) {
+   633  type AuditEvent struct {
+   647  func (c *UnifiClient) ListAuditEvents(ctx context.Context, limit int) ([]AuditEvent, error) {
+   665  func (c *UnifiClient) TriggerBackup(ctx context.Context) ([]byte, string, error) {
+   691  func timeNowMS() int64 {
+   695  func min(a, b int) int {
+
+── web/embed.go
+     7  var FS embed.FS
+
+
+## Exported API (go doc)
+
+### github.com/niski84/unifi-smash-deck/internal/unifideck
+  func DataDir() string
+  func DefaultSettingsPath() string
+  func MD5String(s string) string
+  func NextRunTime(a Automation, from time.Time) *time.Time
+  func SaveAppConfig(path string, cfg AppConfig) error
+  type AppConfig struct {
+  func LoadAppConfig(path string) AppConfig
+  type AuditEvent struct {
+  type AuditNetEntry struct {
+  type AuditPolicy struct {
+  type AutoSummary struct {
+  type Automation struct {
+  type AutomationLogger struct {
+  func NewAutomationLogger(path string) *AutomationLogger
+  func (l *AutomationLogger) Error(format string, args ...any)
+  func (l *AutomationLogger) Info(format string, args ...any)
+  func (l *AutomationLogger) Tail(n int) []string
+  func (l *AutomationLogger) Warn(format string, args ...any)
+  type AutomationScheduler struct {
+  func NewAutomationScheduler(store *AutomationStore, logger *AutomationLogger, cf clientFactory) *AutomationScheduler
+  func (s *AutomationScheduler) RefreshNextRunTimes()
+  func (s *AutomationScheduler) RunAutomation(ctx context.Context, id string) error
+  func (s *AutomationScheduler) Start()
+  func (s *AutomationScheduler) Stop()
+  type AutomationStore struct {
+  func NewAutomationStore(path string) *AutomationStore
+  func (s *AutomationStore) Delete(id string) error
+  func (s *AutomationStore) Get(id string) (Automation, bool)
+  func (s *AutomationStore) List() []Automation
+  func (s *AutomationStore) LoadedCount() int
+  func (s *AutomationStore) UpdateLastRun(id string, t *time.Time)
+  func (s *AutomationStore) UpdateNextRun(id string, t *time.Time)
+  func (s *AutomationStore) Upsert(a Automation) error
+  type AutomationType string
+  const (
+  type BinaryInfo struct {
+  type CameraSnapshotGroup struct {
+  type CameraSnapshotGroupAPI struct {
+  type Client struct {
+  type ClientSummary struct {
+  type ClientTracker struct {
+  func NewClientTracker(dataDir string) *ClientTracker
+  func (ct *ClientTracker) Count() int
+  func (ct *ClientTracker) Dismiss(macs []string)
+  func (ct *ClientTracker) LastSnapshot() time.Time
+  func (ct *ClientTracker) NewDevices(days int) []TrackedClient
+  func (ct *ClientTracker) Snapshot(clients []Client) []TrackedClient
+  func (ct *ClientTracker) Start(fetchClients func(ctx context.Context) ([]Client, error))
+  func (ct *ClientTracker) Stop()
+  type ConfigSnapshot struct {
+  type ConfigSnapshotData struct {
+  type ConfigSnapshotDiff struct {
+  type ConfigSnapshotSchedule struct {
+  type ConfigSnapshotScheduler struct {
+  func NewConfigSnapshotScheduler(store *ConfigSnapshotStore, logger *AutomationLogger, clientFn func() *UnifiClient, cfgFn func() AppConfig) *ConfigSnapshotScheduler
+  func (s *ConfigSnapshotScheduler) Start()
+  func (s *ConfigSnapshotScheduler) Stop()
+  type ConfigSnapshotStore struct {
+  func NewConfigSnapshotStore(dataDir string) *ConfigSnapshotStore
+  func (s *ConfigSnapshotStore) Capture(ctx context.Context, c *UnifiClient, label, trigger string, appCfg ...AppConfig) (*ConfigSnapshot, error)
+  func (s *ConfigSnapshotStore) Count() int
+  func (s *ConfigSnapshotStore) Delete(id string) error
+  func (s *ConfigSnapshotStore) Diff(idA, idB string) (*ConfigSnapshotDiff, error)
+  func (s *ConfigSnapshotStore) Get(id string) (*ConfigSnapshotData, error)
+  func (s *ConfigSnapshotStore) GetMeta(id string) *ConfigSnapshot
+  func (s *ConfigSnapshotStore) GetSchedule() ConfigSnapshotSchedule
+  func (s *ConfigSnapshotStore) List() []ConfigSnapshot
+  func (s *ConfigSnapshotStore) Prune(retainDays int) int
+  func (s *ConfigSnapshotStore) SaveSchedule(sched ConfigSnapshotSchedule) error
+  type ConfigSnapshotSummary struct {
+  type DashboardData struct {
+  type Device struct {
+  type DiagnosticCheck struct {
+  type DiagnosticStatus string
+  const (
+  type DiffChangeEntry struct {
+  type DiffChangedItem struct {
+  type DiffItem struct {
+  type DiffSection struct {
+  type DiskEntry struct {
+  type FeedEntry struct {
+  type FeedStatus struct {
+  type FindingSeverity string
+  const (
+  type FirewallAuditReport struct {
+  func RunFirewallAudit(ctx context.Context, c *UnifiClient) (*FirewallAuditReport, error)
+  type FirewallFinding struct {
+  type HTTPServer struct {
+  func NewHTTPServer(cfg AppConfig) *HTTPServer
+  func (s *HTTPServer) Routes(webFS fs.FS) http.Handler
+  func (s *HTTPServer) RunTestScenarios() []ThreatEvent
+  func (s *HTTPServer) StartScheduler()
+  func (s *HTTPServer) StopScheduler()
+  type HealthFinding struct {
+  type HoneypotServer struct {
+  func NewHoneypotServer(store *ThreatStore, tracker *ClientTracker, webhookFn func(ThreatEvent)) *HoneypotServer
+  func (h *HoneypotServer) ActivePorts() []int
+  func (h *HoneypotServer) StopAll()
+  func (h *HoneypotServer) UpdatePorts(ports []int)
+  type IPSAlert struct {
+  type IPSEvent struct {
+  func (e IPSEvent) TimestampMs() int64
+  type IPSThreatPoller struct {
+  func NewIPSThreatPoller(store *ThreatStore, tracker *ClientTracker) *IPSThreatPoller
+  func (p *IPSThreatPoller) Start(fetch fetchIPSFn)
+  func (p *IPSThreatPoller) Stop()
+  type InsightClient struct {
+  type InsightDevice struct {
+  type InsightFinding struct {
+  type IoTDevice struct {
+  type IoTDiagnosticsResult struct {
+  func RunIoTDiagnostics(ctx context.Context, c *UnifiClient) (*IoTDiagnosticsResult, error)
+  type MDNSSetting struct {
+  type MemInfo struct {
+  type Network struct {
+  type NetworkHealthResult struct {
+  func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthResult, error)
+  type NetworkInsightsReport struct {
+  func RunNetworkInsights(ctx context.Context, c *UnifiClient) (*NetworkInsightsReport, error)
+  type ProtectCamera struct {
+  type RunMode string
+  const (
+  func InferRunMode(a Automation) RunMode
+  type ScheduleConfig struct {
+  type SecuritySummary struct {
+  type SignatureUpdater struct {
+  func NewSignatureUpdater(dataDir string) *SignatureUpdater
+  func (su *SignatureUpdater) IsKnownBadIP(ip string) (bool, string)
+  func (su *SignatureUpdater) SetMode(m ThreatFeedMode)
+  func (su *SignatureUpdater) Start()
+  func (su *SignatureUpdater) Status() FeedStatus
+  func (su *SignatureUpdater) Stop()
+  type SiteHealth struct {
+  type SnapshotRecord struct {
+  type SnapshotRecordAPI struct {
+  type SnapshotRule struct {
+  type SnapshotScheduleConfig struct {
+  type SnapshotScheduler struct {
+  func NewSnapshotScheduler(store *SnapshotStore, logger *AutomationLogger, clientFunc func() *UnifiClient) *SnapshotScheduler
+  func (ss *SnapshotScheduler) CaptureNow(cameraIDs []string)
+  func (ss *SnapshotScheduler) Start()
+  func (ss *SnapshotScheduler) Stop()
+  type SnapshotStore struct {
+  func NewSnapshotStore(dataDir string) *SnapshotStore
+  func (s *SnapshotStore) Add(camID, camName string, data []byte, takenAt time.Time) (SnapshotRecord, error)
+  func (s *SnapshotStore) Count() int
+  func (s *SnapshotStore) Delete(id string) error
+  func (s *SnapshotStore) Get(id string) (SnapshotRecord, bool)
+  func (s *SnapshotStore) GetScheduleConfig() SnapshotScheduleConfig
+  func (s *SnapshotStore) GroupedByCamera() []CameraSnapshotGroup
+  func (s *SnapshotStore) GroupedByCameraAPI() []CameraSnapshotGroupAPI
+  func (s *SnapshotStore) ImagePath(id string) string
+  func (s *SnapshotStore) PruneOld()
+  func (s *SnapshotStore) SaveScheduleConfig(cfg SnapshotScheduleConfig) error
+  type StreamPulse struct {
+  type TestScenario struct {
+  type ThreatEvent struct {
+  type ThreatFeedMode string
+  const (
+  func ValidThreatFeedMode(s string) ThreatFeedMode
+  func (m ThreatFeedMode) Interval() time.Duration
+  type ThreatKind string
+  const (
+  type ThreatStore struct {
+  func NewThreatStore(dataDir string) *ThreatStore
+  func (ts *ThreatStore) Add(e ThreatEvent) bool
+  func (ts *ThreatStore) LastTimestamp() int64
+  func (ts *ThreatStore) Recent(n int) []ThreatEvent
+  func (ts *ThreatStore) Summary() (total, critical, honeypot int)
+  type TrackedClient struct {
+  type UDMBinarySnapshot struct {
+  func CaptureUDMBinarySnapshot(ctx context.Context, cfg AppConfig) (*UDMBinarySnapshot, error)
+  type UDMFinding struct {
+  func AnalyzeUDMScan(scan *UDMProcessScan) []UDMFinding
+  type UDMProcess struct {
+  type UDMProcessScan struct {
+  func RunUDMProcessScan(ctx context.Context, cfg AppConfig) (*UDMProcessScan, error)
+  type UDMProcessSnapshot struct {
+  type UDMWatchdog struct {
+  func NewUDMWatchdog(cfgPath string, appCfgFn func() AppConfig) *UDMWatchdog
+  func (w *UDMWatchdog) CheckNow(ctx context.Context) error
+  func (w *UDMWatchdog) Start() error
+  func (w *UDMWatchdog) Status() WatchdogStatus
+  func (w *UDMWatchdog) Stop()
+  func (w *UDMWatchdog) UpdateConfig(cfg WatchdogCfg)
+  type UnifiClient struct {
+  func NewUnifiClient(host, apiKey, site string) *UnifiClient
+  func (c *UnifiClient) BlockClient(ctx context.Context, mac string) error
+  func (c *UnifiClient) CameraSnapshot(ctx context.Context, cameraID string, highQuality bool) ([]byte, string, error)
+  func (c *UnifiClient) GetIPSSettings(ctx context.Context) (map[string]any, error)
+  func (c *UnifiClient) GetMDNSSetting(ctx context.Context) (MDNSSetting, error)
+  func (c *UnifiClient) IsConfigured() bool
+  func (c *UnifiClient) ListAuditEvents(ctx context.Context, limit int) ([]AuditEvent, error)
+  func (c *UnifiClient) ListCameras(ctx context.Context) ([]ProtectCamera, error)
+  func (c *UnifiClient) ListClients(ctx context.Context) ([]Client, error)
+  func (c *UnifiClient) ListDevices(ctx context.Context) ([]Device, error)
+  func (c *UnifiClient) ListDevicesRaw(ctx context.Context) ([]map[string]any, error)
+  func (c *UnifiClient) ListFirewallPolicies(ctx context.Context) ([]map[string]any, error)
+  func (c *UnifiClient) ListIPSEvents(ctx context.Context, since time.Time) ([]IPSEvent, error)
+  func (c *UnifiClient) ListNetworks(ctx context.Context) ([]Network, error)
+  func (c *UnifiClient) ListNetworksRaw(ctx context.Context) ([]map[string]any, error)
+  func (c *UnifiClient) ListPortForwards(ctx context.Context) ([]map[string]any, error)
+  func (c *UnifiClient) ListWLANs(ctx context.Context) ([]WLAN, error)
+  func (c *UnifiClient) ListWLANsRaw(ctx context.Context) ([]map[string]any, error)
+  func (c *UnifiClient) SetNetworkEnabled(ctx context.Context, networkID string, enabled bool) error
+  func (c *UnifiClient) SiteHealthList(ctx context.Context) ([]SiteHealth, error)
+  func (c *UnifiClient) TestConnection(ctx context.Context) (string, error)
+  func (c *UnifiClient) TriggerBackup(ctx context.Context) ([]byte, string, error)
+  func (c *UnifiClient) UnblockClient(ctx context.Context, mac string) error
+  func (c *UnifiClient) UpdateWLANFields(ctx context.Context, wlanID string, fields map[string]any) error
+  type VlanSummary struct {
+  type VlanTarget struct {
+  type WLAN struct {
+  type WatchdogCfg struct {
+  type WatchdogDeployStatus struct {
+  type WatchdogEvent struct {
+  type WatchdogEventType string
+  const (
+  type WatchdogStatus struct {
+  type WatchdogSummary struct {
+
+### github.com/niski84/unifi-smash-deck/web
+  var FS embed.FS
+

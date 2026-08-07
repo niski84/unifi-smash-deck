@@ -41,6 +41,8 @@ services:
       #- UNIFI_HOST=https://192.168.0.1
       #- UNIFI_API_KEY=your-api-key-here
       #- UNIFI_SITE=default
+      #- UISP_HOST=https://uisp.yourcompany.com
+      #- UISP_TOKEN=your-read-only-token-here
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8099/api/health"]
       interval: 30s

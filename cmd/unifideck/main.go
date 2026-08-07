@@ -45,6 +45,18 @@ func main() {
 	handler := srv.Routes(webFS)
 	srv.StartScheduler()
 
+	// Initialize fleet database and poller
+	fleetDB, err := unifideck.OpenFleetDB(dataDir)
+	if err != nil {
+		log.Printf("[unifideck] WARNING: fleet DB unavailable: %v", err)
+	} else {
+		srv.SetFleetDB(fleetDB)
+		poller := unifideck.NewFleetPoller(fleetDB, srv.SnapshotCfg, 15*time.Minute)
+		poller.Start()
+		defer poller.Stop()
+		defer fleetDB.Close()
+	}
+
 	httpSrv := &http.Server{
 		Addr:         net.JoinHostPort("", port),
 		Handler:      handler,

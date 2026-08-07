@@ -20,7 +20,7 @@ import (
 // A single installation can have any number of rules, each targeting
 // different cameras and/or different cadences.
 type SnapshotRule struct {
-	ID    string `json:"id"`
+	ID string `json:"id"`
 	// Enabled lets users pause a rule without deleting it.
 	Enabled bool   `json:"enabled"`
 	Label   string `json:"label,omitempty"`
@@ -505,12 +505,10 @@ func (ss *SnapshotScheduler) captureForRule(rule SnapshotRule, scheduledAt time.
 	}
 	filterCams := len(rule.CameraIDs) > 0
 
-	// Stagger + standard quality:
-	// - highQuality=false uses a single HTTP GET per camera (HQ mode can issue two
-	//   back-to-back requests when the first fails, which doubles load and blows
-	//   Protect's ~10 req/s limit when combined with the live-view grid).
-	// - 1.5 s between cameras keeps total snapshot traffic well under the limit
-	//   even if the UI is also refreshing the live grid.
+	// Stagger + high quality: request the best available resolution for stored snapshots.
+	// The 1.5 s stagger keeps total request rate well within Protect's limit even
+	// when the live-view grid is also polling. CameraSnapshot falls back to standard
+	// quality automatically if the camera doesn't support HQ.
 	const staggerDelay = 1500 * time.Millisecond
 	const max429Retries = 4
 	retryWaits := []time.Duration{3 * time.Second, 5 * time.Second, 8 * time.Second, 12 * time.Second}
@@ -555,7 +553,7 @@ func (ss *SnapshotScheduler) captureForRule(rule SnapshotRule, scheduledAt time.
 				case <-time.After(w):
 				}
 			}
-			data, _, err = c.CameraSnapshot(ctx, cam.ID, false)
+			data, _, err = c.CameraSnapshot(ctx, cam.ID, true)
 			if err == nil {
 				break attemptLoop
 			}

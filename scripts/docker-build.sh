@@ -13,14 +13,23 @@ GHCR_USER="${GHCR_USER:-niski84}"
 IMAGE="ghcr.io/${GHCR_USER}/unifi-smash-deck"
 TAG="${TAG:-dev}"
 
+# Use podman if docker isn't available (Linux workstations).
+DOCKER="${DOCKER:-$(command -v podman 2>/dev/null || command -v docker)}"
+
 cd "$(dirname "$0")/.."
 
 echo "=== Building ${IMAGE}:${TAG} ==="
-docker build --platform linux/amd64 -t "${IMAGE}:${TAG}" .
+"$DOCKER" build --platform linux/amd64 -t "${IMAGE}:${TAG}" .
 echo "✓ Build complete"
+
+# Always prune dangling images after a build — the Go builder stage is ~13GB
+# and accumulates fast. This only removes layers not referenced by any tag.
+echo "=== Pruning dangling layers ==="
+"$DOCKER" image prune -f
+echo "✓ Pruned"
 
 if [[ "${1:-}" == "push" ]]; then
   echo "=== Pushing ${IMAGE}:${TAG} ==="
-  docker push "${IMAGE}:${TAG}"
+  "$DOCKER" push "${IMAGE}:${TAG}"
   echo "✓ Pushed"
 fi

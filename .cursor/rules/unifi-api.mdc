@@ -1,0 +1,51 @@
+---
+description: UniFi API access patterns for UDM Pro — what works vs what fails
+globs: ["**/*.go", "**/*.sh", "internal/**"]
+alwaysApply: false
+---
+
+# UniFi API Access — Working Patterns
+
+## The only reliable method for device management commands
+
+Use HTTPS to `localhost` with `X-API-KEY` header, executed **via SSH on the UDM itself**:
+
+```bash
+ssh -o BatchMode=yes root@192.168.0.1 '
+  curl -sk -X POST "https://localhost/proxy/network/api/s/default/cmd/devmgr" \
+    -H "Content-Type: application/json" \
+    -H "X-API-KEY: <key_from_unifideck-settings.json>" \
+    -d "{\"cmd\":\"restart\",\"mac\":\"aa:bb:cc:dd:ee:ff\"}"
+'
+```
+
+**Base URL pattern:** `https://localhost/proxy/network/api/s/default/<endpoint>`
+
+## What DOES NOT work (returns 400 / `api.err.InvalidObject`)
+
+- `POST http://localhost:8100/api/unifi/query` (GoApe proxy) — works for GET reads, fails for device mgmt POST commands like `cmd/devmgr`, `stat/sta`, `stat/device`
+- `http://localhost:8080/api/s/default/...` — HTTP port, returns HTML 400 for devmgr
+- `https://192.168.0.1/proxy/network/api/s/default/stat/sta` — stat endpoints return `api.err.InvalidObject` from external IP
+
+## What GoApe proxy IS reliable for
+
+- `GET /proxy/network/v2/api/...` — sometimes works
+- Reading device configs, site settings
+- Non-devmgr endpoints
+
+## MongoDB direct access (always reliable for reads/writes)
+
+```bash
+ssh root@192.168.0.1 'mongo --port 27117 --host 127.0.0.1 ace --quiet --eval "..."'
+```
+
+Collections of interest:
+- `device` — AP/switch/gateway state, cfgversion, wlangroup_id_na/ng
+- `wlanconf` — SSID configs, x_passphrase, networkconf_id
+- `networkconf` — VLANs, subnets, DHCP
+- `object_oriented_network_config` — Traffic Rules / firewall policies (zone-based)
+- `user` — client records, last_uplink_name, last_ip, is_wired
+
+## Creds location
+
+`data/unifideck-settings.json` — contains `unifi_api_key`, `unifi_host`, `unifi_site`

@@ -8,9 +8,21 @@ unifi-smash-deck.pid
 data/*.json
 data/*.log
 data/snapshots/
+data/
+
+# Local runtime artifacts and model weights
+*.log
+*.bak
+*.old
+honeypot-agent
+unifideck
+sidecar/__pycache__/
+sidecar/*.pt
 
 # Local env overrides (may contain API keys, IP addresses, etc.)
 .env
+.env.*
+!.env.example
 docs/screenshots/*.png
 docs/screenshots/*.jpg
 docs/screenshots/*.jpeg
