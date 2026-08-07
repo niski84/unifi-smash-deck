@@ -16,11 +16,11 @@ import (
 
 // WatchdogCfg holds persisted watchdog settings.
 type WatchdogCfg struct {
-	Enabled         bool `json:"enabled"`
-	ThresholdMB     int  `json:"threshold_mb"`     // restart when MemAvailable < this; default 512
-	IntervalSecs    int  `json:"interval_secs"`    // poll interval; default 240
-	DryRun          bool `json:"dry_run"`           // log intent but skip restart
-	MaxRestartsDay  int  `json:"max_restarts_day"`  // 0 = unlimited; default 3
+	Enabled        bool `json:"enabled"`
+	ThresholdMB    int  `json:"threshold_mb"`     // restart when MemAvailable < this; default 512
+	IntervalSecs   int  `json:"interval_secs"`    // poll interval; default 240
+	DryRun         bool `json:"dry_run"`          // log intent but skip restart
+	MaxRestartsDay int  `json:"max_restarts_day"` // 0 = unlimited; default 3
 }
 
 func defaultWatchdogCfg() WatchdogCfg {
@@ -40,7 +40,7 @@ const (
 	WEvtCheck   WatchdogEventType = "check"
 	WEvtWarn    WatchdogEventType = "warn"
 	WEvtRestart WatchdogEventType = "restart"
-	WEvtSkip    WatchdogEventType = "skip"   // dry-run or rate-limited
+	WEvtSkip    WatchdogEventType = "skip" // dry-run or rate-limited
 	WEvtError   WatchdogEventType = "error"
 	WEvtStart   WatchdogEventType = "started"
 	WEvtStop    WatchdogEventType = "stopped"
@@ -57,11 +57,11 @@ type WatchdogEvent struct {
 
 // WatchdogStatus is the GET response payload.
 type WatchdogStatus struct {
-	Running      bool           `json:"running"`
-	Config       WatchdogCfg    `json:"config"`
-	LastCheckAt  *time.Time     `json:"last_check_at,omitempty"`
-	LastMemAvail int            `json:"last_mem_avail_mb"`
-	RestartCount int            `json:"restart_count_total"`
+	Running      bool            `json:"running"`
+	Config       WatchdogCfg     `json:"config"`
+	LastCheckAt  *time.Time      `json:"last_check_at,omitempty"`
+	LastMemAvail int             `json:"last_mem_avail_mb"`
+	RestartCount int             `json:"restart_count_total"`
 	Events       []WatchdogEvent `json:"events"` // most-recent first, capped at 100
 }
 
@@ -415,4 +415,3 @@ func (s *HTTPServer) handleUDMWatchdog(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
 	}
 }
-

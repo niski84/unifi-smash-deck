@@ -28,8 +28,8 @@ type cameraSource struct {
 type VideoBus struct {
 	mu          sync.RWMutex
 	client      func() *UnifiClient
-	sources     map[string]*cameraSource    // cameraID -> source
-	subscribers map[string][]chan Frame      // cameraID -> subscriber chans
+	sources     map[string]*cameraSource // cameraID -> source
+	subscribers map[string][]chan Frame  // cameraID -> subscriber chans
 	nextID      atomic.Int64
 	wg          sync.WaitGroup
 }

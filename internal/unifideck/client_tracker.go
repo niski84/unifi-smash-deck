@@ -17,8 +17,8 @@ type TrackedClient struct {
 	Hostname    string `json:"hostname,omitempty"`
 	Name        string `json:"name,omitempty"`
 	IP          string `json:"ip,omitempty"`
-	FirstSeen   int64  `json:"first_seen"`             // Unix ms
-	LastSeen    int64  `json:"last_seen"`              // Unix ms
+	FirstSeen   int64  `json:"first_seen"` // Unix ms
+	LastSeen    int64  `json:"last_seen"`  // Unix ms
 	IsWired     bool   `json:"is_wired"`
 	DismissedAt int64  `json:"dismissed_at,omitempty"` // Unix ms; 0 = not dismissed
 }

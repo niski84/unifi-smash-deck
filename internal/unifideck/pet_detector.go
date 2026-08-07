@@ -20,13 +20,13 @@ type BoundingBox struct {
 
 // Detection is the result of running the PetDetector on a Frame.
 type Detection struct {
-	Found      bool        `json:"found"`
-	Confidence float64     `json:"confidence"`
-	Box        BoundingBox `json:"box"`
+	Found      bool         `json:"found"`
+	Confidence float64      `json:"confidence"`
+	Box        BoundingBox  `json:"box"`
 	MotionBox  *BoundingBox `json:"motion_box,omitempty"` // motion region even when no dog confirmed
-	CameraID   string      `json:"camera_id"`
-	CameraName string      `json:"camera_name"`
-	At         time.Time   `json:"at"`
+	CameraID   string       `json:"camera_id"`
+	CameraName string       `json:"camera_name"`
+	At         time.Time    `json:"at"`
 }
 
 // PetDetector calls the local YOLOv11 FastAPI sidecar to detect pets in frames.

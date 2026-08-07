@@ -133,16 +133,16 @@ func (s *HTTPServer) handleVLANLabels(w http.ResponseWriter, r *http.Request) {
 
 // IGMPNetworkResult is one VLAN's IGMP snooping assessment.
 type IGMPNetworkResult struct {
-	NetworkID    string           `json:"network_id"`
-	NetworkName  string           `json:"network_name"`
-	VLAN         int              `json:"vlan"`
-	Purpose      VLANPurpose      `json:"purpose"`
-	IGMPEnabled  bool             `json:"igmp_enabled"`
-	Recommend    bool             `json:"recommend"`
-	Status       DiagnosticStatus `json:"status"`
-	Note         string           `json:"note"`
-	Fixable      bool             `json:"fixable"`
-	FixAction    string           `json:"fix_action,omitempty"` // "enable" | "disable"
+	NetworkID   string           `json:"network_id"`
+	NetworkName string           `json:"network_name"`
+	VLAN        int              `json:"vlan"`
+	Purpose     VLANPurpose      `json:"purpose"`
+	IGMPEnabled bool             `json:"igmp_enabled"`
+	Recommend   bool             `json:"recommend"`
+	Status      DiagnosticStatus `json:"status"`
+	Note        string           `json:"note"`
+	Fixable     bool             `json:"fixable"`
+	FixAction   string           `json:"fix_action,omitempty"` // "enable" | "disable"
 }
 
 // IGMPSnoopingResult is the full report returned to the UI.
@@ -295,4 +295,3 @@ func (s *HTTPServer) handleIGMPFix(w http.ResponseWriter, r *http.Request) {
 	s.logger.Info("igmp fix: network=%s action=%s", netID, action)
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{"network_id": netID, "action": action}})
 }
-

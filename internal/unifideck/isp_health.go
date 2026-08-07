@@ -292,4 +292,3 @@ func (f *FleetDB) QueryWANHistory(siteID string, hours int) ([]WANHealthPoint, e
 	}
 	return points, nil
 }
-

@@ -2173,7 +2173,10 @@ func (s *HTTPServer) handleISPTraffic(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch all samples from the last 36h (covers midnight even if poller
 	// started early today) and compute "today" via midnight baseline.
-	sinceMidnight := time.Now().Truncate(24 * time.Hour).Add(-12 * time.Hour).Unix()
+	// Query a small window before local midnight so a poll straddling the
+	// boundary is available to ComputeTodayTraffic. The computation itself
+	// still uses the first sample at/after local midnight.
+	sinceMidnight := localMidnightUnix(time.Now()) - 12*60*60
 	samples, err := s.fleetDB.QueryWANTrafficSince(siteID, sinceMidnight)
 	if err != nil {
 		log.Printf("[isp] traffic site=%s err=%v", siteID, err)
@@ -2197,6 +2200,8 @@ func (s *HTTPServer) handleISPTraffic(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, apiResp{Success: true, Data: map[string]any{
 		"site_id":         siteID,
+		"interface":       expectedWANInterface,
+		"counter_source":  "UDM gateway WAN uplink",
 		"download_bytes":  rxToday,
 		"upload_bytes":    txToday,
 		"total_bytes":     totalToday,
@@ -2259,16 +2264,20 @@ func (s *HTTPServer) handleISPFlowAudit(w http.ResponseWriter, r *http.Request) 
 	}
 
 	data := map[string]any{
-		"start":               start,
-		"end":                 end,
-		"hours":               hours,
-		"wan_upload_bytes":    nil,
-		"wan_download_bytes":  nil,
-		"flow_upload_bytes":   flowUpload,
-		"flow_download_bytes": flowDownload,
-		"unattributed_upload": nil,
-		"rows":                rows,
-		"note":                "WAN totals come from eth8 counters; flow totals come from UDM ace_audit.traffic_flow. A positive remainder means the UDM flow collection did not expose every WAN byte in this window.",
+		"start":                 start,
+		"end":                   end,
+		"hours":                 hours,
+		"interface":             expectedWANInterface,
+		"counter_source":        "UDM gateway WAN uplink",
+		"flow_source":           "UDM ace_audit.traffic_flow out.interface_name=eth8",
+		"wan_upload_bytes":      nil,
+		"wan_download_bytes":    nil,
+		"flow_upload_bytes":     flowUpload,
+		"flow_download_bytes":   flowDownload,
+		"unattributed_upload":   nil,
+		"unattributed_download": nil,
+		"rows":                  rows,
+		"note":                  "WAN totals come from eth8 counters; flow totals come from UDM ace_audit.traffic_flow. A positive remainder means the UDM flow collection did not expose every WAN byte in this window.",
 	}
 	if linkLookupError != "" {
 		data["current_link_lookup_error"] = linkLookupError
@@ -2292,15 +2301,21 @@ func (s *HTTPServer) handleISPFlowAudit(w http.ResponseWriter, r *http.Request) 
 				if wanDownload < 0 {
 					wanDownload = 0
 				}
-				unattributed := wanUpload - flowUpload
-				if unattributed < 0 {
-					unattributed = 0
+				unattributedUpload := wanUpload - flowUpload
+				if unattributedUpload < 0 {
+					unattributedUpload = 0
+				}
+				unattributedDownload := wanDownload - flowDownload
+				if unattributedDownload < 0 {
+					unattributedDownload = 0
 				}
 				data["site_id"] = siteID
 				data["wan_upload_bytes"] = wanUpload
 				data["wan_download_bytes"] = wanDownload
-				data["unattributed_upload"] = unattributed
+				data["unattributed_upload"] = unattributedUpload
+				data["unattributed_download"] = unattributedDownload
 				data["flow_upload_coverage"] = float64(flowUpload) / float64(maxInt64(wanUpload, 1))
+				data["flow_download_coverage"] = float64(flowDownload) / float64(maxInt64(wanDownload, 1))
 			}
 		}
 	}
@@ -2339,7 +2354,7 @@ func (s *HTTPServer) handleISPTrafficAttribution(w http.ResponseWriter, r *http.
 	}
 
 	// Default: since local midnight. Allow ?hours=N override.
-	sinceTS := time.Now().Truncate(24 * time.Hour).Unix()
+	sinceTS := localMidnightUnix(time.Now())
 	if v := r.URL.Query().Get("hours"); v != "" {
 		var hours int
 		fmt.Sscanf(v, "%d", &hours)

@@ -50,18 +50,18 @@ type VlanTarget struct {
 
 // Automation is the root stored struct.
 type Automation struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	Type        AutomationType `json:"type"`
-	Enabled     bool           `json:"enabled"`
-	RunMode     RunMode        `json:"run_mode,omitempty"`
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Type        AutomationType  `json:"type"`
+	Enabled     bool            `json:"enabled"`
+	RunMode     RunMode         `json:"run_mode,omitempty"`
 	Schedule    *ScheduleConfig `json:"schedule,omitempty"`
-	VlanTargets []VlanTarget   `json:"vlan_targets,omitempty"`
-	NextRunAt   *time.Time     `json:"next_run_at,omitempty"`
-	LastRunAt   *time.Time     `json:"last_run_at,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
-	UpdatedAt   time.Time      `json:"updated_at"`
+	VlanTargets []VlanTarget    `json:"vlan_targets,omitempty"`
+	NextRunAt   *time.Time      `json:"next_run_at,omitempty"`
+	LastRunAt   *time.Time      `json:"last_run_at,omitempty"`
+	CreatedAt   time.Time       `json:"created_at"`
+	UpdatedAt   time.Time       `json:"updated_at"`
 }
 
 // ──────────────────────────────────────────────

@@ -210,6 +210,8 @@ func (p *FleetPoller) pollSite(ctx context.Context, site SiteConnection) {
 	if wt, err := FetchWANTraffic(ctx, site); err != nil {
 		log.Printf("[fleet-poller] site %s: WAN traffic error: %v", site.Name, err)
 	} else {
+		log.Printf("[fleet-poller] site %s: WAN sample interface=%s source=%s download_counter=%d upload_counter=%d",
+			site.Name, wt.Interface, wt.Source, wt.RXBytes, wt.TXBytes)
 		if err2 := p.db.SnapshotWANTraffic(*wt); err2 != nil {
 			log.Printf("[fleet-poller] site %s: WAN traffic snapshot error: %v", site.Name, err2)
 		}
@@ -298,7 +300,7 @@ type fleetDevice struct {
 		MemTotal float64 `json:"mem_total"`
 		LoadAvg1 string  `json:"loadavg_1"`
 	} `json:"sys_stats"`
-	PortTable []struct {
+	PortTable    []struct {
 		PoeEnable bool   `json:"poe_enable"`
 		PoePower  string `json:"poe_power"`
 	} `json:"port_table"`

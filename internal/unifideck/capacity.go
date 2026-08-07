@@ -29,7 +29,7 @@ type SwitchPoE struct {
 	DrawW      float64 `json:"draw_w"`
 	BudgetW    float64 `json:"budget_w"`
 	PctUsed    float64 `json:"pct_used"`
-	AtRisk     bool    `json:"at_risk"`            // >85% used
+	AtRisk     bool    `json:"at_risk"` // >85% used
 	Suggestion string  `json:"suggestion,omitempty"`
 }
 

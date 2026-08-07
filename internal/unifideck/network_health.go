@@ -47,13 +47,13 @@ type rawNetwork struct {
 }
 
 type radioStats struct {
-	Radio       string  `json:"radio"` // "ng"=2.4GHz "na"=5GHz
-	Channel     int     `json:"channel"`
-	NumSta      int     `json:"num_sta"`
-	CUTotal     int     `json:"cu_total"`
+	Radio        string  `json:"radio"` // "ng"=2.4GHz "na"=5GHz
+	Channel      int     `json:"channel"`
+	NumSta       int     `json:"num_sta"`
+	CUTotal      int     `json:"cu_total"`
 	TxRetriesPct float64 `json:"tx_retries_pct"`
-	TxPower     int     `json:"tx_power"`
-	Satisfaction int    `json:"satisfaction"`
+	TxPower      int     `json:"tx_power"`
+	Satisfaction int     `json:"satisfaction"`
 }
 
 type radioConfig struct {
@@ -84,28 +84,28 @@ func (p portEntry) poePowerWatts() float64 {
 }
 
 type portOverride struct {
-	PortIdx              int      `json:"port_idx"`
-	Name                 string   `json:"name"`
-	NativeNetworkID      string   `json:"native_networkconf_id"`
-	TaggedNetworkIDs     []string `json:"tagged_networkconf_ids"`
-	ExcludedNetworkIDs   []string `json:"excluded_networkconf_ids"`
-	Forward              string   `json:"forward"`
-	TaggedVLANMgmt       string   `json:"tagged_vlan_mgmt"` // "auto"|"block_all"|"custom"
+	PortIdx            int      `json:"port_idx"`
+	Name               string   `json:"name"`
+	NativeNetworkID    string   `json:"native_networkconf_id"`
+	TaggedNetworkIDs   []string `json:"tagged_networkconf_ids"`
+	ExcludedNetworkIDs []string `json:"excluded_networkconf_ids"`
+	Forward            string   `json:"forward"`
+	TaggedVLANMgmt     string   `json:"tagged_vlan_mgmt"` // "auto"|"block_all"|"custom"
 }
 
 type rawDevice struct {
-	ID             string         `json:"_id"`
-	Name           string         `json:"name"`
-	MAC            string         `json:"mac"`
-	Model          string         `json:"model"`
-	Type           string         `json:"type"`
-	Version        string         `json:"version"`
-	Upgradable     bool           `json:"upgradable"`
-	UpgradeFW      string         `json:"upgrade_to_firmware"`
-	Uptime         int64          `json:"uptime"`
-	State          int            `json:"state"`
-	RebootRequired bool           `json:"reboot_required"`
-	TotalMaxPower  float64        `json:"total_max_power,omitempty"`
+	ID             string  `json:"_id"`
+	Name           string  `json:"name"`
+	MAC            string  `json:"mac"`
+	Model          string  `json:"model"`
+	Type           string  `json:"type"`
+	Version        string  `json:"version"`
+	Upgradable     bool    `json:"upgradable"`
+	UpgradeFW      string  `json:"upgrade_to_firmware"`
+	Uptime         int64   `json:"uptime"`
+	State          int     `json:"state"`
+	RebootRequired bool    `json:"reboot_required"`
+	TotalMaxPower  float64 `json:"total_max_power,omitempty"`
 	SysStats       struct {
 		MemUsed  float64 `json:"mem_used"`
 		MemTotal float64 `json:"mem_total"`
@@ -118,11 +118,11 @@ type rawDevice struct {
 }
 
 type rawSiteHealth struct {
-	Subsystem string  `json:"subsystem"`
-	Status    string  `json:"status"`
-	WanIP     string  `json:"wan_ip"`
-	Latency   int     `json:"latency"`
-	Drops     int     `json:"drops"`
+	Subsystem   string `json:"subsystem"`
+	Status      string `json:"status"`
+	WanIP       string `json:"wan_ip"`
+	Latency     int    `json:"latency"`
+	Drops       int    `json:"drops"`
 	UptimeStats map[string]struct {
 		Availability float64 `json:"availability"`
 		Downtime     int64   `json:"downtime"`
@@ -199,27 +199,39 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 	go func() {
 		var r result
 		// Sequential but fast enough; if we want true parallel we'd use goroutines + errgroup.
-		r.devices, r.devErr   = fetchDevices(ctx, c)
-		r.networks, r.netErr  = fetchNetworks(ctx, c)
-		r.health, r.hlthErr   = fetchSiteHealth(ctx, c)
-		r.wlans, r.wlanErr    = c.ListWLANs(ctx)
-		r.clients, r.cliErr   = listRawStations(ctx, c)
+		r.devices, r.devErr = fetchDevices(ctx, c)
+		r.networks, r.netErr = fetchNetworks(ctx, c)
+		r.health, r.hlthErr = fetchSiteHealth(ctx, c)
+		r.wlans, r.wlanErr = c.ListWLANs(ctx)
+		r.clients, r.cliErr = listRawStations(ctx, c)
 		ch <- r
 	}()
 	r := <-ch
 
-	if r.devErr != nil  { return nil, fmt.Errorf("fetch devices: %w", r.devErr) }
-	if r.netErr != nil  { return nil, fmt.Errorf("fetch networks: %w", r.netErr) }
-	if r.hlthErr != nil { return nil, fmt.Errorf("fetch health: %w", r.hlthErr) }
+	if r.devErr != nil {
+		return nil, fmt.Errorf("fetch devices: %w", r.devErr)
+	}
+	if r.netErr != nil {
+		return nil, fmt.Errorf("fetch networks: %w", r.netErr)
+	}
+	if r.hlthErr != nil {
+		return nil, fmt.Errorf("fetch health: %w", r.hlthErr)
+	}
 	// wlan/client errors are non-fatal
-	if r.wlanErr != nil { r.wlans = nil }
-	if r.cliErr != nil  { r.clients = nil }
+	if r.wlanErr != nil {
+		r.wlans = nil
+	}
+	if r.cliErr != nil {
+		r.clients = nil
+	}
 
 	var findings []HealthFinding
 
 	// Build lookup maps
 	netByID := map[string]rawNetwork{}
-	for _, n := range r.networks { netByID[n.ID] = n }
+	for _, n := range r.networks {
+		netByID[n.ID] = n
+	}
 
 	// ── 1. Double NAT ─────────────────────────────────────────────────────────
 	for _, h := range r.health {
@@ -227,7 +239,7 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 			if isPrivateIP(h.WanIP) {
 				findings = append(findings, HealthFinding{
 					ID: "double_nat", Category: "topology", Severity: SevCritical,
-					Title:  fmt.Sprintf("Double NAT Detected (WAN IP: %s)", h.WanIP),
+					Title: fmt.Sprintf("Double NAT Detected (WAN IP: %s)", h.WanIP),
 					Detail: fmt.Sprintf(
 						"The UDM Pro's WAN IP is %s — a private RFC1918 address. "+
 							"This means it is behind another router doing NAT. "+
@@ -268,7 +280,9 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 
 	// ── 3. WAN2 / unused secondary WAN ───────────────────────────────────────
 	for _, n := range r.networks {
-		if n.Purpose != "wan" { continue }
+		if n.Purpose != "wan" {
+			continue
+		}
 		if n.WanGroup == "WAN2" {
 			enabled := n.Enabled == nil || *n.Enabled
 			// Check uptime_stats in health
@@ -283,7 +297,7 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 			if enabled && wan2Down {
 				findings = append(findings, HealthFinding{
 					ID: "wan2_down", Category: "topology", Severity: SevWarning,
-					Title:  "WAN2 (Internet 2) Is Enabled But 100% Down",
+					Title: "WAN2 (Internet 2) Is Enabled But 100% Down",
 					Detail: "Internet 2 is configured as a failover WAN but has 0% availability — nothing is plugged in. " +
 						"Disable it to clean up the dashboard and prevent unnecessary failover probing.",
 					Fixable: true, FixLabel: "Disable WAN2",
@@ -301,12 +315,14 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 
 	// ── 4. Device memory & CPU ────────────────────────────────────────────────
 	for _, d := range r.devices {
-		if d.SysStats.MemTotal == 0 { continue }
+		if d.SysStats.MemTotal == 0 {
+			continue
+		}
 		memPct := int(d.SysStats.MemUsed / d.SysStats.MemTotal * 100)
 		if memPct >= 90 {
 			findings = append(findings, HealthFinding{
 				ID: "mem_" + d.ID, Category: "infrastructure", Severity: SevCritical,
-				Title:  fmt.Sprintf("Memory Critical: %s at %d%%", d.Name, memPct),
+				Title: fmt.Sprintf("Memory Critical: %s at %d%%", d.Name, memPct),
 				Detail: fmt.Sprintf("%s is using %d%% of its RAM. At this level you may see OOM kills, service crashes, or sluggish UI. "+
 					"Consider reducing active services or upgrading hardware.", d.Name, memPct),
 			})
@@ -343,15 +359,21 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 
 	// ── 7. AP 2.4 GHz overload ────────────────────────────────────────────────
 	for _, d := range r.devices {
-		if d.Type != "uap" { continue }
+		if d.Type != "uap" {
+			continue
+		}
 		for _, rs := range d.RadioTableStats {
-			if rs.Radio != "ng" { continue }
+			if rs.Radio != "ng" {
+				continue
+			}
 			if rs.NumSta >= 20 {
 				sev := SevCritical
-				if rs.NumSta < 25 { sev = SevWarning }
+				if rs.NumSta < 25 {
+					sev = SevWarning
+				}
 				findings = append(findings, HealthFinding{
 					ID: "ap_overload_" + d.ID, Category: "wifi", Severity: sev,
-					Title:  fmt.Sprintf("AP Overloaded: %s has %d clients on 2.4 GHz", d.Name, rs.NumSta),
+					Title: fmt.Sprintf("AP Overloaded: %s has %d clients on 2.4 GHz", d.Name, rs.NumSta),
 					Detail: fmt.Sprintf(
 						"%s is serving %d clients on 2.4 GHz (channel %d, %d%% utilization, %.0f%% TX retry rate). "+
 							"Recommended max is ~15–18 for reliable IoT operation. "+
@@ -379,10 +401,16 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 
 	// ── 8. BSS Transition (band steering) ────────────────────────────────────
 	for _, w := range r.wlans {
-		if !w.Enabled { continue }
+		if !w.Enabled {
+			continue
+		}
 		bands := 0
-		if strings.Contains(w.WlanBand, "2g") || w.WlanBand == "both" { bands++ }
-		if strings.Contains(w.WlanBand, "5g") || w.WlanBand == "both" { bands++ }
+		if strings.Contains(w.WlanBand, "2g") || w.WlanBand == "both" {
+			bands++
+		}
+		if strings.Contains(w.WlanBand, "5g") || w.WlanBand == "both" {
+			bands++
+		}
 		isDualBand := w.WlanBand == "both" || (len(w.WlanBand) > 2)
 		_ = isDualBand
 		// Check radio_table_stats via WLAN isn't directly available; check wlan_bands slice length
@@ -406,11 +434,13 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 	}
 	if err := c.doJSON(ctx, http.MethodGet, c.apiURL("rest/wlanconf"), nil, &wlanResp); err == nil {
 		for _, w := range wlanResp.Data {
-			if !w.Enabled || w.WlanBand != "both" { continue }
+			if !w.Enabled || w.WlanBand != "both" {
+				continue
+			}
 			if !w.BssTransition {
 				findings = append(findings, HealthFinding{
 					ID: "bss_" + w.ID, Category: "wifi", Severity: SevWarning,
-					Title:  fmt.Sprintf("Band Steering Off: %s", w.Name),
+					Title: fmt.Sprintf("Band Steering Off: %s", w.Name),
 					Detail: fmt.Sprintf("%q supports both 2.4 and 5 GHz but BSS Transition (802.11v band steering) is disabled. "+
 						"Enabling it lets the AP suggest that capable clients move to 5 GHz, reducing 2.4 GHz congestion.", w.Name),
 					Fixable: true, FixLabel: "Enable Band Steering",
@@ -428,14 +458,18 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 
 	// ── 9. Switch ports at degraded speeds (10 or 100 Mbps) ─────────────────
 	for _, d := range r.devices {
-		if d.Type != "usw" { continue }
+		if d.Type != "usw" {
+			continue
+		}
 		for _, p := range d.PortTable {
-			if !p.Up { continue }
+			if !p.Up {
+				continue
+			}
 			switch p.Speed {
 			case 10:
 				findings = append(findings, HealthFinding{
 					ID: fmt.Sprintf("port10_%s_%d", d.ID, p.PortIdx), Category: "infrastructure", Severity: SevWarning,
-					Title:  fmt.Sprintf("Port at 10 Mbps: %s port %d (%s)", d.Name, p.PortIdx, p.Name),
+					Title: fmt.Sprintf("Port at 10 Mbps: %s port %d (%s)", d.Name, p.PortIdx, p.Name),
 					Detail: fmt.Sprintf(
 						"%s port %d (%q) is negotiating at 10 Mbps. "+
 							"Almost always a damaged cable, bent RJ45 pin, or ancient NIC. Replace the patch cable first.",
@@ -448,7 +482,7 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 				if totalBytes > 500*1024*1024 {
 					findings = append(findings, HealthFinding{
 						ID: fmt.Sprintf("port100_%s_%d", d.ID, p.PortIdx), Category: "infrastructure", Severity: SevInfo,
-						Title:  fmt.Sprintf("Port at 100 Mbps: %s port %d (%s)", d.Name, p.PortIdx, p.Name),
+						Title: fmt.Sprintf("Port at 100 Mbps: %s port %d (%s)", d.Name, p.PortIdx, p.Name),
 						Detail: fmt.Sprintf(
 							"%s port %d (%q) is connected at 100 Mbps and has moved %.1f GB of traffic. "+
 								"If the device supports Gigabit, try a different cable — 100 Mbps negotiation on a busy port "+
@@ -462,7 +496,9 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 
 	// ── 16. PoE budget per switch ─────────────────────────────────────────────
 	for _, d := range r.devices {
-		if d.Type != "usw" || d.TotalMaxPower == 0 { continue }
+		if d.Type != "usw" || d.TotalMaxPower == 0 {
+			continue
+		}
 		var usedWatts float64
 		for _, p := range d.PortTable {
 			usedWatts += p.poePowerWatts()
@@ -472,7 +508,7 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 		case pct >= 90:
 			findings = append(findings, HealthFinding{
 				ID: "poe_budget_" + d.ID, Category: "infrastructure", Severity: SevCritical,
-				Title:  fmt.Sprintf("PoE Budget Critical: %s at %.0f%% (%.1f/%.0fW)", d.Name, pct, usedWatts, d.TotalMaxPower),
+				Title: fmt.Sprintf("PoE Budget Critical: %s at %.0f%% (%.1f/%.0fW)", d.Name, pct, usedWatts, d.TotalMaxPower),
 				Detail: fmt.Sprintf(
 					"%s is consuming %.1fW of its %.0fW PoE budget (%.0f%%). "+
 						"Adding or powering on another PoE device may cause existing devices to lose power unexpectedly. "+
@@ -482,7 +518,7 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 		case pct >= 70:
 			findings = append(findings, HealthFinding{
 				ID: "poe_budget_" + d.ID, Category: "infrastructure", Severity: SevWarning,
-				Title:  fmt.Sprintf("PoE Budget High: %s at %.0f%% (%.1f/%.0fW)", d.Name, pct, usedWatts, d.TotalMaxPower),
+				Title: fmt.Sprintf("PoE Budget High: %s at %.0f%% (%.1f/%.0fW)", d.Name, pct, usedWatts, d.TotalMaxPower),
 				Detail: fmt.Sprintf(
 					"%s is consuming %.1fW of its %.0fW PoE budget (%.0f%%). "+
 						"You have %.1fW of headroom — be mindful before adding more PoE devices.",
@@ -499,10 +535,15 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 
 	// ── 17. Flaky clients (frequent reconnects) ───────────────────────────────
 	now := time.Now().Unix()
-	type flakyEntry struct{ name, uplink string; uptimeSec int64 }
+	type flakyEntry struct {
+		name, uplink string
+		uptimeSec    int64
+	}
 	var flakyClients []flakyEntry
 	for _, sta := range r.clients {
-		if sta.DisconnectTimestamp == 0 || sta.AssocTime == 0 { continue }
+		if sta.DisconnectTimestamp == 0 || sta.AssocTime == 0 {
+			continue
+		}
 		// Client is considered flaky if:
 		//   - it disconnected within the last 6 hours, AND
 		//   - its current uptime is under 1 hour (recently reconnected)
@@ -510,8 +551,12 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 		shortUptime := sta.Uptime > 0 && sta.Uptime < 3600
 		if disconnectedRecently && shortUptime {
 			label := sta.Name
-			if label == "" { label = sta.Hostname }
-			if label == "" { label = sta.MAC }
+			if label == "" {
+				label = sta.Hostname
+			}
+			if label == "" {
+				label = sta.MAC
+			}
 			flakyClients = append(flakyClients, flakyEntry{name: label, uplink: sta.LastUplinkName, uptimeSec: sta.Uptime})
 		}
 	}
@@ -519,14 +564,18 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 		names := make([]string, 0, len(flakyClients))
 		for _, f := range flakyClients {
 			uplinkInfo := ""
-			if f.uplink != "" { uplinkInfo = " via " + f.uplink }
+			if f.uplink != "" {
+				uplinkInfo = " via " + f.uplink
+			}
 			names = append(names, fmt.Sprintf("%s%s (up %dm)", f.name, uplinkInfo, f.uptimeSec/60))
 		}
 		sev := SevInfo
-		if len(flakyClients) >= 3 { sev = SevWarning }
+		if len(flakyClients) >= 3 {
+			sev = SevWarning
+		}
 		findings = append(findings, HealthFinding{
 			ID: "flaky_clients", Category: "infrastructure", Severity: sev,
-			Title:  fmt.Sprintf("%d Client(s) with Recent Disconnects", len(flakyClients)),
+			Title: fmt.Sprintf("%d Client(s) with Recent Disconnects", len(flakyClients)),
 			Detail: fmt.Sprintf(
 				"These clients disconnected within the last 6 hours and recently reconnected — "+
 					"possible cable issues, power supply instability, or firmware loops: %s",
@@ -536,20 +585,24 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 
 	// ── 10. Port name vs VLAN mismatch ───────────────────────────────────────
 	for _, d := range r.devices {
-		if d.Type != "usw" { continue }
+		if d.Type != "usw" {
+			continue
+		}
 		for _, po := range d.PortOverrides {
 			net, ok := netByID[po.NativeNetworkID]
-			if !ok { continue }
+			if !ok {
+				continue
+			}
 			nameLower := strings.ToLower(po.Name)
-			netLower  := strings.ToLower(net.Name)
+			netLower := strings.ToLower(net.Name)
 			// Check for obvious mismatches (e.g. "IoT" in name but "Media" in actual VLAN)
-			for _, candidate := range []string{"iot","media","work","guest","trusted","zone"} {
+			for _, candidate := range []string{"iot", "media", "work", "guest", "trusted", "zone"} {
 				inName := strings.Contains(nameLower, candidate)
-				inNet  := strings.Contains(netLower, candidate)
+				inNet := strings.Contains(netLower, candidate)
 				if inName && !inNet {
 					findings = append(findings, HealthFinding{
 						ID: fmt.Sprintf("port_mislabel_%s_%d", d.ID, po.PortIdx), Category: "topology", Severity: SevInfo,
-						Title:  fmt.Sprintf("Port Mislabeled: %s port %d", d.Name, po.PortIdx),
+						Title: fmt.Sprintf("Port Mislabeled: %s port %d", d.Name, po.PortIdx),
 						Detail: fmt.Sprintf(
 							"Port %d on %s is named %q but its native VLAN is %q. "+
 								"The label suggests a different network than what's configured. "+
@@ -565,7 +618,10 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 	// ── 11. IoT devices on wrong VLAN ────────────────────────────────────────
 	iotSSID := ""
 	for _, w := range r.wlans {
-		if w.EnhancedIoT { iotSSID = w.Name; break }
+		if w.EnhancedIoT {
+			iotSSID = w.Name
+			break
+		}
 	}
 	type misplacedDevice struct {
 		name  string
@@ -574,20 +630,28 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 	}
 	var misplaced []misplacedDevice
 	for _, sta := range r.clients {
-		if sta.Wired || !isIoTOUI(sta.OUI) { continue }
+		if sta.Wired || !isIoTOUI(sta.OUI) {
+			continue
+		}
 		if iotSSID != "" && sta.ESSID != iotSSID && sta.ESSID != "" {
 			label := sta.Name
-			if label == "" { label = sta.Hostname }
-			if label == "" { label = sta.MAC }
+			if label == "" {
+				label = sta.Hostname
+			}
+			if label == "" {
+				label = sta.MAC
+			}
 			misplaced = append(misplaced, misplacedDevice{name: label, mac: sta.MAC, essid: sta.ESSID})
 		}
 	}
 	if len(misplaced) > 0 {
 		names := make([]string, 0, len(misplaced))
-		for _, m := range misplaced { names = append(names, fmt.Sprintf("%s (%s)", m.name, m.essid)) }
+		for _, m := range misplaced {
+			names = append(names, fmt.Sprintf("%s (%s)", m.name, m.essid))
+		}
 		findings = append(findings, HealthFinding{
 			ID: "iot_wrong_vlan", Category: "topology", Severity: SevInfo,
-			Title:  fmt.Sprintf("%d IoT Device(s) on Wrong SSID", len(misplaced)),
+			Title: fmt.Sprintf("%d IoT Device(s) on Wrong SSID", len(misplaced)),
 			Detail: fmt.Sprintf(
 				"These IoT devices are connected to a non-IoT SSID. "+
 					"They work but don't benefit from IoT-specific settings (2.4 GHz only, multicast enhancement). "+
@@ -600,13 +664,17 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 	var unnamedWifi, unnamedWired int
 	for _, sta := range r.clients {
 		if sta.Name == "" && sta.Hostname == "" {
-			if sta.Wired { unnamedWired++ } else { unnamedWifi++ }
+			if sta.Wired {
+				unnamedWired++
+			} else {
+				unnamedWifi++
+			}
 		}
 	}
 	if unnamedWifi+unnamedWired > 0 {
 		findings = append(findings, HealthFinding{
 			ID: "unnamed_devices", Category: "topology", Severity: SevInfo,
-			Title:  fmt.Sprintf("%d Unnamed/Unidentified Device(s)", unnamedWifi+unnamedWired),
+			Title: fmt.Sprintf("%d Unnamed/Unidentified Device(s)", unnamedWifi+unnamedWired),
 			Detail: fmt.Sprintf(
 				"%d wired and %d wireless clients have no hostname or assigned name. "+
 					"Use the Clients tab to identify and name them — named devices are much easier to troubleshoot.",
@@ -624,7 +692,7 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 	if poorCount > 0 {
 		findings = append(findings, HealthFinding{
 			ID: "poor_signal", Category: "wifi", Severity: SevWarning,
-			Title:  fmt.Sprintf("%d Client(s) with Poor Signal (<-75 dBm)", poorCount),
+			Title: fmt.Sprintf("%d Client(s) with Poor Signal (<-75 dBm)", poorCount),
 			Detail: fmt.Sprintf(
 				"%d wireless clients have signal below -75 dBm. "+
 					"At this level you'll see high retry rates, low throughput, and intermittent drops. "+
@@ -639,10 +707,14 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 	var camsOnUserVLAN int
 	userVLANIDs := map[string]bool{}
 	for _, w := range r.wlans {
-		if !w.EnhancedIoT { userVLANIDs[w.NetworkConfID] = true }
+		if !w.EnhancedIoT {
+			userVLANIDs[w.NetworkConfID] = true
+		}
 	}
 	for _, sta := range r.clients {
-		if !sta.Wired { continue }
+		if !sta.Wired {
+			continue
+		}
 		if strings.HasPrefix(strings.ToLower(sta.MAC), cameraOUI) {
 			// If IP is in a non-dedicated subnet, flag it
 			if strings.HasPrefix(sta.IP, "192.168.4.") {
@@ -653,7 +725,7 @@ func RunNetworkHealthCheck(ctx context.Context, c *UnifiClient) (*NetworkHealthR
 	if camsOnUserVLAN > 0 {
 		findings = append(findings, HealthFinding{
 			ID: "camera_vlan", Category: "topology", Severity: SevInfo,
-			Title:  fmt.Sprintf("%d Camera(s) Sharing the Media VLAN", camsOnUserVLAN),
+			Title: fmt.Sprintf("%d Camera(s) Sharing the Media VLAN", camsOnUserVLAN),
 			Detail: fmt.Sprintf(
 				"%d UniFi cameras are on the Media VLAN (192.168.4.x) alongside TVs and user devices. "+
 					"Camera traffic is high-bandwidth and continuous. "+
@@ -706,7 +778,9 @@ type SwitchPortsResult struct {
 func BuildSwitchPortsResult(devices []rawDevice) *SwitchPortsResult {
 	var switches []SwitchStatus
 	for _, d := range devices {
-		if d.Type != "usw" { continue }
+		if d.Type != "usw" {
+			continue
+		}
 		var usedWatts float64
 		ports := make([]SwitchPort, 0, len(d.PortTable))
 		for _, p := range d.PortTable {
@@ -765,7 +839,8 @@ func (s *HTTPServer) handleNetworkHealth(w http.ResponseWriter, r *http.Request)
 
 // handleHealthFix handles fix actions: POST /api/health/{resource}/{id}/{action}
 // e.g. POST /api/health/networks/{id}/disable
-//      POST /api/health/wlans/{id}/enable-bss-transition
+//
+//	POST /api/health/wlans/{id}/enable-bss-transition
 func (s *HTTPServer) handleHealthFix(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, apiResp{Success: false, Error: "method not allowed"})
@@ -806,7 +881,11 @@ func (s *HTTPServer) handleHealthFix(w http.ResponseWriter, r *http.Request) {
 			}
 			obj := resp.Data[0]
 			obj["enabled"] = false
-			var putResp struct{ Meta struct{ RC string `json:"rc"` } `json:"meta"` }
+			var putResp struct {
+				Meta struct {
+					RC string `json:"rc"`
+				} `json:"meta"`
+			}
 			if err := c.doJSON(ctx, http.MethodPut, c.apiURL("rest/networkconf/"+id), obj, &putResp); err != nil {
 				writeJSON(w, http.StatusBadGateway, apiResp{Success: false, Error: err.Error()})
 				return

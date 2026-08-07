@@ -125,22 +125,22 @@ func portModeLabel(po *portOverride) string {
 //
 // UniFi switch port VLAN semantics:
 //
-//   forward:"all"
-//     → trunk-all, everything passes.
+//	forward:"all"
+//	  → trunk-all, everything passes.
 //
-//   forward:"customize" + tagged_vlan_mgmt:"auto" + excluded_networkconf_ids:[]
-//     → trunk-all (auto-managed, nothing excluded).
+//	forward:"customize" + tagged_vlan_mgmt:"auto" + excluded_networkconf_ids:[]
+//	  → trunk-all (auto-managed, nothing excluded).
 //
-//   forward:"customize" + tagged_vlan_mgmt:"auto"  + excluded_networkconf_ids:[x,y]
-//   forward:"customize" + tagged_vlan_mgmt:"custom" + excluded_networkconf_ids:[x,y] (no allow-list)
-//     → BLOCKLIST mode: all VLANs pass except those in the exclusion list.
-//       (This is what the UI shows as "allow all except …".)
+//	forward:"customize" + tagged_vlan_mgmt:"auto"  + excluded_networkconf_ids:[x,y]
+//	forward:"customize" + tagged_vlan_mgmt:"custom" + excluded_networkconf_ids:[x,y] (no allow-list)
+//	  → BLOCKLIST mode: all VLANs pass except those in the exclusion list.
+//	    (This is what the UI shows as "allow all except …".)
 //
-//   forward:"customize" + tagged_vlan_mgmt:"custom" + tagged_networkconf_ids:[x,y]
-//     → ALLOWLIST mode: only the explicitly listed tagged VLANs pass.
+//	forward:"customize" + tagged_vlan_mgmt:"custom" + tagged_networkconf_ids:[x,y]
+//	  → ALLOWLIST mode: only the explicitly listed tagged VLANs pass.
 //
-//   forward:"native" + tagged_vlan_mgmt:"block_all"
-//     → Access port: only the native VLAN passes, all tagged blocked.
+//	forward:"native" + tagged_vlan_mgmt:"block_all"
+//	  → Access port: only the native VLAN passes, all tagged blocked.
 func vlanReachable(po *portOverride, netID string) (trunked bool, isNative bool) {
 	if isTrunkAllPort(po) {
 		return true, po != nil && po.NativeNetworkID == netID
@@ -199,16 +199,22 @@ func RunVLANAudit(ctx context.Context, c *UnifiClient) (*VLANAuditResult, error)
 	ch := make(chan fetchResult, 1)
 	go func() {
 		var r fetchResult
-		r.devices, r.devErr  = fetchAuditDevices(ctx, c)
-		r.wlans, r.wlanErr   = c.ListWLANs(ctx)
+		r.devices, r.devErr = fetchAuditDevices(ctx, c)
+		r.wlans, r.wlanErr = c.ListWLANs(ctx)
 		r.networks, r.netErr = fetchNetworks(ctx, c)
 		ch <- r
 	}()
 	fr := <-ch
 
-	if fr.devErr != nil  { return nil, fmt.Errorf("fetch devices: %w", fr.devErr) }
-	if fr.wlanErr != nil { return nil, fmt.Errorf("fetch wlans: %w", fr.wlanErr) }
-	if fr.netErr != nil  { return nil, fmt.Errorf("fetch networks: %w", fr.netErr) }
+	if fr.devErr != nil {
+		return nil, fmt.Errorf("fetch devices: %w", fr.devErr)
+	}
+	if fr.wlanErr != nil {
+		return nil, fmt.Errorf("fetch wlans: %w", fr.wlanErr)
+	}
+	if fr.netErr != nil {
+		return nil, fmt.Errorf("fetch networks: %w", fr.netErr)
+	}
 
 	// ── Build lookup maps ─────────────────────────────────────────────────────
 
@@ -275,21 +281,21 @@ func RunVLANAudit(ctx context.Context, c *UnifiClient) (*VLANAuditResult, error)
 
 		if d.Uplink == nil || d.Uplink.Type != "wire" || d.Uplink.UplinkMAC == "" {
 			entry.UplinkSwitch = "wireless mesh uplink"
-			entry.PortMode     = "mesh"
-			entry.Status       = SevInfo
+			entry.PortMode = "mesh"
+			entry.Status = SevInfo
 			topology = append(topology, entry)
 			continue
 		}
 
-		uplinkMAC  := strings.ToLower(d.Uplink.UplinkMAC)
+		uplinkMAC := strings.ToLower(d.Uplink.UplinkMAC)
 		uplinkPort := d.Uplink.UplinkRemotePort
 		entry.UplinkPort = uplinkPort
 
 		sw, found := switchByMAC[uplinkMAC]
 		if !found {
 			entry.UplinkSwitch = fmt.Sprintf("unmanaged device (%s)", uplinkMAC)
-			entry.PortMode     = "unmanaged"
-			entry.Status       = SevInfo
+			entry.PortMode = "unmanaged"
+			entry.Status = SevInfo
 			topology = append(topology, entry)
 			continue
 		}
@@ -310,10 +316,10 @@ func RunVLANAudit(ctx context.Context, c *UnifiClient) (*VLANAuditResult, error)
 		for netID, ssids := range ssidsByNet {
 			net, hasNet := netByID[netID]
 			netName := netID
-			vlanID  := 0
+			vlanID := 0
 			if hasNet {
 				netName = net.Name
-				vlanID  = net.Vlan
+				vlanID = net.Vlan
 			}
 
 			trunked, isNative := vlanReachable(portCfg, netID)
@@ -359,7 +365,7 @@ func RunVLANAudit(ctx context.Context, c *UnifiClient) (*VLANAuditResult, error)
 				ID:       "vlan_trunk_gap_" + d.ID,
 				Category: "topology",
 				Severity: SevCritical,
-				Title: fmt.Sprintf("VLAN Trunk Gap: %s missing %d VLAN(s) on uplink port", d.Name, len(missingLabels)),
+				Title:    fmt.Sprintf("VLAN Trunk Gap: %s missing %d VLAN(s) on uplink port", d.Name, len(missingLabels)),
 				Detail: fmt.Sprintf(
 					"%s is wired to %s port %d (%s). "+
 						"These VLANs are needed for active SSIDs but are NOT trunked on that port: %s. "+
@@ -626,11 +632,16 @@ func detectManagementNetID(
 // severityRank maps FindingSeverity to a sort key (lower = worse = shown first).
 func severityRank(s FindingSeverity) int {
 	switch s {
-	case SevCritical: return 0
-	case SevWarning:  return 1
-	case SevInfo:     return 2
-	case SevOK:       return 3
-	default:          return 4
+	case SevCritical:
+		return 0
+	case SevWarning:
+		return 1
+	case SevInfo:
+		return 2
+	case SevOK:
+		return 3
+	default:
+		return 4
 	}
 }
 

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>UniFi Network — Live 3D Topology</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html,body { height:100%; background:#03040a; overflow:hidden; font-family:'Courier New',monospace; }
+  #scene { position:fixed; inset:0; }
+
+  #hud { position:fixed; top:0; left:0; right:0; z-index:20; padding:16px 22px;
+         display:flex; justify-content:space-between; align-items:flex-start;
+         background:linear-gradient(to bottom,rgba(3,4,10,.92),transparent); pointer-events:none; }
+  #title { color:#fff; font-size:16px; letter-spacing:4px; text-transform:uppercase; }
+  #title em { color:#00e87f; font-style:normal; }
+  #subtitle { color:#3a4a66; font-size:10px; letter-spacing:1px; margin-top:5px; }
+  #live { display:flex; align-items:center; gap:7px; color:#00e87f; font-size:10px; letter-spacing:2px; margin-top:6px; }
+  .dot { width:7px; height:7px; border-radius:50%; background:#00e87f; box-shadow:0 0 8px #00e87f; animation:pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  #stats { text-align:right; color:#3a4a66; font-size:11px; line-height:1.8; pointer-events:none; }
+  #stats b { color:#7d8db0; font-weight:normal; }
+  #stats .big { color:#00e87f; font-size:15px; }
+
+  #legend { position:fixed; bottom:16px; left:16px; z-index:20; background:rgba(3,4,10,.85);
+            border:1px solid #141b30; border-radius:9px; padding:12px 15px; pointer-events:none; }
+  #legend h4 { color:#3a4a66; font-size:9px; letter-spacing:2px; text-transform:uppercase; margin:0 0 7px; }
+  .lr { display:flex; align-items:center; gap:8px; margin:4px 0; color:#6b7a99; font-size:11px; }
+  .ld { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+
+  #netfilter { position:fixed; top:74px; left:50%; transform:translateX(-50%); display:flex; gap:6px; z-index:20; }
+  .pill { padding:4px 12px; border-radius:13px; font-size:10px; letter-spacing:1px; text-transform:uppercase;
+          cursor:pointer; border:1px solid transparent; transition:.18s; user-select:none; }
+  .pill:not(.active){ opacity:.32; }
+  /* POI fly-to dock (bottom center) */
+  #poi { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); display:flex; gap:8px;
+         z-index:22; flex-wrap:wrap; justify-content:center; max-width:80vw; }
+  .poi { padding:7px 15px; border-radius:18px; font-size:11px; letter-spacing:1px; cursor:pointer;
+         background:rgba(8,12,22,.82); border:1px solid #24406a; color:#9fb4d8; transition:.15s;
+         backdrop-filter:blur(4px); white-space:nowrap; }
+  .poi:hover { border-color:#3aa0ff; color:#dcebff; background:rgba(20,34,60,.92); transform:translateY(-1px); }
+  .poi.threat { border-color:#ff0033; color:#ff8ba0; }
+  .poi.toggle.on { border-color:#00e87f; color:#00e87f; }
+
+  #panel { position:fixed; top:78px; right:16px; width:300px; z-index:25; background:rgba(5,7,16,.96);
+           border:1px solid #1a2440; border-radius:11px; padding:18px; display:none;
+           box-shadow:0 12px 40px rgba(0,0,0,.6); }
+  #panel.on { display:block; }
+  #pclose { position:absolute; top:11px; right:13px; color:#3a4a66; cursor:pointer; font-size:15px; }
+  #pclose:hover { color:#ccc; }
+  #pname { color:#fff; font-size:15px; letter-spacing:.5px; margin-bottom:3px; }
+  #pmodel { color:#445; font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:12px; }
+  .prow { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid #121a2e; }
+  .pk { color:#4a5a78; font-size:10px; letter-spacing:1px; text-transform:uppercase; }
+  .pv { color:#aeb9d0; font-size:11px; }
+  .pv.good{color:#00e87f} .pv.warn{color:#ffd84a} .pv.bad{color:#ff5a5a}
+
+  #controls { position:fixed; bottom:16px; right:16px; z-index:20; color:#27324a; font-size:10px; text-align:right; line-height:1.9; pointer-events:none; }
+  #loading { position:fixed; inset:0; z-index:100; background:#03040a; display:flex; flex-direction:column;
+             align-items:center; justify-content:center; color:#3a4a66; font-size:12px; letter-spacing:2px; transition:opacity .6s; }
+  #loading.gone { opacity:0; pointer-events:none; }
+  .spin { width:30px; height:30px; border:2px solid #141b30; border-top-color:#00e87f; border-radius:50%; animation:sp .8s linear infinite; margin-bottom:18px; }
+  @keyframes sp { to{transform:rotate(360deg)} }
+  #lmsg { margin-top:9px; color:#2a344e; font-size:10px; }
+  #refresh { position:fixed; bottom:0; left:0; height:2px; background:#00e87f; box-shadow:0 0 8px #00e87f; z-index:30; width:0; }
+  #tooltip { position:fixed; z-index:40; pointer-events:none; background:rgba(5,7,16,.95); border:1px solid #1a2440;
+             border-radius:6px; padding:6px 10px; font-size:11px; color:#cdd6ea; display:none; white-space:nowrap; }
+</style>
+</head>
+<body>
+
+<div id="loading"><div class="spin"></div>CONNECTING TO UNIFI<div id="lmsg">building live scene…</div></div>
+
+<div id="scene"></div>
+<canvas id="scene-canvas" style="display:none"></canvas>
+
+<div id="hud">
+  <div>
+    <div id="title">UNIFI <em>NETWORK</em> · LIVE TOPOLOGY</div>
+    <div id="subtitle">Wiggerton Router · real-time traffic flow</div>
+    <div id="live"><span class="dot"></span> LIVE · next refresh <span id="cd">10s</span></div>
+  </div>
+  <div id="stats">
+    <div><span class="big" id="s-dev">—</span> <b>devices</b></div>
+    <div><span class="big" id="s-cli">—</span> <b>clients</b></div>
+    <div id="s-thru" style="margin-top:6px"><b>throughput</b> —</div>
+    <div id="s-alert" style="margin-top:4px"></div>
+    <div style="margin-top:4px"><b>updated</b> <span id="s-ts">—</span></div>
+  </div>
+</div>
+
+<div id="netfilter"></div>
+
+<div id="legend">
+  <h4>Infrastructure</h4>
+  <div class="lr"><div class="ld" style="background:#ffd700"></div>Gateway / Router</div>
+  <div class="lr"><div class="ld" style="background:#00bfff"></div>Switch</div>
+  <div class="lr"><div class="ld" style="background:#00e87f"></div>Access Point</div>
+  <div class="lr"><div class="ld" style="background:#ff5ed0"></div>Camera (click for feed)</div>
+  <h4 style="margin-top:11px">Clients by network</h4>
+  <div class="lr"><div class="ld" style="background:#ff8c2b"></div>IoT</div>
+  <div class="lr"><div class="ld" style="background:#36c5ff"></div>Media</div>
+  <div class="lr"><div class="ld" style="background:#9aa6bd"></div>Zone00 (wired)</div>
+  <div class="lr"><div class="ld" style="background:#c46bff"></div>Other</div>
+  <h4 style="margin-top:11px">Live traffic (real Mbps)</h4>
+  <div class="lr"><div class="ld" style="background:#36c5ff"></div>↓ download to device</div>
+  <div class="lr"><div class="ld" style="background:#ffe24d"></div>↑ upload from device</div>
+  <div class="lr"><div class="ld" style="background:#ff0a1e"></div>⚠ threat / exfil packet</div>
+  <div class="lr" style="color:#3a4a66;font-size:10px">density &amp; speed ∝ bytes/sec · idle = dark</div>
+  <h4 style="margin-top:11px">Security</h4>
+  <div class="lr"><div class="ld" style="background:#ff2a2a"></div>⚠ IoT device → external IP</div>
+  <div class="lr" style="color:#3a4a66;font-size:10px">click any node for its external connections</div>
+</div>
+
+<div id="panel">
+  <div id="pclose" onclick="document.getElementById('panel').classList.remove('on')">✕</div>
+  <div id="pname"></div><div id="pmodel"></div><div id="prows"></div>
+</div>
+
+<div id="tooltip"></div>
+<div id="controls">drag to orbit · scroll to zoom<br>click any node for details</div>
+<!-- Points of interest: click a pill to fly the camera there (cinematic approach) -->
+<div id="poi"></div>
+<div id="refresh"></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<!-- Generic 3D engine (engine.js) + the UniFi network world adapter (world-network.js).
+     Swap world-network.js for another adapter to render a different "world". -->
+<script type="module" src="./world-network.js"></script>
+</body>
+</html>

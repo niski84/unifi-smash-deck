@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
-	"net/http"
 )
 
 // dfsChannels is the set of 5GHz DFS channels (52–144).
@@ -39,7 +39,7 @@ type RFSiteReport struct {
 	SiteName        string      `json:"site_name"`
 	APs             []APChannel `json:"aps"`
 	AnalyzedAt      time.Time   `json:"analyzed_at"`
-	DFSAPCount      int         `json:"dfs_ap_count"`    // APs on DFS channels
+	DFSAPCount      int         `json:"dfs_ap_count"`     // APs on DFS channels
 	HighRetryCount  int         `json:"high_retry_count"` // APs with >10% retry
 	AvgSatisfaction int         `json:"avg_satisfaction"`
 }
@@ -56,13 +56,13 @@ type RFSuggestion struct {
 // ── raw API types ──────────────────────────────────────────────────────────────
 
 type rfDevice struct {
-	ID   string `json:"_id"`
-	Name string `json:"name"`
-	Type string `json:"type"`
+	ID    string `json:"_id"`
+	Name  string `json:"name"`
+	Type  string `json:"type"`
 	Model string `json:"model"`
 
 	RadioTable []struct {
-		Name    string `json:"name"`     // "ng" = 2.4GHz, "na" = 5GHz
+		Name    string `json:"name"` // "ng" = 2.4GHz, "na" = 5GHz
 		Channel int    `json:"channel"`
 		TxPower int    `json:"tx_power"`
 	} `json:"radio_table"`

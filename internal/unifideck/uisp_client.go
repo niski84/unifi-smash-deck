@@ -14,9 +14,9 @@ import (
 // UISPClient talks to a UISP NMS instance (e.g. account.sbtnet.com/nms).
 // Auth uses the x-auth-token header with a read-only or admin token.
 type UISPClient struct {
-	Host   string
-	Token  string
-	http   *http.Client
+	Host  string
+	Token string
+	http  *http.Client
 }
 
 // NewUISPClient builds a client. Host should include scheme (e.g. https://foo).

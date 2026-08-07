@@ -15,14 +15,14 @@ import (
 
 // GusStatus is the current tracking state returned by the API.
 type GusStatus struct {
-	Active     bool         `json:"active"`
-	CameraID   string       `json:"camera_id,omitempty"`
-	CameraName string       `json:"camera_name,omitempty"`
-	LastSeen   time.Time    `json:"last_seen,omitempty"`
-	Confidence float64      `json:"confidence"`
-	Enabled    bool         `json:"enabled"`
+	Active     bool      `json:"active"`
+	CameraID   string    `json:"camera_id,omitempty"`
+	CameraName string    `json:"camera_name,omitempty"`
+	LastSeen   time.Time `json:"last_seen,omitempty"`
+	Confidence float64   `json:"confidence"`
+	Enabled    bool      `json:"enabled"`
 	// LastBox is the most recent confirmed detection bounding box (normalized 0-1).
-	LastBox    *BoundingBox `json:"last_box,omitempty"`
+	LastBox *BoundingBox `json:"last_box,omitempty"`
 	// LastMotionBox is the most recent motion region, even without dog confirmation.
 	LastMotionBox *BoundingBox `json:"last_motion_box,omitempty"`
 	LastMotionAt  time.Time    `json:"last_motion_at,omitempty"`

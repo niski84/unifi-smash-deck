@@ -14,13 +14,13 @@ import (
 // FirewallFinding is a single issue detected by the audit engine.
 // Severity reuses the FindingSeverity type from network_health.go.
 type FirewallFinding struct {
-	ID             string           `json:"id"`
-	Severity       FindingSeverity  `json:"severity"` // "critical"|"warning"|"info"
-	Category       string           `json:"category"` // "zones"|"default-policy"|"rules"|"coverage"
-	Title          string           `json:"title"`
-	Detail         string           `json:"detail"`
-	Recommendation string           `json:"recommendation"`
-	RuleNames      []string         `json:"rule_names,omitempty"`
+	ID             string          `json:"id"`
+	Severity       FindingSeverity `json:"severity"` // "critical"|"warning"|"info"
+	Category       string          `json:"category"` // "zones"|"default-policy"|"rules"|"coverage"
+	Title          string          `json:"title"`
+	Detail         string          `json:"detail"`
+	Recommendation string          `json:"recommendation"`
+	RuleNames      []string        `json:"rule_names,omitempty"`
 }
 
 // AuditPolicy is a display-ready row for the policy table.

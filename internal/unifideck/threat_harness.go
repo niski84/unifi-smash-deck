@@ -129,7 +129,7 @@ func (s *HTTPServer) probeHoneypot(port int, payload string) (*ThreatEvent, erro
 
 	// Send the attacker payload.
 	conn.SetWriteDeadline(time.Now().Add(2 * time.Second)) //nolint:errcheck
-	conn.Write([]byte(payload))                             //nolint:errcheck
+	conn.Write([]byte(payload))                            //nolint:errcheck
 	conn.Close()
 
 	// Allow the honeypot handler goroutine to finish and write to the store.

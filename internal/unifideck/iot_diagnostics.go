@@ -27,10 +27,10 @@ type DiagnosticCheck struct {
 	Title       string           `json:"title"`
 	Description string           `json:"description"`
 	// Fixable: if true the UI shows a Fix button.
-	Fixable    bool   `json:"fixable"`
-	FixLabel   string `json:"fix_label,omitempty"`
-	FixWLANID  string `json:"fix_wlan_id,omitempty"`
-	FixAction  string `json:"fix_action,omitempty"` // e.g. "disable-isolation"
+	Fixable   bool   `json:"fixable"`
+	FixLabel  string `json:"fix_label,omitempty"`
+	FixWLANID string `json:"fix_wlan_id,omitempty"`
+	FixAction string `json:"fix_action,omitempty"` // e.g. "disable-isolation"
 }
 
 // IoTDevice is an extended client record including ESSID and OUI,
@@ -284,7 +284,7 @@ func RunIoTDiagnostics(ctx context.Context, c *UnifiClient) (*IoTDiagnosticsResu
 		})
 	} else {
 		checks = append(checks, DiagnosticCheck{
-			ID:    "mdns_relay",
+			ID:     "mdns_relay",
 			Status: StatusWarn,
 			Title:  fmt.Sprintf("mDNS Relay: mode=%s", mdns.Mode),
 			Description: fmt.Sprintf(

@@ -16,11 +16,11 @@ import (
 // ── Remote watchdog deploy/undeploy/status via SSH ────────────────────────────
 
 const (
-	watchdogRepo     = "niski84/udm-pro-memory-monitor"
-	watchdogBinary   = "udm-pro-memory-monitor-arm64"
-	watchdogRemote   = "/data/udm-pro-memory-monitor/udm-pro-memory-monitor"
-	watchdogLogPath  = "/data/udm-pro-memory-monitor/watchdog.log"
-	watchdogService  = "udm-pro-memory-monitor"
+	watchdogRepo    = "niski84/udm-pro-memory-monitor"
+	watchdogBinary  = "udm-pro-memory-monitor-arm64"
+	watchdogRemote  = "/data/udm-pro-memory-monitor/udm-pro-memory-monitor"
+	watchdogLogPath = "/data/udm-pro-memory-monitor/watchdog.log"
+	watchdogService = "udm-pro-memory-monitor"
 )
 
 // WatchdogDeployStatus is the state of the remote watchdog on the UDM Pro.

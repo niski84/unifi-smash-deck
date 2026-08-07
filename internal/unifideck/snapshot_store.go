@@ -20,7 +20,7 @@ import (
 // A single installation can have any number of rules, each targeting
 // different cameras and/or different cadences.
 type SnapshotRule struct {
-	ID    string `json:"id"`
+	ID string `json:"id"`
 	// Enabled lets users pause a rule without deleting it.
 	Enabled bool   `json:"enabled"`
 	Label   string `json:"label,omitempty"`

@@ -10,12 +10,12 @@ import (
 // DashboardData is the response payload for GET /api/dashboard.
 // All fields come from in-memory state — no external API calls — so it loads instantly.
 type DashboardData struct {
-	GeneratedAt    time.Time        `json:"generated_at"`
-	Watchdog       WatchdogSummary  `json:"watchdog"`
-	Security       SecuritySummary  `json:"security"`
-	Clients        ClientSummary    `json:"clients"`
-	Automations    AutoSummary      `json:"automations"`
-	RecentActivity []string         `json:"recent_activity"`
+	GeneratedAt    time.Time       `json:"generated_at"`
+	Watchdog       WatchdogSummary `json:"watchdog"`
+	Security       SecuritySummary `json:"security"`
+	Clients        ClientSummary   `json:"clients"`
+	Automations    AutoSummary     `json:"automations"`
+	RecentActivity []string        `json:"recent_activity"`
 }
 
 type WatchdogSummary struct {

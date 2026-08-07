@@ -45,13 +45,13 @@ type BinaryInfo struct {
 
 // MemInfo holds parsed /proc/meminfo fields in kB.
 type MemInfo struct {
-	Total     int64 `json:"total_kb"`
-	Free      int64 `json:"free_kb"`
-	Available int64 `json:"available_kb"`
-	Buffers   int64 `json:"buffers_kb"`
-	Cached    int64 `json:"cached_kb"`
-	SwapTotal int64 `json:"swap_total_kb"`
-	SwapFree  int64 `json:"swap_free_kb"`
+	Total     int64   `json:"total_kb"`
+	Free      int64   `json:"free_kb"`
+	Available int64   `json:"available_kb"`
+	Buffers   int64   `json:"buffers_kb"`
+	Cached    int64   `json:"cached_kb"`
+	SwapTotal int64   `json:"swap_total_kb"`
+	SwapFree  int64   `json:"swap_free_kb"`
 	UsedPct   float64 `json:"used_pct"`
 }
 
@@ -67,7 +67,7 @@ type DiskEntry struct {
 
 // UDMFinding is a single analysis finding from the process scan.
 type UDMFinding struct {
-	Severity   string `json:"severity"`            // critical | warning | info
+	Severity   string `json:"severity"` // critical | warning | info
 	Title      string `json:"title"`
 	Detail     string `json:"detail"`
 	Suggestion string `json:"suggestion"`
@@ -81,9 +81,9 @@ type UDMProcessScan struct {
 	Configured bool         `json:"configured"`
 	Mem        MemInfo      `json:"mem"`
 	Disk       []DiskEntry  `json:"disk"`
-	Processes  []UDMProcess `json:"processes"`  // top 20 by RSS
-	Binaries   []BinaryInfo `json:"binaries"`   // key executables with MD5
-	Findings   []UDMFinding `json:"findings"`   // automated analysis
+	Processes  []UDMProcess `json:"processes"` // top 20 by RSS
+	Binaries   []BinaryInfo `json:"binaries"`  // key executables with MD5
+	Findings   []UDMFinding `json:"findings"`  // automated analysis
 	Error      string       `json:"error,omitempty"`
 }
 
@@ -210,21 +210,21 @@ func RunUDMProcessScan(ctx context.Context, cfg AppConfig) (*UDMProcessScan, err
 	defer client.Close()
 
 	// Run all commands; ignore individual errors (best-effort)
-	memRaw, _  := udmRun(client, "cat /proc/meminfo")
-	dfRaw, _   := udmRun(client, "df -h")
-	psRaw, _   := udmRun(client, "ps aux --sort=-%mem")
+	memRaw, _ := udmRun(client, "cat /proc/meminfo")
+	dfRaw, _ := udmRun(client, "df -h")
+	psRaw, _ := udmRun(client, "ps aux --sort=-%mem")
 
 	// Build binary list: stat + md5sum in one round-trip
 	binPaths := strings.Join(udmKeyBinaries, " ")
 	statRaw, _ := udmRun(client, "stat "+binPaths+" 2>/dev/null")
-	md5Raw, _  := udmRun(client, "md5sum "+binPaths+" 2>/dev/null")
+	md5Raw, _ := udmRun(client, "md5sum "+binPaths+" 2>/dev/null")
 	linkRaw, _ := udmRun(client, "readlink -f "+binPaths+" 2>/dev/null; echo END")
 
-	scan.Mem      = parseMemInfo(memRaw)
-	scan.Disk     = parseDf(dfRaw)
+	scan.Mem = parseMemInfo(memRaw)
+	scan.Disk = parseDf(dfRaw)
 	scan.Processes = parsePS(psRaw, 20)
-	scan.Binaries  = parseBinaries(statRaw, md5Raw, linkRaw)
-	scan.Findings  = AnalyzeUDMScan(scan)
+	scan.Binaries = parseBinaries(statRaw, md5Raw, linkRaw)
+	scan.Findings = AnalyzeUDMScan(scan)
 
 	return scan, nil
 }
@@ -380,13 +380,13 @@ func (s *HTTPServer) handleUDMProcessScan(w http.ResponseWriter, r *http.Request
 func parseMemInfo(raw string) MemInfo {
 	m := MemInfo{}
 	fields := map[string]*int64{
-		"MemTotal":   &m.Total,
-		"MemFree":    &m.Free,
+		"MemTotal":     &m.Total,
+		"MemFree":      &m.Free,
 		"MemAvailable": &m.Available,
-		"Buffers":    &m.Buffers,
-		"Cached":     &m.Cached,
-		"SwapTotal":  &m.SwapTotal,
-		"SwapFree":   &m.SwapFree,
+		"Buffers":      &m.Buffers,
+		"Cached":       &m.Cached,
+		"SwapTotal":    &m.SwapTotal,
+		"SwapFree":     &m.SwapFree,
 	}
 	for _, line := range strings.Split(raw, "\n") {
 		parts := strings.Fields(line)

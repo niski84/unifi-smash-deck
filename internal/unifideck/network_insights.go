@@ -21,8 +21,8 @@ type InsightDevice struct {
 	IP         string  `json:"ip"`
 	Firmware   string  `json:"firmware"`
 	UptimeDays float64 `json:"uptime_days"`
-	CPU        float64 `json:"cpu"`  // percent
-	Mem        float64 `json:"mem"`  // percent
+	CPU        float64 `json:"cpu"` // percent
+	Mem        float64 `json:"mem"` // percent
 	Clients    int     `json:"clients"`
 	LoadAvg1   float64 `json:"load_avg_1"`
 }
@@ -80,14 +80,14 @@ type NetworkInsightsReport struct {
 
 // insightRawDevice extends rawDevice with the system-stats percentage fields.
 type insightRawDevice struct {
-	ID          string `json:"_id"`
-	Name        string `json:"name"`
-	Model       string `json:"model"`
-	IP          string `json:"ip"`
-	Version     string `json:"version"`
-	Uptime      int64  `json:"uptime"`
-	NumSta      int    `json:"num_sta"`
-	SysStats    struct {
+	ID       string `json:"_id"`
+	Name     string `json:"name"`
+	Model    string `json:"model"`
+	IP       string `json:"ip"`
+	Version  string `json:"version"`
+	Uptime   int64  `json:"uptime"`
+	NumSta   int    `json:"num_sta"`
+	SysStats struct {
 		MemUsed  float64 `json:"mem_used"`
 		MemTotal float64 `json:"mem_total"`
 		LoadAvg1 string  `json:"loadavg_1"`
@@ -258,15 +258,15 @@ func insightCheckDeviceHealth(devices []InsightDevice) []InsightFinding {
 		if d.Mem >= 90 {
 			out = append(out, InsightFinding{
 				ID: "mem-critical-" + d.ID, Severity: SevCritical, Category: "device",
-				Title:  fmt.Sprintf("%s memory critical: %.0f%%", d.Name, d.Mem),
-				Detail: fmt.Sprintf("At %.0f%% RAM, this device risks OOM kills and service crashes.", d.Mem),
+				Title:          fmt.Sprintf("%s memory critical: %.0f%%", d.Name, d.Mem),
+				Detail:         fmt.Sprintf("At %.0f%% RAM, this device risks OOM kills and service crashes.", d.Mem),
 				Recommendation: "Reduce Network Controller data retention (Settings → System) or restart the device.",
 			})
 		} else if d.Mem >= 80 {
 			out = append(out, InsightFinding{
 				ID: "mem-high-" + d.ID, Severity: SevWarning, Category: "device",
-				Title:  fmt.Sprintf("%s memory high: %.0f%%", d.Name, d.Mem),
-				Detail: fmt.Sprintf("%.0f%% RAM is above the 80%% watch threshold. For the UDM Pro this is typically MongoDB + Protect NVR growth.", d.Mem),
+				Title:          fmt.Sprintf("%s memory high: %.0f%%", d.Name, d.Mem),
+				Detail:         fmt.Sprintf("%.0f%% RAM is above the 80%% watch threshold. For the UDM Pro this is typically MongoDB + Protect NVR growth.", d.Mem),
 				Recommendation: "SSH in and run `podman stats --no-stream` to attribute memory by container. Reduce data retention days if MongoDB is the cause.",
 			})
 		}
@@ -277,8 +277,8 @@ func insightCheckDeviceHealth(devices []InsightDevice) []InsightFinding {
 			}
 			out = append(out, InsightFinding{
 				ID: "cpu-high-" + d.ID, Severity: sev, Category: "device",
-				Title:  fmt.Sprintf("%s CPU high: %.0f%%", d.Name, d.CPU),
-				Detail: fmt.Sprintf("%.0f%% CPU on a network switch or AP suggests a loop, storm, or PoE renegotiation cycle.", d.CPU),
+				Title:          fmt.Sprintf("%s CPU high: %.0f%%", d.Name, d.CPU),
+				Detail:         fmt.Sprintf("%.0f%% CPU on a network switch or AP suggests a loop, storm, or PoE renegotiation cycle.", d.CPU),
 				Recommendation: "Check port error counters for flapping links. For switches: verify STP topology is stable and no port is cycling.",
 			})
 		}
@@ -303,8 +303,8 @@ func insightCheckOverloadedAPs(devices []insightRawDevice) []InsightFinding {
 		}
 		out = append(out, InsightFinding{
 			ID: "ap-overloaded-" + d.ID, Severity: sev, Category: "performance",
-			Title:  fmt.Sprintf("%s carrying %d clients", d.Name, d.NumSta),
-			Detail: fmt.Sprintf("%d clients on a single AP degrades per-client throughput significantly. Recommended max is 20–25.", d.NumSta),
+			Title:          fmt.Sprintf("%s carrying %d clients", d.Name, d.NumSta),
+			Detail:         fmt.Sprintf("%d clients on a single AP degrades per-client throughput significantly. Recommended max is 20–25.", d.NumSta),
 			Recommendation: "Add a nearby AP and reduce TX power to shrink coverage cells, redistributing clients.",
 		})
 	}
@@ -324,8 +324,8 @@ func insightCheckTopTalkers(talkers []InsightClient) []InsightFinding {
 		}
 		out = append(out, InsightFinding{
 			ID: "top-talker-" + t.MAC, Severity: SevInfo, Category: "clients",
-			Title:  fmt.Sprintf("%s transferred %.1f GB this session", name, total),
-			Detail: fmt.Sprintf("TX: %.2f GB  RX: %.2f GB  VLAN: %s  Uptime: %s", t.TxGB, t.RxGB, insightVLANName(t.VLAN), insightFormatUptime(t.Uptime)),
+			Title:          fmt.Sprintf("%s transferred %.1f GB this session", name, total),
+			Detail:         fmt.Sprintf("TX: %.2f GB  RX: %.2f GB  VLAN: %s  Uptime: %s", t.TxGB, t.RxGB, insightVLANName(t.VLAN), insightFormatUptime(t.Uptime)),
 			Recommendation: "If unexpected, check whether this device is a media server, cloud backup, or has been compromised.",
 		})
 	}
@@ -346,8 +346,8 @@ func insightCheckUnknownDevices(clients []insightRawSta) []InsightFinding {
 		}
 		out = append(out, InsightFinding{
 			ID: "unknown-" + strings.ReplaceAll(s.MAC, ":", ""), Severity: SevWarning, Category: "security",
-			Title:  fmt.Sprintf("Unidentified device on %s VLAN (%s)", vlanName, s.IP),
-			Detail: fmt.Sprintf("MAC %s (OUI: %s) has been connected for %s with no hostname. On sensitive VLANs, every device should be identifiable.", s.MAC, insightOUI(s.OUI), insightFormatUptime(s.Uptime)),
+			Title:          fmt.Sprintf("Unidentified device on %s VLAN (%s)", vlanName, s.IP),
+			Detail:         fmt.Sprintf("MAC %s (OUI: %s) has been connected for %s with no hostname. On sensitive VLANs, every device should be identifiable.", s.MAC, insightOUI(s.OUI), insightFormatUptime(s.Uptime)),
 			Recommendation: "Assign a static DHCP reservation and name in UniFi to identify this device, or investigate if it shouldn't be on this VLAN.",
 		})
 	}
@@ -367,8 +367,8 @@ func insightCheckMisplacedCameras(clients []insightRawSta) []InsightFinding {
 			if strings.Contains(name, kw) {
 				out = append(out, InsightFinding{
 					ID: "misplaced-cam-" + strings.ReplaceAll(s.MAC, ":", ""), Severity: SevWarning, Category: "security",
-					Title:  fmt.Sprintf("Camera %q is on VLAN %s instead of Cameras VLAN 30", s.Hostname, insightVLANName(s.VLAN)),
-					Detail: "This device appears to be a Protect camera but is not on the isolated Cameras VLAN. The 'Block Cameras to Internal' rule does not apply to it.",
+					Title:          fmt.Sprintf("Camera %q is on VLAN %s instead of Cameras VLAN 30", s.Hostname, insightVLANName(s.VLAN)),
+					Detail:         "This device appears to be a Protect camera but is not on the isolated Cameras VLAN. The 'Block Cameras to Internal' rule does not apply to it.",
 					Recommendation: "Migrate this camera to the Cameras VLAN (30) via UniFi Protect → Camera Settings → Network.",
 				})
 				break

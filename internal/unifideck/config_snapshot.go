@@ -474,18 +474,18 @@ var noiseFields = map[string]bool{
 	"disconnect_timestamp": true,
 	"last_ip":              true,
 	// Device runtime stats — change every few seconds, not config-relevant
-	"_uptime":             true,
-	"next_interval":       true,
-	"port_table":          true, // per-port byte/packet counters
-	"stat":                true, // aggregate traffic counters
-	"sys_stats":           true, // loadavg, cpu, mem
-	"bytes-d":             true,
-	"bytes-r":             true,
-	"uplink":              true, // runtime uplink connection info
-	"temperatures":        true,
-	"fan_level":           true,
-	"general_temperature": true,
-	"cpu_temp":            true,
+	"_uptime":              true,
+	"next_interval":        true,
+	"port_table":           true, // per-port byte/packet counters
+	"stat":                 true, // aggregate traffic counters
+	"sys_stats":            true, // loadavg, cpu, mem
+	"bytes-d":              true,
+	"bytes-r":              true,
+	"uplink":               true, // runtime uplink connection info
+	"temperatures":         true,
+	"fan_level":            true,
+	"general_temperature":  true,
+	"cpu_temp":             true,
 	"connect_request_ip":   true,
 	"connect_request_port": true,
 	"system-stats":         true, // cpu/mem/uptime — changes every poll cycle
