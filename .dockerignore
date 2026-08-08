@@ -1,7 +1,8 @@
 .git
 .github
 .cursor
-data
+data/
+data/**
 *.log
 *.bak
 *.old
@@ -10,6 +11,5 @@ data
 unifideck
 unifi-smash-deck
 honeypot-agent
-sidecar/__pycache__
-sidecar/*.pt
+sidecar/
 docs/screenshots
