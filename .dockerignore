@@ -1,0 +1,15 @@
+.git
+.github
+.cursor
+data
+*.log
+*.bak
+*.old
+*.db
+*.sqlite
+unifideck
+unifi-smash-deck
+honeypot-agent
+sidecar/__pycache__
+sidecar/*.pt
+docs/screenshots
