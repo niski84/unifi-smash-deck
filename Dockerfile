@@ -20,6 +20,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # tzdata (scheduler timezone support), and a shell for debugging.
 FROM alpine:3.19
 
+LABEL org.opencontainers.image.source="https://github.com/niski84/unifi-smash-deck"
+
 RUN apk --no-cache add ca-certificates tzdata && \
     addgroup -S unifideck && adduser -S unifideck -G unifideck
 
